@@ -14,7 +14,9 @@ Claude Code session and the checklist for a human doing it by hand.
 4. Do only what the task's **Scope** says. Anything you notice that is out of scope goes into
    the report under *Follow-ups*, not into the code.
 5. Satisfy every line of **Acceptance** and run every command under **Verify**. A task is not
-   done while a verify command fails.
+   done while a verify command fails. An acceptance line that starts with **Manual:** needs
+   a real radio and is the reviewer's step, not the session's: list it under *Open questions*
+   in the report as "manual check pending" and carry on.
 6. Write the report to `tasks/phase-N/reports/<task id>.md` (template below).
 7. Commit with a message that starts with the task id, e.g. `P0-05 send to one recipient`.
    Do not merge. The merge is the reviewer's.
@@ -22,7 +24,8 @@ Claude Code session and the checklist for a human doing it by hand.
 ## Review (the reviewer, per task)
 
 - Read the report first, then the diff.
-- Run **Verify** again.
+- Run **Verify** again, and do the **Manual:** acceptance lines with a real radio; write the
+  result (board, firmware, timings) into the report under *Verify*.
 - Anything found goes into `tasks/phase-N/FOLLOWUPS.md` as `- [ ] <task id>: <finding>`, with a
   severity: *blocker* (must fix before merge), *fix-next* (fix in the next task that touches it),
   *note*.
