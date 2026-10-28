@@ -164,8 +164,10 @@ drill journals stay separate and every outgoing message is prefixed ØVELSE.
 **Register** — radio public key, person, street, role, origin, label.
 
 **Merge rules** — union by ULID; entries are immutable so there are no conflicts to resolve.
-Several PCs on the same mesh hear the same radio packet: dedupe by a hash of the packet
-contents. Two incidents created independently about the same event: manual "these two are the
+*Corrected later the same evening:* direct messages are encrypted to one companion, so a
+second staff PC never hears them. A dedupe key (sender key + sender timestamp + text) still
+exists, but it catches duplicate deliveries — a radio retry, a sync replay — not other devices'
+copies. Two incidents created independently about the same event: manual "these two are the
 same", never a guess.
 
 **Storage** — IndexedDB, surviving browser restart. Weak point: a user who clears browser data

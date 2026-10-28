@@ -29,7 +29,9 @@ Every message from a staff device to a field radio has the form
 - Exactly one space follows the number, then the text.
 - Every outgoing message is numbered, including informational ones. There is no unnumbered
   form.
-- Length: the app enforces whatever text limit the companion reports. Orders are short.
+- Length: a MeshCore text message is at most 160 bytes of UTF-8 (BaseChatMesh.h). Danish
+  letters cost two bytes each and `#12 ` costs four. The app counts bytes, not characters, and
+  refuses to send over the limit. Orders are short.
 
 ## Incoming: field → staff
 

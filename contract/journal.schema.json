@@ -99,10 +99,10 @@
           "type": "string",
           "enum": ["pending", "sent", "delivered", "roger", "given_up", "closed", "reopened"]
         },
-        "packetHash": {
+        "dedupeKey": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "SHA-256 of the raw received packet. Several devices on one mesh hear the same packet; the hub dedupes on this."
+          "description": "Lowercase hex SHA-256 of '<sender public key hex>:<sender timestamp as decimal epoch seconds>:<text as received>'. Direct messages are encrypted to one companion, so no other device hears them; this key catches duplicate deliveries of the same message (a radio retry, a sync replay), not other devices' copies."
         }
       },
       "required": ["id", "incidentId", "deviceId", "deviceSeq", "timestamp", "clockTrust", "operator", "type"],
@@ -112,33 +112,33 @@
           "description": "message_out: staff → field. Numbered per text-protocol.md. Its status lives in status_change entries that refer to it.",
           "properties": { "type": { "const": "message_out" } },
           "required": ["transport", "counterpartyId", "seqNo", "text"],
-          "not": { "anyOf": [ { "required": ["newStatus"] }, { "required": ["packetHash"] } ] }
+          "not": { "anyOf": [ { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
         },
         {
-          "description": "message_in: field → staff, stored as received. refersTo is set only by the operator by hand. packetHash is required for transport=mesh.",
+          "description": "message_in: field → staff, stored as received. refersTo is set only by the operator by hand. dedupeKey is required for transport=mesh.",
           "properties": { "type": { "const": "message_in" } },
           "required": ["transport", "counterpartyId", "text"],
           "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] } ] },
           "if": { "properties": { "transport": { "const": "mesh" } } },
-          "then": { "required": ["packetHash"] }
+          "then": { "required": ["dedupeKey"] }
         },
         {
           "description": "note: anything the operator writes into the journal that is not a message — a phone call made, a decision, an observation.",
           "properties": { "type": { "const": "note" } },
           "required": ["text"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["packetHash"] } ] }
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
         },
         {
           "description": "status_change: the only way status ever changes. refersTo is a message_out (pending/sent/delivered/roger/given_up) or an incident (closed/reopened). A roger recorded from an incoming message also carries the incoming entry's id in text, or the operator's reason for a manual change.",
           "properties": { "type": { "const": "status_change" } },
           "required": ["refersTo", "newStatus"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["counterpartyId"] }, { "required": ["packetHash"] } ] }
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["counterpartyId"] }, { "required": ["dedupeKey"] } ] }
         },
         {
           "description": "correction: the entry refersTo was wrong; text says what is right. The original is never edited or removed.",
           "properties": { "type": { "const": "correction" } },
           "required": ["refersTo", "text"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["packetHash"] } ] }
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
         }
       ]
     }

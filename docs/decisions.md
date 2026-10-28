@@ -4,6 +4,9 @@ Newest first. One line per decision, with the reason. Reversals get a new row, n
 
 | Date | Decision | Why |
 | --- | --- | --- |
+| 2026-10-28 | App stack: Vite + Svelte 5 + TypeScript, `idb` for IndexedDB, `ulid`, `ajv` validating every write against the contract schema, plain JSON i18n with a tiny `t()`, `vite-plugin-pwa`, Vitest | Small, no promise plumbing, the schema as the law in practice, no i18n framework to fight. |
+| 2026-10-28 | Radio layer ported from meshguide/automagical (`lib/serial.js`, `lib/ble.js`, the send/ack pattern in `lib/remote-cli.js`), extracted to its own package later | Proven code, same author, same licence; extract when it works here too. |
+| 2026-10-28 | Work runs as phases of task files under `tasks/`, one unattended Claude Code session per task, reviewed per merge | Same pattern as meshmaster; one developer, many small verifiable steps. |
 | 2026-10-28 | Licence: MIT | Open source, no strings. |
 | 2026-10-28 | Hub in C#/ASP.NET Core, packaged in Docker | Matches meshmaster and existing hosting; Docker for easy deploy anywhere. |
 | 2026-10-28 | Everything in English; the UI is translatable, Danish first | Open source project; the staff screens must be in Danish. |

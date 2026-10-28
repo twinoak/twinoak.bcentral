@@ -29,15 +29,16 @@ in a total failure BCentral is replaced by people on bicycles carrying notes.
 ## Decisions so far
 
 - Licence: MIT
-- App: TypeScript PWA, offline-first, Chromium browsers on laptops
+- App: Vite + Svelte 5 + TypeScript PWA, offline-first, Chromium browsers on laptops
 - Hub: C#/ASP.NET Core, packaged in Docker
 - Language: English throughout; the UI is translatable, Danish first
 - Full log in [docs/decisions.md](docs/decisions.md)
 
 ## Status
 
-Brainstorm done, contract being drafted, no app or hub code yet.
-Start with [docs/brainstorm-2026-10-28.md](docs/brainstorm-2026-10-28.md), then [contract/](contract/).
+Brainstorm and contract done, phase 0 tasks written, no app or hub code yet.
+Start with [docs/brainstorm-2026-10-28.md](docs/brainstorm-2026-10-28.md), then [contract/](contract/),
+then [spec/ROADMAP.md](spec/ROADMAP.md) and [tasks/](tasks/).
 
 ## Layout
 
@@ -48,3 +49,5 @@ Start with [docs/brainstorm-2026-10-28.md](docs/brainstorm-2026-10-28.md), then 
 | `contract/` | the data format and protocols both sides build against |
 | `docs/` | brainstorms, spec, decisions |
 | `deploy/` | how to run a hub |
+| `spec/` | roadmap and phase plans |
+| `tasks/` | task files per phase, runbook, reports |

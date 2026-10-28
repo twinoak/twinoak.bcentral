@@ -1,0 +1,199 @@
+{
+  "format": "bcentral-journal",
+  "version": 1,
+  "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+  "exportedAt": "2026-10-28T19:30:00Z",
+  "incidents": [
+    {
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "name": "Strømsvigt 28. oktober",
+      "createdAt": "2026-10-28T18:00:00Z",
+      "clockTrust": "manual",
+      "createdOnDevice": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "createdBy": "Thomas"
+    }
+  ],
+  "register": [
+    {
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W50",
+      "publicKey": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+      "label": "Hans",
+      "person": "Hans Jensen",
+      "street": "Nørregade",
+      "role": "vejkontakt",
+      "origin": "adhoc",
+      "notes": "radio #7, handed out 18:05",
+      "createdAt": "2026-10-28T18:00:00Z",
+      "createdOnDevice": "01JB8ZK3QX9V2M4N6P8R0T2W4Y"
+    }
+  ],
+  "entries": [
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:00:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W51",
+      "deviceSeq": 1,
+      "type": "message_out",
+      "transport": "mesh",
+      "counterpartyId": "01JB8ZK3QX9V2M4N6P8R0T2W50",
+      "seqNo": 1,
+      "text": "#1 Meld status for Nørregade"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:00:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W52",
+      "deviceSeq": 2,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W51",
+      "newStatus": "pending"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:00:02Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W53",
+      "deviceSeq": 3,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W51",
+      "newStatus": "sent"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:00:09Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W54",
+      "deviceSeq": 4,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W51",
+      "newStatus": "delivered"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:03:40Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W55",
+      "deviceSeq": 5,
+      "type": "message_in",
+      "transport": "mesh",
+      "counterpartyId": "01JB8ZK3QX9V2M4N6P8R0T2W50",
+      "text": "R1",
+      "dedupeKey": "b7ea55d1c76452f13b5c37b9c97678d5408d8180066452f7ac2937bb0caa5249"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:03:40Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W56",
+      "deviceSeq": 6,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W51",
+      "newStatus": "roger",
+      "text": "01JB8ZK3QX9V2M4N6P8R0T2W55"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:05:12Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W57",
+      "deviceSeq": 7,
+      "type": "message_in",
+      "transport": "mesh",
+      "counterpartyId": "01JB8ZK3QX9V2M4N6P8R0T2W50",
+      "text": "vedr. #1 alle ok, kælder i nr 4 har vand",
+      "dedupeKey": "18d73efd29124c872895031fd9c2d8c286a29e476c6b7b52e32f35c384e87064"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:06:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W58",
+      "deviceSeq": 8,
+      "type": "note",
+      "text": "Ringede til forsyningen, kø, ingen svar"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:10:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W59",
+      "deviceSeq": 9,
+      "type": "message_out",
+      "transport": "courier",
+      "counterpartyId": "01JB8ZK3QX9V2M4N6P8R0T2W50",
+      "seqNo": 2,
+      "text": "#2 Pumpe på vej til nr 4 med Peter på cykel"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:10:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W60",
+      "deviceSeq": 10,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W59",
+      "newStatus": "sent",
+      "text": "Peter cyklede 19:10"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:40:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W61",
+      "deviceSeq": 11,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W59",
+      "newStatus": "delivered",
+      "text": "Peter tilbage 19:40, afleveret"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T19:41:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W62",
+      "deviceSeq": 12,
+      "type": "correction",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W58",
+      "text": "Det var kommunens vagt, ikke forsyningen"
+    },
+    {
+      "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      "timestamp": "2026-10-28T21:00:00Z",
+      "clockTrust": "manual",
+      "operator": "Thomas",
+      "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "id": "01JB8ZK3QX9V2M4N6P8R0T2W63",
+      "deviceSeq": 13,
+      "type": "status_change",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
+      "newStatus": "closed",
+      "text": "Strømmen tilbage 20:52"
+    }
+  ]
+}
