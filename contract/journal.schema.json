@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/twinoak/twinoak.bcentral/contract/journal.schema.json",
+  "title": "BCentral journal",
+  "description": "Draft of 2026-10-28. The data the app stores, exports and syncs to a hub. Entries are append-only and immutable; status is derived from status_change entries, never stored on the thing it describes. Every id is a ULID minted at creation, so objects can be created offline on any device and merged by union.",
+  "type": "object",
+  "properties": {
+    "format": { "const": "bcentral-journal" },
+    "version": { "const": 1 },
+    "deviceId": { "$ref": "#/$defs/ulid", "description": "The device this file or batch came from" },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "incidents": { "type": "array", "items": { "$ref": "#/$defs/incident" } },
+    "register": { "type": "array", "items": { "$ref": "#/$defs/registerEntry" } },
+    "entries": { "type": "array", "items": { "$ref": "#/$defs/journalEntry" } }
+  },
+  "required": ["format", "version", "deviceId", "exportedAt", "incidents", "register", "entries"],
+  "additionalProperties": false,
+
+  "$defs": {
+    "ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Crockford base32 ULID, 26 characters, time-ordered"
+    },
+    "publicKey": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "MeshCore node public key, 32 bytes as lowercase hex"
+    },
+    "clockTrust": {
+      "type": "string",
+      "enum": ["ntp", "manual", "unknown"],
+      "description": "How much the device's clock could be trusted when the timestamp was taken: synced over the network, set by hand by an operator, or neither"
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["mesh", "phone", "courier", "verbal"]
+    },
+
+    "incident": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/ulid" },
+        "name": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "clockTrust": { "$ref": "#/$defs/clockTrust" },
+        "createdOnDevice": { "$ref": "#/$defs/ulid" },
+        "createdBy": { "type": "string", "description": "Operator name as typed" },
+        "drill": { "type": "boolean", "description": "Proposed, not decided: true for an exercise (øvelse)" }
+      },
+      "required": ["id", "name", "createdAt", "clockTrust", "createdOnDevice", "createdBy"],
+      "additionalProperties": false
+    },
+
+    "registerEntry": {
+      "type": "object",
+      "description": "One radio, bound to a person, a street and a role. Binding is done by hand; nothing here is inferred.",
+      "properties": {
+        "id": { "$ref": "#/$defs/ulid" },
+        "publicKey": { "$ref": "#/$defs/publicKey" },
+        "label": { "type": "string", "minLength": 1, "description": "What the staff call it: a person's name, or 'radio #7' until handed out" },
+        "person": { "type": "string" },
+        "street": { "type": "string" },
+        "role": { "type": "string" },
+        "origin": {
+          "type": "string",
+          "enum": ["issued", "adhoc", "private"],
+          "description": "issued = handed out per street by the association; adhoc = from the stack kept at the staff; private = bought by the person"
+        },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdOnDevice": { "$ref": "#/$defs/ulid" }
+      },
+      "required": ["id", "publicKey", "label", "origin", "createdAt", "createdOnDevice"],
+      "additionalProperties": false
+    },
+
+    "journalEntry": {
+      "type": "object",
+      "description": "Common envelope. The type decides which payload fields apply; the oneOf below enforces it.",
+      "properties": {
+        "id": { "$ref": "#/$defs/ulid" },
+        "incidentId": { "$ref": "#/$defs/ulid" },
+        "deviceId": { "$ref": "#/$defs/ulid" },
+        "deviceSeq": { "type": "integer", "minimum": 1, "description": "Per-device running number, gap-free. Lets a reader see whether anything is missing from one device's run." },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "clockTrust": { "$ref": "#/$defs/clockTrust" },
+        "operator": { "type": "string", "minLength": 1, "description": "Who at the staff recorded this" },
+        "type": {
+          "type": "string",
+          "enum": ["message_out", "message_in", "note", "status_change", "correction"]
+        },
+        "transport": { "$ref": "#/$defs/transport" },
+        "counterpartyId": { "$ref": "#/$defs/ulid", "description": "Register entry of the other end" },
+        "seqNo": { "type": "integer", "minimum": 1, "description": "The #n of an outgoing message, per recipient per device; see text-protocol.md" },
+        "text": { "type": "string" },
+        "refersTo": { "$ref": "#/$defs/ulid", "description": "Another entry (reply, status change, correction) or an incident (status change)" },
+        "newStatus": {
+          "type": "string",
+          "enum": ["pending", "sent", "delivered", "roger", "given_up", "closed", "reopened"]
+        },
+        "packetHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the raw received packet. Several devices on one mesh hear the same packet; the hub dedupes on this."
+        }
+      },
+      "required": ["id", "incidentId", "deviceId", "deviceSeq", "timestamp", "clockTrust", "operator", "type"],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "description": "message_out: staff → field. Numbered per text-protocol.md. Its status lives in status_change entries that refer to it.",
+          "properties": { "type": { "const": "message_out" } },
+          "required": ["transport", "counterpartyId", "seqNo", "text"],
+          "not": { "anyOf": [ { "required": ["newStatus"] }, { "required": ["packetHash"] } ] }
+        },
+        {
+          "description": "message_in: field → staff, stored as received. refersTo is set only by the operator by hand. packetHash is required for transport=mesh.",
+          "properties": { "type": { "const": "message_in" } },
+          "required": ["transport", "counterpartyId", "text"],
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] } ] },
+          "if": { "properties": { "transport": { "const": "mesh" } } },
+          "then": { "required": ["packetHash"] }
+        },
+        {
+          "description": "note: anything the operator writes into the journal that is not a message — a phone call made, a decision, an observation.",
+          "properties": { "type": { "const": "note" } },
+          "required": ["text"],
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["packetHash"] } ] }
+        },
+        {
+          "description": "status_change: the only way status ever changes. refersTo is a message_out (pending/sent/delivered/roger/given_up) or an incident (closed/reopened). A roger recorded from an incoming message also carries the incoming entry's id in text, or the operator's reason for a manual change.",
+          "properties": { "type": { "const": "status_change" } },
+          "required": ["refersTo", "newStatus"],
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["counterpartyId"] }, { "required": ["packetHash"] } ] }
+        },
+        {
+          "description": "correction: the entry refersTo was wrong; text says what is right. The original is never edited or removed.",
+          "properties": { "type": { "const": "correction" } },
+          "required": ["refersTo", "text"],
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["packetHash"] } ] }
+        }
+      ]
+    }
+  }
+}

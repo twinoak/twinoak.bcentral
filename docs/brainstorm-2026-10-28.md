@@ -233,8 +233,8 @@ meshguide/automagical, and BCentral needs exactly the same thing. Extracted as a
 there is one copy instead of two drifting apart, and others in the MeshCore community can use
 it. Two consumers = own repo.
 
-**Hub language:** leaning C#/ASP.NET Core — matches meshmaster and the existing hosting, and
-`contract/` is the language-neutral link. Node/TypeScript would let app and hub share types
+**Hub language:** decided 28 Oct 2026 — C#/ASP.NET Core, packaged in Docker. Matches meshmaster
+and the existing hosting, and `contract/` is the language-neutral link. Node/TypeScript would let app and hub share types
 directly but means two stacks to host. Contract-first fits "nothing fuzzy": the schema is the
 law, both sides validate against it.
 
@@ -257,9 +257,9 @@ for BCentral" page, which probably belongs in meshguide, not here.
 
 ## 11. Still open
 
-- Licence.
-- Hub language, final.
-- UI language: Danish for the staff screens; English for code and docs? (assumed here)
+Decided the same evening (see `decisions.md`): MIT licence, C# hub in Docker, English
+throughout with a translatable UI (Danish first), no radio spike needed.
+
 - Drill mode (*øvelse*) — in or out?
 - Multi-tenant hub or one hub per association?
 - Does the "offline kit" single-file build actually work on `file://`?
