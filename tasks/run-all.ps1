@@ -40,14 +40,14 @@ $(Get-Content $runbook -Raw)
 $(Get-Content $task.FullName -Raw)
 "@
 
-  $args = @("-p", $prompt, "--permission-mode", "acceptEdits")
-  if ($Model) { $args += @("--model", $Model) }
+  $claudeArgs = @("-p", $prompt, "--permission-mode", "acceptEdits")
+  if ($Model) { $claudeArgs += @("--model", $Model) }
 
   Push-Location $repo
   try {
-    & claude @args
+    & claude @claudeArgs
     if ($LASTEXITCODE -ne 0) { throw "Task $id exited with $LASTEXITCODE; stopping." }
     if (-not (Test-Path $report)) { throw "Task $id finished without a report; stopping." }
   } finally { Pop-Location }
 }
-Write-Host "Phase $Phase: all tasks ran."
+Write-Host "Phase ${Phase}: all tasks ran."
