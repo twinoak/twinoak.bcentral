@@ -280,5 +280,17 @@
   "queue.item.earliest": "om {time}",
   "queue.error.stopped": "Køen er stoppet.",
   "queue.error.noRecipients": "Ingen modtagere valgt.",
-  "queue.error.notInQueue": "Beskeden er ikke i denne sessions kø."
+  "queue.error.notInQueue": "Beskeden er ikke i denne sessions kø.",
+  "topbar.about": "BCentral {version}",
+  "settings.about": "Om",
+  "settings.installedVersion": "Installeret version",
+  "settings.builtAt": "Bygget",
+  "settings.lastChecked": "Sidst søgt efter opdateringer",
+  "settings.lastCheckedNever": "Ikke endnu i denne session.",
+  "settings.checkNow": "Søg nu",
+  "settings.checking": "Søger…",
+  "settings.checkFailed": "Søgningen mislykkedes: {error}. Formentlig intet internet; appen virker videre som den er.",
+  "settings.updatesUnavailable": "Der søges kun efter opdateringer i den installerede app, åbnet fra dens adresse.",
+  "update.available": "En ny version er klar. Den installeres, når du genindlæser; indtil da ændres intet.",
+  "update.reload": "Genindlæs"
 }

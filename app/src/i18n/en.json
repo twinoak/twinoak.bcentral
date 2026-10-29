@@ -280,5 +280,17 @@
   "queue.item.earliest": "in {time}",
   "queue.error.stopped": "The queue has been stopped.",
   "queue.error.noRecipients": "No recipients chosen.",
-  "queue.error.notInQueue": "The message is not in this session's queue."
+  "queue.error.notInQueue": "The message is not in this session's queue.",
+  "topbar.about": "BCentral {version}",
+  "settings.about": "About",
+  "settings.installedVersion": "Installed version",
+  "settings.builtAt": "Built",
+  "settings.lastChecked": "Last checked for updates",
+  "settings.lastCheckedNever": "Not yet in this session.",
+  "settings.checkNow": "Check now",
+  "settings.checking": "Checking…",
+  "settings.checkFailed": "The check failed: {error}. Probably no internet; the app keeps working as it is.",
+  "settings.updatesUnavailable": "Updates are checked only in the installed app, opened from its address.",
+  "update.available": "A new version is available. It is installed when you reload; nothing changes until then.",
+  "update.reload": "Reload"
 }

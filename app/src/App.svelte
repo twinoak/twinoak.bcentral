@@ -1,5 +1,6 @@
 <script lang="ts">
   import TopBar from "./components/TopBar.svelte";
+  import UpdateBanner from "./components/UpdateBanner.svelte";
   import HomePage from "./pages/HomePage.svelte";
   import JournalPage from "./pages/JournalPage.svelte";
   import QueuePage from "./pages/QueuePage.svelte";
@@ -19,6 +20,9 @@
 </script>
 
 <TopBar />
+
+<!-- Shown only when a new build is waiting; the reload is the operator's click. -->
+<UpdateBanner />
 
 <!-- The journal and queue screens have side panels and need the width; the others are forms. -->
 <main class:wide={shown === "journal" || shown === "queue"}>
