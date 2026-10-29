@@ -10,6 +10,7 @@ import {
   byteLength,
   composeMessage,
   composeText,
+  manualStatusesFor,
   previewText,
   recordManualStatus,
   seqNoPrefix,
@@ -211,41 +212,82 @@ describe("status changes", () => {
     expect(sent.operator).toBe("Anne");
     expect(await store.statusOf(message.id)).toBe("sent");
 
-    const delivered = await recordManualStatus(store, message, "delivered", { operator: "Anne", text: "  " });
-    expect(delivered.text).toBeUndefined();
+    const delivered = await recordManualStatus(store, message, "delivered", {
+      operator: "Anne",
+      text: "  Peter tilbage 19:40  ",
+    });
+    expect(delivered.text).toBe("Peter tilbage 19:40");
     expect(await store.statusOf(message.id)).toBe("delivered");
 
-    await recordManualStatus(store, message, "roger", { operator: "Anne" });
+    await recordManualStatus(store, message, "roger", { operator: "Anne", text: "sagde ok i telefonen" });
     expect(await store.statusOf(message.id)).toBe("roger");
+    store.close();
+  });
+
+  it("a manual status change needs a reason (P0-07)", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x", HANS, "courier");
+    await expect(recordManualStatus(store, message, "sent", { operator: "Anne", text: "" })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    await expect(recordManualStatus(store, message, "sent", { operator: "Anne", text: " \n " })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    expect(await store.statusOf(message.id)).toBe("pending");
+    expect(await store.lastDeviceSeq()).toBe(1);
     store.close();
   });
 
   it("roger is final for a manual status too", async () => {
     const store = await openTestStore();
     const { message } = await compose(store, "x", HANS, "phone");
-    await recordManualStatus(store, message, "roger", { operator: "Anne" });
-    await expect(recordManualStatus(store, message, "given_up", { operator: "Anne" })).rejects.toBeInstanceOf(
-      ManualStatusError,
-    );
+    await recordManualStatus(store, message, "roger", { operator: "Anne", text: "ok" });
+    await expect(
+      recordManualStatus(store, message, "given_up", { operator: "Anne", text: "ok" }),
+    ).rejects.toBeInstanceOf(ManualStatusError);
     expect(await store.statusOf(message.id)).toBe("roger");
     store.close();
   });
 
-  it("refuses a manual status on a mesh message, on a non-message, and a status that is not manual", async () => {
+  it("on a mesh message the operator may give up or record a roger, but sent and delivered are the radio's", async () => {
     const store = await openTestStore();
-    const mesh = await compose(store, "x");
-    await expect(recordManualStatus(store, mesh.message, "sent", { operator: "Anne" })).rejects.toBeInstanceOf(
-      ManualStatusError,
-    );
+    expect(manualStatusesFor("mesh")).toEqual(["roger", "given_up"]);
+    expect(manualStatusesFor("courier")).toEqual(["sent", "delivered", "roger", "given_up"]);
+
+    const stuck = await compose(store, "x");
+    await appendStatusChange(store, stuck.message, "sent");
+    await expect(
+      recordManualStatus(store, stuck.message, "delivered", { operator: "Anne", text: "r" }),
+    ).rejects.toBeInstanceOf(ManualStatusError);
+    await expect(
+      recordManualStatus(store, stuck.message, "sent", { operator: "Anne", text: "r" }),
+    ).rejects.toBeInstanceOf(ManualStatusError);
+    const givenUp = await recordManualStatus(store, stuck.message, "given_up", {
+      operator: "Anne",
+      text: "browser reloaded mid-send, no receipt",
+    });
+    expect(givenUp.newStatus).toBe("given_up");
+    expect(givenUp.text).toBe("browser reloaded mid-send, no receipt");
+    expect(await store.statusOf(stuck.message.id)).toBe("given_up");
+
+    const byPhone = await compose(store, "y");
+    await appendStatusChange(store, byPhone.message, "sent");
+    await recordManualStatus(store, byPhone.message, "roger", { operator: "Anne", text: "Hans rang: modtaget" });
+    expect(await store.statusOf(byPhone.message.id)).toBe("roger");
+    store.close();
+  });
+
+  it("refuses a manual status on a non-message and a status that is not manual", async () => {
+    const store = await openTestStore();
     const courier = await compose(store, "y", HANS, "courier");
-    await expect(recordManualStatus(store, courier.message, "pending", { operator: "Anne" })).rejects.toBeInstanceOf(
-      ManualStatusError,
-    );
-    await expect(recordManualStatus(store, courier.message, "closed", { operator: "Anne" })).rejects.toBeInstanceOf(
-      ManualStatusError,
-    );
+    await expect(
+      recordManualStatus(store, courier.message, "pending", { operator: "Anne", text: "r" }),
+    ).rejects.toBeInstanceOf(ManualStatusError);
+    await expect(
+      recordManualStatus(store, courier.message, "closed", { operator: "Anne", text: "r" }),
+    ).rejects.toBeInstanceOf(ManualStatusError);
     const note = await store.appendEntry({ incidentId: INCIDENT, operator: "Anne", type: "note", text: "n" });
-    await expect(recordManualStatus(store, note, "sent", { operator: "Anne" })).rejects.toBeInstanceOf(
+    await expect(recordManualStatus(store, note, "sent", { operator: "Anne", text: "r" })).rejects.toBeInstanceOf(
       ManualStatusError,
     );
     expect(await store.statusOf(courier.message.id)).toBe("pending");

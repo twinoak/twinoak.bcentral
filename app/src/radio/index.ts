@@ -32,8 +32,6 @@ if (typeof window !== "undefined") {
   setInterval(() => radio.refreshNow(), 1000);
 }
 
-export const contactSourceIsPlaceholder = false;
-
 export const contactSource: ContactSource = new CompanionContactSource(radio);
 
 export const outbox = createOutbox({
