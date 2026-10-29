@@ -7,6 +7,8 @@ import {
   MAX_MESSAGE_BYTES,
   ManualStatusError,
   MessageTooLongError,
+  REPLY_SNIPPET_LENGTH,
+  ReplyTargetError,
   appendStatusChange,
   batchPreview,
   byteLength,
@@ -16,6 +18,7 @@ import {
   manualStatusesFor,
   previewText,
   recordManualStatus,
+  replySnippet,
   seqNoPrefix,
 } from "./outgoing.ts";
 import { ValidationError } from "./schema.ts";
@@ -280,6 +283,103 @@ describe("composeMessage", () => {
     expect(await store.lastSeqNo(HANS)).toBe(0);
     expect(await store.allEntries()).toEqual([]);
     store.close();
+  });
+});
+
+describe("reply from the row (P1-02)", () => {
+  const DEDUPE = "18d73efd29124c872895031fd9c2d8c286a29e476c6b7b52e32f35c384e87064";
+
+  async function incoming(store: JournalStore, text: string, transport: "mesh" | "courier" = "mesh") {
+    return await store.appendEntry({
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      type: "message_in",
+      transport,
+      counterpartyId: HANS,
+      text,
+      dedupeKey: transport === "mesh" ? DEDUPE : undefined,
+    });
+  }
+
+  it("a reply is a message_out with refersTo = the incoming entry's id and the recipient's next #n", async () => {
+    const store = await openTestStore();
+    await compose(store, "Meld status for Nørregade");
+    const question = await incoming(store, "vedr. #1 alle ok, kælder i nr 4 har vand");
+    const { message } = await composeMessage(store, {
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      counterpartyId: HANS,
+      transport: "mesh",
+      body: "Pumpe på vej",
+      refersTo: question.id,
+    });
+    expect(message.type).toBe("message_out");
+    expect(message.refersTo).toBe(question.id);
+    expect(message.seqNo).toBe(2);
+    expect(message.text).toBe("#2 Pumpe på vej");
+    expect(message.counterpartyId).toBe(HANS);
+    expect(await store.statusOf(message.id)).toBe("pending");
+    // The link is on the reply only; the incoming entry is untouched (entries are immutable).
+    expect(await store.getEntry(question.id)).toEqual(question);
+    expect(await store.entriesReferringTo(question.id)).toEqual([message]);
+    store.close();
+  });
+
+  it("a courier note is answered by courier when the form says so; the transport is the caller's", async () => {
+    const store = await openTestStore();
+    const note = await incoming(store, "Kælderen er tør nu", "courier");
+    const { message } = await composeMessage(store, {
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      counterpartyId: HANS,
+      transport: "courier",
+      body: "Tak, kom tilbage til staben",
+      refersTo: note.id,
+    });
+    expect(message.transport).toBe("courier");
+    expect(message.refersTo).toBe(note.id);
+    store.close();
+  });
+
+  it("without refersTo the message carries none (the ✕ dropped the link)", async () => {
+    const store = await openTestStore();
+    await incoming(store, "hej");
+    const { message } = await compose(store, "svar uden kobling");
+    expect(message.refersTo).toBeUndefined();
+    expect("refersTo" in message).toBe(false);
+    store.close();
+  });
+
+  it("refuses a reply to an entry that is not a stored message_in, and reserves nothing", async () => {
+    const store = await openTestStore();
+    const { message: order } = await compose(store, "x");
+    for (const refersTo of ["01JB8ZK3QX9V2M4N6P8R0T2X00", order.id]) {
+      await expect(
+        composeMessage(store, {
+          incidentId: INCIDENT,
+          operator: "Thomas",
+          counterpartyId: HANS,
+          transport: "mesh",
+          body: "y",
+          refersTo,
+        }),
+      ).rejects.toBeInstanceOf(ReplyTargetError);
+    }
+    expect(await store.lastSeqNo(HANS)).toBe(1);
+    expect(await store.allEntries()).toEqual([order]);
+    store.close();
+  });
+
+  it("the snippet is the first 60 characters with an ellipsis when cut, counted in characters", () => {
+    expect(REPLY_SNIPPET_LENGTH).toBe(60);
+    expect(replySnippet("vedr. #1 alle ok")).toBe("vedr. #1 alle ok");
+    expect(replySnippet("x".repeat(60))).toBe("x".repeat(60));
+    expect(replySnippet("x".repeat(61))).toBe(`${"x".repeat(60)}…`);
+    // Danish letters and an emoji are one character each, never split.
+    expect(replySnippet("æ".repeat(70))).toBe(`${"æ".repeat(60)}…`);
+    expect(replySnippet("😀".repeat(61))).toBe(`${"😀".repeat(60)}…`);
+    expect(replySnippet("abcdef", 3)).toBe("abc…");
+    expect(replySnippet("")).toBe("");
   });
 });
 

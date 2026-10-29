@@ -44,6 +44,14 @@ describe("contract schema validators", () => {
     expect(validateJournalEntry({ ...byType("correction"), batchId })).toBe(false);
   });
 
+  it("allow refersTo on a message_out (a reply, P1-02) as the schema already did", () => {
+    const walkthrough = loadWalkthrough();
+    const out = walkthrough.entries.find((e) => e.type === "message_out");
+    const incomingId = walkthrough.entries.find((e) => e.type === "message_in")?.id;
+    expect(validateJournalEntry({ ...out, refersTo: incomingId })).toBe(true);
+    expect(validateJournalEntry({ ...out, refersTo: "not-a-ulid" })).toBe(false);
+  });
+
   it("check the date-time format", () => {
     const [entry] = loadWalkthrough().entries;
     expect(validateJournalEntry({ ...entry, timestamp: "2026-10-28 19:00" })).toBe(false);

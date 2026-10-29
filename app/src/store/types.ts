@@ -79,6 +79,8 @@ export interface NewMessageOut {
   counterpartyId: string;
   // The batch this message belongs to (send-to-all); omitted for a single send.
   batchId?: string;
+  // The message_in this message answers (a reply from the row, P1-02); omitted otherwise.
+  refersTo?: string;
 }
 
 export type NewIncident = Omit<Incident, "id" | "createdAt" | "clockTrust" | "createdOnDevice">;
