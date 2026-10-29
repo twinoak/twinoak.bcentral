@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { openTestStore, uniqueDatabaseName } from "../test-support/testStore.ts";
 import { MAX_TEXT_LEN } from "../radio/serial.ts";
 import {
+  BatchComposeError,
   EmptyMessageError,
   MAX_MESSAGE_BYTES,
   ManualStatusError,
   MessageTooLongError,
   appendStatusChange,
+  batchPreview,
   byteLength,
+  composeBatch,
   composeMessage,
   composeText,
   manualStatusesFor,
@@ -83,6 +86,82 @@ describe("the #n prefix and the byte limit", () => {
     expect(previewText(0, bodyOfBytes(1, 160)).tooLong).toBe(false);
     expect(previewText(0, bodyOfBytes(1, 161)).tooLong).toBe(true);
     expect(previewText(0, bodyOfBytes(1, 161)).bytes).toBe(161);
+  });
+
+  it("a batch previews with the longest prefix among the chosen recipients (P0-08)", () => {
+    expect(batchPreview([0, 11, 3], "hej")).toEqual(previewText(11, "hej"));
+    expect(batchPreview([], "hej")).toEqual(previewText(0, "hej"));
+    // Fits every recipient at #9 or below, not one at #10.
+    const body = bodyOfBytes(9, 160);
+    expect(batchPreview([2, 8], body).tooLong).toBe(false);
+    expect(batchPreview([2, 9], body).tooLong).toBe(true);
+  });
+});
+
+describe("composeBatch (send to all, P0-08)", () => {
+  const ANNE = "01JB8ZK3QX9V2M4N6P8R0T2W90";
+
+  it("stores one mesh message_out per recipient with that recipient's own next #n, all pending", async () => {
+    const store = await openTestStore();
+    await compose(store, "earlier", HANS);
+    await compose(store, "earlier", HANS);
+    const batch = await composeBatch(store, {
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      counterpartyIds: [HANS, PETER, ANNE],
+      body: " Meld status ",
+    });
+    expect(batch.map((c) => [c.message.counterpartyId, c.message.seqNo, c.message.text])).toEqual([
+      [HANS, 3, "#3 Meld status"],
+      [PETER, 1, "#1 Meld status"],
+      [ANNE, 1, "#1 Meld status"],
+    ]);
+    for (const { message, pending } of batch) {
+      expect(message.transport).toBe("mesh");
+      expect(pending?.newStatus).toBe("pending");
+      expect(await store.statusOf(message.id)).toBe("pending");
+    }
+    const all = await store.allEntries();
+    expect(all.filter((e) => e.type === "message_out")).toHaveLength(5);
+    store.close();
+  });
+
+  it("refuses a repeated or empty recipient list before writing anything", async () => {
+    const store = await openTestStore();
+    await expect(
+      composeBatch(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyIds: [HANS, HANS], body: "x" }),
+    ).rejects.toBeInstanceOf(RangeError);
+    await expect(
+      composeBatch(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyIds: [], body: "x" }),
+    ).rejects.toBeInstanceOf(RangeError);
+    expect(await store.allEntries()).toEqual([]);
+    store.close();
+  });
+
+  it("a failure in the middle keeps what was stored and says where it stopped", async () => {
+    const store = await openTestStore();
+    for (let i = 0; i < 9; i++) {
+      await compose(store, "x", PETER);
+    }
+    // Fits "#1 " (Hans) and "#9 " but not Peter's "#10 ".
+    const body = bodyOfBytes(9, 160);
+    let failure: unknown;
+    try {
+      await composeBatch(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyIds: [HANS, PETER, ANNE], body });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(BatchComposeError);
+    const batchError = failure as BatchComposeError;
+    expect(batchError.counterpartyId).toBe(PETER);
+    expect(batchError.cause).toBeInstanceOf(MessageTooLongError);
+    expect(batchError.stored.map((c) => c.message.counterpartyId)).toEqual([HANS]);
+    expect(await store.statusOf(batchError.stored[0]?.message.id ?? "")).toBe("pending");
+    // Nothing for Anne, and Peter's counter did not move.
+    const outs = (await store.allEntries()).filter((e) => e.type === "message_out");
+    expect(outs.filter((e) => e.counterpartyId === ANNE)).toHaveLength(0);
+    expect(await store.lastSeqNo(PETER)).toBe(9);
+    store.close();
   });
 });
 

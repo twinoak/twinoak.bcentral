@@ -6,7 +6,7 @@
   // every entry the inbox or the outbox writes, and after every write from this screen.
   import { t, language } from "../i18n/index.svelte.ts";
   import { currentIncidentId, setCurrentIncidentId } from "../lib/currentIncident.svelte.ts";
-  import { inbox, outbox } from "../radio/index.ts";
+  import { inbox, outbox, sendQueue } from "../radio/index.ts";
   import {
     addCorrection,
     addIncident,
@@ -57,6 +57,9 @@
   const heardRows = $derived(sortedByLastHeard(register, heard));
   const active = $derived(outbox.active());
   const queued = $derived(outbox.queued());
+  // Messages the send-to-all queue holds (P0-08) are in flight too: no Send / Retry on them.
+  const waitingInQueue = $derived(sendQueue.waiting());
+  const handedToOutbox = $derived(sendQueue.sending());
 
   function describe(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
@@ -84,6 +87,7 @@
   $effect(() => {
     inbox.revision();
     outbox.revision();
+    sendQueue.revision();
     void ownRevision;
     void reload(incidentId);
   });
@@ -148,7 +152,7 @@
         max: active.maxAttempts,
       });
     }
-    if (queued.includes(messageId)) {
+    if (queued.includes(messageId) || waitingInQueue.includes(messageId) || handedToOutbox === messageId) {
       return t("send.inflight.queued");
     }
     return null;

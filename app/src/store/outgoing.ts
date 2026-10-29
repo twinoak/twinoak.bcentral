@@ -75,6 +75,20 @@ export function previewText(lastSeqNo: number, body: string): ComposePreview {
   return { seqNo, prefix, bytes, empty: trimmed === "", tooLong: bytes > MAX_MESSAGE_BYTES };
 }
 
+// The compose screen of "send to all" (P0-08): the byte counter has to hold for every chosen
+// recipient, so it is computed for the longest "#n " prefix among them, i.e. the highest
+// last #n. A text that fits the longest prefix fits all; composeText still refuses per
+// recipient at write time. No recipients chosen: the preview is as for a first message.
+export function batchPreview(lastSeqNos: readonly number[], body: string): ComposePreview {
+  let highest = 0;
+  for (const last of lastSeqNos) {
+    if (last > highest) {
+      highest = last;
+    }
+  }
+  return previewText(highest, body);
+}
+
 export interface ComposeInput {
   incidentId: string;
   operator: string;
@@ -110,6 +124,66 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
   }
   const pending = await appendStatusChange(store, message, "pending");
   return { message, pending };
+}
+
+export interface BatchComposeInput {
+  incidentId: string;
+  operator: string;
+  // In the order the messages are stored and, later, transmitted. No recipient twice.
+  counterpartyIds: readonly string[];
+  // The operator's text, without the prefix; the same for everyone.
+  body: string;
+}
+
+// composeBatch stopped at a recipient: `stored` is what was written before it, each a real
+// message_out that stays in the journal (entries are immutable); the caller still has to
+// send them. `counterpartyId` is the recipient that failed, `cause` why.
+export class BatchComposeError extends Error {
+  readonly stored: readonly Composed[];
+  readonly counterpartyId: string;
+  override readonly cause: unknown;
+  constructor(stored: readonly Composed[], counterpartyId: string, cause: unknown) {
+    super(
+      `batch stopped at recipient ${counterpartyId} after ${stored.length} message(s): ` +
+        (cause instanceof Error ? cause.message : String(cause)),
+    );
+    this.name = "BatchComposeError";
+    this.stored = stored;
+    this.counterpartyId = counterpartyId;
+    this.cause = cause;
+  }
+}
+
+// "Send to all" (text-protocol.md): not a message type, but one message_out per recipient,
+// each with that recipient's own next #n, each with its own status. All of them are written
+// before any is transmitted (the queue takes them from here), so the journal shows the
+// whole batch at once. Mesh only: a batch goes through the radio. A repeated recipient is
+// refused before anything is written; a failure in the middle throws BatchComposeError
+// carrying the messages already stored.
+export async function composeBatch(store: JournalStore, input: BatchComposeInput): Promise<Composed[]> {
+  if (new Set(input.counterpartyIds).size !== input.counterpartyIds.length) {
+    throw new RangeError("a recipient is chosen twice");
+  }
+  if (input.counterpartyIds.length === 0) {
+    throw new RangeError("no recipients chosen");
+  }
+  const stored: Composed[] = [];
+  for (const counterpartyId of input.counterpartyIds) {
+    try {
+      stored.push(
+        await composeMessage(store, {
+          incidentId: input.incidentId,
+          operator: input.operator,
+          counterpartyId,
+          transport: "mesh",
+          body: input.body,
+        }),
+      );
+    } catch (error) {
+      throw new BatchComposeError(stored, counterpartyId, error);
+    }
+  }
+  return stored;
 }
 
 // The one way a message's status moves: a status_change referring to it. `text` is the

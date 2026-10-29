@@ -47,6 +47,14 @@
 
   <a
     class="nav"
+    href={hashFor("queue")}
+    aria-current={route() === "queue" ? "page" : undefined}
+  >
+    {t("nav.queue")}
+  </a>
+
+  <a
+    class="nav"
     href={hashFor("register")}
     aria-current={route() === "register" ? "page" : undefined}
   >
