@@ -248,8 +248,9 @@
 
   .warning {
     padding: 0.5rem 0.75rem;
+    border: 2px solid var(--ink);
     border-radius: 4px;
-    background: #e0b64a;
+    background: var(--warn-bg);
     color: var(--ink);
   }
 
@@ -304,20 +305,15 @@
     text-align: left;
     vertical-align: top;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  thead th {
+    border-bottom-color: var(--line);
   }
 
   .label {
     font-weight: 600;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
-  }
-
-  .small {
-    padding: 0.25rem 0.6rem;
   }
 
   .log {
@@ -326,8 +322,8 @@
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--line);
     border-radius: 4px;
-    background: #fff;
-    font-size: 0.85rem;
+    background: var(--surface);
+    font-size: 0.9rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

@@ -24,9 +24,9 @@
     gap: 1rem;
     flex-wrap: wrap;
     padding: 0.4rem 1rem;
-    background: #f2b705;
+    background: var(--drill-bg);
     color: var(--ink);
-    border-bottom: 3px solid #b88600;
+    border-bottom: 3px solid var(--drill-line);
   }
 
   strong {

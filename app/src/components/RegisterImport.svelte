@@ -237,9 +237,9 @@
   .errors {
     margin: 0 0 1rem;
     padding: 0.75rem 1rem;
-    border: 1px solid var(--error);
+    border: 2px solid var(--error);
     border-radius: 4px;
-    background: #fff;
+    background: var(--surface);
   }
 
   .errors ul {
@@ -262,7 +262,7 @@
     text-align: left;
     vertical-align: top;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
   }
 
   .line {
@@ -302,10 +302,5 @@
     align-items: center;
     gap: 1rem;
     flex-wrap: wrap;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
   }
 </style>

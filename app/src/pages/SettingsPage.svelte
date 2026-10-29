@@ -1,12 +1,15 @@
 <script lang="ts">
   import { t, language } from "../i18n/index.svelte.ts";
   import {
+    FONT_SIZES,
     MAX_SEND_ATTEMPTS_LIMIT,
     SEND_GAP_SECONDS_LIMIT,
     settings,
     updateSettings,
+    type FontSize,
   } from "../lib/settings.svelte.ts";
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
+  import { openHelp } from "../lib/shortcutHelp.svelte.ts";
   import { builtAt, versionLabel } from "../lib/version.ts";
   import { updater } from "../lib/updates.svelte.ts";
   import { formatBytes, persistence } from "../lib/persistence.svelte.ts";
@@ -55,6 +58,16 @@
     }, 1000);
     return () => clearInterval(timer);
   });
+
+  // The screen settings (P1-09) apply at once, like the language: the operator sees the
+  // change as they make it, and App.svelte puts it on the page from the saved value.
+  function setFontSize(size: FontSize) {
+    updateSettings({ fontSize: size });
+  }
+
+  function setHighContrast(on: boolean) {
+    updateSettings({ highContrast: on });
+  }
 
   // Drafts: edited here, written to settings on save.
   let operatorName = $state(settings.operatorName);
@@ -217,6 +230,42 @@
     {/if}
   </div>
 </form>
+
+<!-- The screen (P1-09): text size, high contrast, the keyboard shortcuts. Applied at once
+     and kept; nothing here waits for Save. -->
+<section class="field appearance" aria-labelledby="appearance-heading">
+  <h2 id="appearance-heading">{t("settings.appearance")}</h2>
+  <fieldset class="sizes">
+    <legend>{t("settings.fontSize")}</legend>
+    <div class="options">
+      {#each FONT_SIZES as size (size)}
+        <label class="check" data-size={size}>
+          <input
+            type="radio"
+            name="font-size"
+            value={size}
+            checked={settings.fontSize === size}
+            onchange={() => setFontSize(size)}
+          />
+          {t(`settings.fontSize.${size}`)}
+        </label>
+      {/each}
+    </div>
+    <small>{t("settings.fontSizeHelp")}</small>
+  </fieldset>
+  <label class="check">
+    <input
+      type="checkbox"
+      checked={settings.highContrast}
+      onchange={(event) => setHighContrast(event.currentTarget.checked)}
+    />
+    {t("settings.highContrast")}
+  </label>
+  <small>{t("settings.highContrastHelp")}</small>
+  <div class="actions">
+    <button type="button" class="secondary" onclick={openHelp}>{t("settings.shortcuts")}</button>
+  </div>
+</section>
 
 <!-- The journal folder (P1-04): a copy of the journal outside the browser. The handle is kept
      in the journal database; the browser re-asks for the permission after a restart. -->
@@ -398,6 +447,7 @@
     color: var(--ok);
   }
 
+  .appearance,
   .folder,
   .clock,
   .about {
@@ -406,6 +456,7 @@
     border-top: 1px solid var(--line);
   }
 
+  .appearance h2,
   .folder h2,
   .clock h2,
   .about h2 {
@@ -413,18 +464,43 @@
     margin: 0;
   }
 
+  .sizes {
+    margin: 0;
+    padding: 0;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .sizes legend {
+    font-weight: 600;
+    padding: 0;
+  }
+
+  .options {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  /* The three sizes shown at their own size, so the choice can be seen before it is made. */
+  .options label[data-size="large"] {
+    font-size: 1.17em;
+  }
+
+  .options label[data-size="largest"] {
+    font-size: 1.33em;
+  }
+
   .folder-name {
     font-weight: 600;
   }
 
-  .folder .actions {
+  .folder .actions,
+  .appearance .actions {
     margin-top: 0.5rem;
     flex-wrap: wrap;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
   }
 
   .about dl {
@@ -446,6 +522,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    min-height: 2.5rem;
     font-weight: 600;
   }
 

@@ -60,7 +60,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
   }
 
   h2 {
@@ -103,7 +103,7 @@
   }
 
   .item.givenUp {
-    border-color: var(--error);
+    border: 2px solid var(--error);
   }
 
   .time {
@@ -119,25 +119,10 @@
     white-space: nowrap;
   }
 
+  /* The chip itself is app.css's; on the tinted item it sits on the surface colour. */
   .chip {
     padding: 0.05rem 0.4rem;
-    border-radius: 999px;
     font-size: 0.8rem;
-    font-weight: 600;
-    white-space: nowrap;
-    background: #fff;
-    color: var(--muted);
-  }
-
-  .chip[data-status="sent"] {
-    color: var(--navy);
-  }
-
-  .chip[data-status="delivered"] {
-    color: var(--ok);
-  }
-
-  .chip[data-status="given_up"] {
-    color: var(--error);
+    background: var(--surface);
   }
 </style>

@@ -60,7 +60,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
   }
 
   h2 {
@@ -80,7 +80,7 @@
 
   td {
     padding: 0.3rem 0.25rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
     vertical-align: top;
   }
 
@@ -95,8 +95,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* "never" is red and bold, and marked, so it tells apart without the colour. */
   tr.never .when {
     color: var(--error);
     font-weight: 600;
+  }
+
+  tr.never .when::before {
+    content: "! ";
   }
 </style>

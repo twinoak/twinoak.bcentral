@@ -234,7 +234,11 @@
     text-align: left;
     vertical-align: top;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  thead th {
+    border-bottom-color: var(--line);
   }
 
   .label {
@@ -256,22 +260,5 @@
 
   .pending p {
     margin: 0 0 0.75rem;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
-  }
-
-  .button {
-    display: inline-block;
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--navy);
-    border-radius: 4px;
-    text-decoration: none;
-  }
-
-  .small {
-    padding: 0.25rem 0.6rem;
   }
 </style>
