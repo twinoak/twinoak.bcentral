@@ -10,10 +10,19 @@ export interface Settings {
   deviceId: string;
   hubUrl: string;
   blindAfterMinutes: number;
+  // How many times a mesh message is transmitted before the app gives up (text-protocol.md:
+  // "default 3 attempts, configurable").
+  maxSendAttempts: number;
 }
 
 export const STORAGE_KEY = "bcentral.settings";
 export const DEFAULT_BLIND_AFTER_MINUTES = 15;
+export const DEFAULT_MAX_SEND_ATTEMPTS = 3;
+export const MAX_SEND_ATTEMPTS_LIMIT = 10;
+
+function positiveInteger(value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
+}
 
 // Same pattern as $defs/ulid in contract/journal.schema.json.
 export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -37,7 +46,6 @@ function parseStored(raw: string | null): Record<string, unknown> {
 function load(): Settings {
   const stored = parseStored(readStorage(STORAGE_KEY));
   const storedDeviceId = stored["deviceId"];
-  const storedMinutes = stored["blindAfterMinutes"];
   const settings: Settings = {
     operatorName: typeof stored["operatorName"] === "string" ? stored["operatorName"] : "",
     deviceId:
@@ -45,10 +53,12 @@ function load(): Settings {
         ? storedDeviceId
         : ulid(),
     hubUrl: typeof stored["hubUrl"] === "string" ? stored["hubUrl"] : "",
-    blindAfterMinutes:
-      typeof storedMinutes === "number" && Number.isInteger(storedMinutes) && storedMinutes >= 1
-        ? storedMinutes
-        : DEFAULT_BLIND_AFTER_MINUTES,
+    blindAfterMinutes: positiveInteger(stored["blindAfterMinutes"], DEFAULT_BLIND_AFTER_MINUTES),
+    maxSendAttempts: positiveInteger(
+      stored["maxSendAttempts"],
+      DEFAULT_MAX_SEND_ATTEMPTS,
+      MAX_SEND_ATTEMPTS_LIMIT,
+    ),
   };
   if (settings.deviceId !== storedDeviceId) {
     // First run (or a damaged record): persist the freshly minted id at once, so a reload
@@ -73,6 +83,9 @@ export function updateSettings(patch: Partial<Omit<Settings, "deviceId">>): void
   }
   if (patch.blindAfterMinutes !== undefined) {
     settings.blindAfterMinutes = patch.blindAfterMinutes;
+  }
+  if (patch.maxSendAttempts !== undefined) {
+    settings.maxSendAttempts = patch.maxSendAttempts;
   }
   persist(settings);
 }

@@ -2,7 +2,12 @@
   import { t } from "../i18n/index.svelte.ts";
   import { settings, hasOperatorName } from "../lib/settings.svelte.ts";
   import { route, hashFor } from "../lib/router.svelte.ts";
+  import { formatElapsed } from "../lib/elapsed.ts";
+  import { radio } from "../radio/index.ts";
   import LanguageSelect from "./LanguageSelect.svelte";
+
+  const radioState = $derived(radio.state());
+  const elapsed = $derived(radio.elapsedMs());
 </script>
 
 <header class="topbar">
@@ -16,13 +21,41 @@
     {/if}
   </span>
 
-  <!-- Placeholder until P0-04 brings the radio layer. -->
-  <span class="radio" title={t("topbar.radio")}>
+  <a
+    class="radio"
+    href={hashFor("radio")}
+    data-state={radioState}
+    title={t("topbar.radio")}
+    aria-current={route() === "radio" ? "page" : undefined}
+  >
     <span class="dot" aria-hidden="true"></span>
-    {t("radio.status.disconnected")}
-  </span>
+    <span role="status">
+      {t(`radio.status.${radioState}`)}{#if elapsed !== null && radioState !== "connecting"}
+        · {t("radio.heard", { elapsed: formatElapsed(elapsed) })}{/if}
+    </span>
+  </a>
 
   <LanguageSelect id="topbar-language" />
+
+  <a class="nav" href={hashFor("send")} aria-current={route() === "send" ? "page" : undefined}>
+    {t("nav.send")}
+  </a>
+
+  <a
+    class="nav"
+    href={hashFor("journal")}
+    aria-current={route() === "journal" ? "page" : undefined}
+  >
+    {t("nav.journal")}
+  </a>
+
+  <a
+    class="nav"
+    href={hashFor("register")}
+    aria-current={route() === "register" ? "page" : undefined}
+  >
+    {t("nav.register")}
+  </a>
 
   <a
     class="nav"
@@ -70,6 +103,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+    white-space: nowrap;
   }
 
   .dot {
@@ -77,5 +111,21 @@
     height: 0.6rem;
     border-radius: 50%;
     background: var(--line);
+  }
+
+  .radio[data-state="connecting"] .dot {
+    background: #e0b64a;
+  }
+
+  .radio[data-state="connected"] .dot {
+    background: #5fd38d;
+  }
+
+  .radio[data-state="blind"] .dot {
+    background: #ef7a6d;
+  }
+
+  .radio[data-state="blind"] {
+    font-weight: 700;
   }
 </style>

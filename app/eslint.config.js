@@ -39,6 +39,10 @@ export default [
     rules: {
       // SvelteKit-only rule; this app is plain Vite with hash links.
       "svelte/no-navigation-without-resolve": "off",
+      // Fires on every `new Set`/`new Date` in a .svelte.ts file, including non-reactive
+      // internals (listener registries, in-flight id sets, timestamps turned into strings).
+      // Reactive state here is declared with $state explicitly; the rule adds noise only.
+      "svelte/prefer-svelte-reactivity": "off",
       // tasks/CONVENTIONS.md: plain linear async/await, no promise plumbing.
       "no-restricted-syntax": [
         "error",

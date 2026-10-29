@@ -13,7 +13,9 @@ async function lint(code: string): Promise<string[]> {
   return results.flatMap((result) => result.messages.map((m) => `${m.ruleId}: ${m.message}`));
 }
 
-describe("ESLint conventions", () => {
+// The first ESLint call loads the whole config (svelte parser, typescript-eslint); on a
+// slow disk that alone can take tens of seconds. The later calls reuse the warm instance.
+describe("ESLint conventions", { timeout: 120_000 }, () => {
   it("fails on new Promise(", async () => {
     const messages = await lint(
       "export function wait(): Promise<void> {\n  return new Promise((resolve) => resolve());\n}\n",

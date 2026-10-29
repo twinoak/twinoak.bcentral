@@ -96,6 +96,24 @@ describe("settings", () => {
     expect(second.settings.blindAfterMinutes).toBe(15);
   });
 
+  it("defaults the send attempts to 3, keeps 1–10, and falls back otherwise", async () => {
+    const { settings, DEFAULT_MAX_SEND_ATTEMPTS, updateSettings } = await loadSettings();
+    expect(settings.maxSendAttempts).toBe(3);
+    expect(DEFAULT_MAX_SEND_ATTEMPTS).toBe(3);
+    updateSettings({ maxSendAttempts: 5 });
+    const reloaded = await loadSettings();
+    expect(reloaded.settings.maxSendAttempts).toBe(5);
+
+    for (const bad of [0, 11, 2.5, "3"]) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ deviceId: "01JB8ZK3QX9V2M4N6P8R0T2W4Y", maxSendAttempts: bad }),
+      );
+      const { settings: fresh } = await loadSettings();
+      expect(fresh.maxSendAttempts).toBe(3);
+    }
+  });
+
   it("replaces a stored device id that is not a ULID", async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ deviceId: "not-a-ulid" }));
     const { settings } = await loadSettings();

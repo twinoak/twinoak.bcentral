@@ -1,6 +1,10 @@
 <script lang="ts">
   import TopBar from "./components/TopBar.svelte";
   import HomePage from "./pages/HomePage.svelte";
+  import JournalPage from "./pages/JournalPage.svelte";
+  import RadioPage from "./pages/RadioPage.svelte";
+  import RegisterPage from "./pages/RegisterPage.svelte";
+  import SendPage from "./pages/SendPage.svelte";
   import SettingsPage from "./pages/SettingsPage.svelte";
   import { language } from "./i18n/index.svelte.ts";
   import { route } from "./lib/router.svelte.ts";
@@ -19,6 +23,14 @@
 <main>
   {#if shown === "settings"}
     <SettingsPage />
+  {:else if shown === "journal"}
+    <JournalPage />
+  {:else if shown === "register"}
+    <RegisterPage />
+  {:else if shown === "radio"}
+    <RadioPage />
+  {:else if shown === "send"}
+    <SendPage />
   {:else}
     <HomePage />
   {/if}

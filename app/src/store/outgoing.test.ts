@@ -1,0 +1,254 @@
+import { describe, expect, it } from "vitest";
+import { openTestStore, uniqueDatabaseName } from "../test-support/testStore.ts";
+import { MAX_TEXT_LEN } from "../radio/serial.ts";
+import {
+  EmptyMessageError,
+  MAX_MESSAGE_BYTES,
+  ManualStatusError,
+  MessageTooLongError,
+  appendStatusChange,
+  byteLength,
+  composeMessage,
+  composeText,
+  previewText,
+  recordManualStatus,
+  seqNoPrefix,
+} from "./outgoing.ts";
+import { ValidationError } from "./schema.ts";
+import type { JournalStore } from "./journalStore.ts";
+
+const INCIDENT = "01JB8ZK3QX9V2M4N6P8R0T2W4Z";
+const HANS = "01JB8ZK3QX9V2M4N6P8R0T2W50";
+const PETER = "01JB8ZK3QX9V2M4N6P8R0T2W70";
+
+function compose(store: JournalStore, body: string, counterpartyId = HANS, transport: "mesh" | "courier" | "phone" | "verbal" = "mesh") {
+  return composeMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId, transport, body });
+}
+
+// A body that makes "#<seqNo> <body>" exactly `total` bytes.
+function bodyOfBytes(seqNo: number, total: number): string {
+  return "x".repeat(total - seqNoPrefix(seqNo).length);
+}
+
+describe("the #n prefix and the byte limit", () => {
+  it("agrees with the radio layer on 160 bytes", () => {
+    expect(MAX_MESSAGE_BYTES).toBe(160);
+    expect(MAX_MESSAGE_BYTES).toBe(MAX_TEXT_LEN);
+  });
+
+  it("counts bytes of UTF-8, not characters", () => {
+    expect(byteLength("abc")).toBe(3);
+    expect(byteLength("æøå")).toBe(6);
+    expect(byteLength("#12 ")).toBe(4);
+    expect(byteLength("")).toBe(0);
+  });
+
+  it("builds the prefix as '#n ' with no leading zeros and one space", () => {
+    expect(seqNoPrefix(1)).toBe("#1 ");
+    expect(seqNoPrefix(12)).toBe("#12 ");
+    expect(seqNoPrefix(1000)).toBe("#1000 ");
+    expect(() => seqNoPrefix(0)).toThrow(RangeError);
+    expect(() => seqNoPrefix(1.5)).toThrow(RangeError);
+    expect(() => seqNoPrefix(-3)).toThrow(RangeError);
+  });
+
+  it("composes the text as transmitted, trimming the body", () => {
+    expect(composeText(1, "Meld status for Nørregade")).toBe("#1 Meld status for Nørregade");
+    expect(composeText(7, "  kør til nr 4 \n")).toBe("#7 kør til nr 4");
+  });
+
+  it("refuses an empty body", () => {
+    expect(() => composeText(1, "")).toThrow(EmptyMessageError);
+    expect(() => composeText(1, "   \n")).toThrow(EmptyMessageError);
+  });
+
+  it("sends exactly 160 bytes including the prefix and refuses 161", () => {
+    expect(byteLength(composeText(1, bodyOfBytes(1, 160)))).toBe(160);
+    expect(() => composeText(1, bodyOfBytes(1, 161))).toThrow(MessageTooLongError);
+    // Danish letters count double: 78 "æ" = 156 bytes + "#1 " = 159; 79 is 161.
+    expect(byteLength(composeText(1, "æ".repeat(78)))).toBe(159);
+    expect(() => composeText(1, "æ".repeat(79))).toThrow(MessageTooLongError);
+  });
+
+  it("the prefix's own bytes count: a longer n leaves less room", () => {
+    const body = bodyOfBytes(9, 160); // fits with "#9 "
+    expect(byteLength(composeText(9, body))).toBe(160);
+    expect(() => composeText(10, body)).toThrow(MessageTooLongError);
+  });
+
+  it("previews the predicted prefix, bytes and whether it may be sent", () => {
+    expect(previewText(0, "hej")).toEqual({ seqNo: 1, prefix: "#1 ", bytes: 6, empty: false, tooLong: false });
+    expect(previewText(11, "")).toEqual({ seqNo: 12, prefix: "#12 ", bytes: 4, empty: true, tooLong: false });
+    expect(previewText(0, bodyOfBytes(1, 160)).tooLong).toBe(false);
+    expect(previewText(0, bodyOfBytes(1, 161)).tooLong).toBe(true);
+    expect(previewText(0, bodyOfBytes(1, 161)).bytes).toBe(161);
+  });
+});
+
+describe("composeMessage", () => {
+  it("stores the message_out with #1 and a pending status_change for mesh", async () => {
+    const store = await openTestStore();
+    const { message, pending } = await compose(store, "Meld status for Nørregade");
+    expect(message.type).toBe("message_out");
+    expect(message.transport).toBe("mesh");
+    expect(message.counterpartyId).toBe(HANS);
+    expect(message.seqNo).toBe(1);
+    expect(message.text).toBe("#1 Meld status for Nørregade");
+    expect(pending?.type).toBe("status_change");
+    expect(pending?.refersTo).toBe(message.id);
+    expect(pending?.newStatus).toBe("pending");
+    expect(await store.statusOf(message.id)).toBe("pending");
+    expect(await store.lastSeqNo(HANS)).toBe(1);
+    expect(await store.allEntries()).toHaveLength(2);
+    store.close();
+  });
+
+  it("increments #n per recipient, independently", async () => {
+    const store = await openTestStore();
+    const a = await compose(store, "one");
+    const b = await compose(store, "two");
+    const p = await compose(store, "to Peter", PETER);
+    const c = await compose(store, "three");
+    expect([a.message.seqNo, b.message.seqNo, c.message.seqNo]).toEqual([1, 2, 3]);
+    expect(p.message.seqNo).toBe(1);
+    expect(c.message.text).toBe("#3 three");
+    expect(p.message.text).toBe("#1 to Peter");
+    store.close();
+  });
+
+  it("survives a restart between two sends", async () => {
+    const name = uniqueDatabaseName();
+    const first = await openTestStore({ name });
+    await compose(first, "one");
+    await compose(first, "two");
+    first.close();
+
+    const second = await openTestStore({ name });
+    const { message } = await compose(second, "three");
+    expect(message.seqNo).toBe(3);
+    expect(message.text).toBe("#3 three");
+    expect(await second.lastSeqNo(HANS)).toBe(3);
+    second.close();
+  });
+
+  it("the store path refuses 161 bytes and leaves the counter and the journal untouched", async () => {
+    const store = await openTestStore();
+    await expect(compose(store, bodyOfBytes(1, 161))).rejects.toBeInstanceOf(MessageTooLongError);
+    expect(await store.lastSeqNo(HANS)).toBe(0);
+    expect(await store.allEntries()).toEqual([]);
+    expect(await store.lastDeviceSeq()).toBe(0);
+
+    // The next send still gets #1: no gap from the refusal.
+    const { message } = await compose(store, bodyOfBytes(1, 160));
+    expect(message.seqNo).toBe(1);
+    expect(byteLength(message.text ?? "")).toBe(160);
+    store.close();
+  });
+
+  it("refuses an empty body before anything is reserved", async () => {
+    const store = await openTestStore();
+    await expect(compose(store, "  ")).rejects.toBeInstanceOf(EmptyMessageError);
+    expect(await store.lastSeqNo(HANS)).toBe(0);
+    expect(await store.allEntries()).toEqual([]);
+    store.close();
+  });
+
+  it("the limit is checked against the number actually reserved", async () => {
+    const store = await openTestStore();
+    for (let i = 0; i < 9; i++) {
+      await compose(store, "x");
+    }
+    expect(await store.lastSeqNo(HANS)).toBe(9);
+    // "#10 " is one byte longer than "#9 ", so a body that fits #9 does not fit #10.
+    await expect(compose(store, bodyOfBytes(9, 160))).rejects.toBeInstanceOf(MessageTooLongError);
+    expect(await store.lastSeqNo(HANS)).toBe(9);
+    const { message } = await compose(store, bodyOfBytes(10, 160));
+    expect(message.seqNo).toBe(10);
+    store.close();
+  });
+
+  it("a non-mesh message gets no pending entry; its derived status is pending anyway", async () => {
+    const store = await openTestStore();
+    const { message, pending } = await compose(store, "Pumpe på vej med Peter på cykel", HANS, "courier");
+    expect(pending).toBeNull();
+    expect(message.transport).toBe("courier");
+    expect(message.text).toBe("#1 Pumpe på vej med Peter på cykel");
+    expect(await store.statusOf(message.id)).toBe("pending");
+    expect(await store.allEntries()).toHaveLength(1);
+    store.close();
+  });
+
+  it("an invalid input is rejected by the schema and reserves nothing", async () => {
+    const store = await openTestStore();
+    await expect(
+      composeMessage(store, { incidentId: "not-a-ulid", operator: "Thomas", counterpartyId: HANS, transport: "mesh", body: "x" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(await store.lastSeqNo(HANS)).toBe(0);
+    expect(await store.allEntries()).toEqual([]);
+    store.close();
+  });
+});
+
+describe("status changes", () => {
+  it("appendStatusChange walks the chain and the latest wins", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x");
+    await appendStatusChange(store, message, "sent");
+    expect(await store.statusOf(message.id)).toBe("sent");
+    const delivered = await appendStatusChange(store, message, "delivered", "round trip 1234 ms");
+    expect(delivered.text).toBe("round trip 1234 ms");
+    expect(delivered.operator).toBe("Thomas");
+    expect(await store.statusOf(message.id)).toBe("delivered");
+    store.close();
+  });
+
+  it("the operator sets sent, delivered, roger and given_up by hand on a courier message", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "Pumpe på vej", HANS, "courier");
+    const sent = await recordManualStatus(store, message, "sent", { operator: "Anne", text: "Peter cyklede 19:10" });
+    expect(sent.newStatus).toBe("sent");
+    expect(sent.text).toBe("Peter cyklede 19:10");
+    expect(sent.operator).toBe("Anne");
+    expect(await store.statusOf(message.id)).toBe("sent");
+
+    const delivered = await recordManualStatus(store, message, "delivered", { operator: "Anne", text: "  " });
+    expect(delivered.text).toBeUndefined();
+    expect(await store.statusOf(message.id)).toBe("delivered");
+
+    await recordManualStatus(store, message, "roger", { operator: "Anne" });
+    expect(await store.statusOf(message.id)).toBe("roger");
+    store.close();
+  });
+
+  it("roger is final for a manual status too", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x", HANS, "phone");
+    await recordManualStatus(store, message, "roger", { operator: "Anne" });
+    await expect(recordManualStatus(store, message, "given_up", { operator: "Anne" })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    expect(await store.statusOf(message.id)).toBe("roger");
+    store.close();
+  });
+
+  it("refuses a manual status on a mesh message, on a non-message, and a status that is not manual", async () => {
+    const store = await openTestStore();
+    const mesh = await compose(store, "x");
+    await expect(recordManualStatus(store, mesh.message, "sent", { operator: "Anne" })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    const courier = await compose(store, "y", HANS, "courier");
+    await expect(recordManualStatus(store, courier.message, "pending", { operator: "Anne" })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    await expect(recordManualStatus(store, courier.message, "closed", { operator: "Anne" })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    const note = await store.appendEntry({ incidentId: INCIDENT, operator: "Anne", type: "note", text: "n" });
+    await expect(recordManualStatus(store, note, "sent", { operator: "Anne" })).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
+    expect(await store.statusOf(courier.message.id)).toBe("pending");
+    store.close();
+  });
+});

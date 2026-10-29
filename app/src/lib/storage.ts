@@ -23,3 +23,11 @@ export function writeStorage(key: string, value: string): void {
   }
   store.setItem(key, value);
 }
+
+export function removeStorage(key: string): void {
+  const store = storage();
+  if (!store) {
+    return;
+  }
+  store.removeItem(key);
+}

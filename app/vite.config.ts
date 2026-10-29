@@ -32,6 +32,11 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    // src/store/schema.ts imports contract/journal.schema.json from the repo root, one level
+    // above this project; the dev server only serves files inside the allow list.
+    fs: { allow: [".."] },
+  },
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",
