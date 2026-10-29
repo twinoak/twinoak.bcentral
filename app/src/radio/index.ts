@@ -1,7 +1,7 @@
 // The app's radio-side services: the one radio store, wired to the real transports, the
 // settings' blind time and the console; the ContactSource the register's picker reads; the
-// outbox that sends stored messages through the radio (P0-05); and the inbox that files
-// what the radio receives (P0-06).
+// outbox that sends stored messages through the radio (P0-05); the inbox that files what
+// the radio receives (P0-06); and the send-to-all queue over the outbox (P0-08).
 
 import { currentIncidentId, onCurrentIncidentChange } from "../lib/currentIncident.svelte.ts";
 import { settings } from "../lib/settings.svelte.ts";
@@ -11,6 +11,7 @@ import { CompanionContactSource, type ContactSource } from "./contactSource.ts";
 import { createInbox } from "./inbox.svelte.ts";
 import { createOutbox } from "./outbox.svelte.ts";
 import { createRadioStore } from "./radioStore.svelte.ts";
+import { createSendQueue } from "./sendQueue.svelte.ts";
 import { MeshCoreSerial, type TransportKind } from "./serial.ts";
 
 export const radio = createRadioStore({
@@ -59,3 +60,24 @@ export const inbox = createInbox({
 // while none was selected are still on the companion). MSG_WAITING pushes drain by themselves.
 radio.onConnected(() => void inbox.drain());
 onCurrentIncidentChange(() => void inbox.drain());
+
+export const sendQueue = createSendQueue({
+  store: journalStore,
+  outbox,
+  now: () => Date.now(),
+  gapMs: () => settings.sendGapSeconds * 1000,
+  radioState: () => radio.state(),
+  onConnected: radio.onConnected,
+  log: (line) => console.log(`queue: ${line}`),
+});
+
+// The queue survives a reload through the store alone: on start, and when an incident is
+// picked, the incident's mesh messages still pending (no `sent` yet) are queued again.
+function requeuePending(): void {
+  const incidentId = currentIncidentId();
+  if (incidentId !== null) {
+    void sendQueue.requeuePending(incidentId);
+  }
+}
+requeuePending();
+onCurrentIncidentChange(requeuePending);

@@ -2,6 +2,7 @@
   import TopBar from "./components/TopBar.svelte";
   import HomePage from "./pages/HomePage.svelte";
   import JournalPage from "./pages/JournalPage.svelte";
+  import QueuePage from "./pages/QueuePage.svelte";
   import RadioPage from "./pages/RadioPage.svelte";
   import RegisterPage from "./pages/RegisterPage.svelte";
   import SettingsPage from "./pages/SettingsPage.svelte";
@@ -19,12 +20,14 @@
 
 <TopBar />
 
-<!-- The journal screen has side panels and needs the width; the other screens are forms. -->
-<main class:wide={shown === "journal"}>
+<!-- The journal and queue screens have side panels and need the width; the others are forms. -->
+<main class:wide={shown === "journal" || shown === "queue"}>
   {#if shown === "settings"}
     <SettingsPage />
   {:else if shown === "journal"}
     <JournalPage />
+  {:else if shown === "queue"}
+    <QueuePage />
   {:else if shown === "register"}
     <RegisterPage />
   {:else if shown === "radio"}

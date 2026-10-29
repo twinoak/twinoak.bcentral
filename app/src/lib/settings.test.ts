@@ -114,6 +114,26 @@ describe("settings", () => {
     }
   });
 
+  it("defaults the send gap to 10 s, keeps 1–600, and falls back otherwise", async () => {
+    const { settings, DEFAULT_SEND_GAP_SECONDS, SEND_GAP_SECONDS_LIMIT, updateSettings } =
+      await loadSettings();
+    expect(settings.sendGapSeconds).toBe(10);
+    expect(DEFAULT_SEND_GAP_SECONDS).toBe(10);
+    expect(SEND_GAP_SECONDS_LIMIT).toBe(600);
+    updateSettings({ sendGapSeconds: 30 });
+    const reloaded = await loadSettings();
+    expect(reloaded.settings.sendGapSeconds).toBe(30);
+
+    for (const bad of [0, 601, 2.5, "10"]) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ deviceId: "01JB8ZK3QX9V2M4N6P8R0T2W4Y", sendGapSeconds: bad }),
+      );
+      const { settings: fresh } = await loadSettings();
+      expect(fresh.sendGapSeconds).toBe(10);
+    }
+  });
+
   it("replaces a stored device id that is not a ULID", async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ deviceId: "not-a-ulid" }));
     const { settings } = await loadSettings();

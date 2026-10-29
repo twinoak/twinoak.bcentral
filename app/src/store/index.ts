@@ -9,8 +9,10 @@ import { openJournalStore, type JournalStore } from "./journalStore.ts";
 import { downloadEnvelope } from "./export.ts";
 import { saveRegisterEntry as saveWithNote, type SaveResult } from "./register.ts";
 import {
+  composeBatch as composeBatchWithStore,
   composeMessage as composeWithStore,
   recordManualStatus as recordWithStore,
+  type BatchComposeInput,
   type ComposeInput,
   type Composed,
 } from "./outgoing.ts";
@@ -137,4 +139,24 @@ export async function entriesForIncident(incidentId: string): Promise<JournalEnt
 export async function lastSeqNo(counterpartyId: string): Promise<number> {
   const store = await journalStore();
   return await store.lastSeqNo(counterpartyId);
+}
+
+// --- send to all (P0-08) ---------------------------------------------------------------
+
+// One message_out per recipient, all stored before any is sent. Sending is the send queue's
+// job (src/radio/index.ts). A BatchComposeError carries the messages stored before the
+// failure; the caller still hands those to the queue.
+export async function composeBatch(input: Omit<BatchComposeInput, "operator">): Promise<Composed[]> {
+  const store = await journalStore();
+  return await composeBatchWithStore(store, { ...input, operator: settings.operatorName.trim() });
+}
+
+// The last #n of every given register entry, for the batch's byte counter.
+export async function lastSeqNos(counterpartyIds: readonly string[]): Promise<Map<string, number>> {
+  const store = await journalStore();
+  const result = new Map<string, number>();
+  for (const id of counterpartyIds) {
+    result.set(id, await store.lastSeqNo(id));
+  }
+  return result;
 }

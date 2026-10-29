@@ -1,6 +1,11 @@
 <script lang="ts">
   import { t, language } from "../i18n/index.svelte.ts";
-  import { MAX_SEND_ATTEMPTS_LIMIT, settings, updateSettings } from "../lib/settings.svelte.ts";
+  import {
+    MAX_SEND_ATTEMPTS_LIMIT,
+    SEND_GAP_SECONDS_LIMIT,
+    settings,
+    updateSettings,
+  } from "../lib/settings.svelte.ts";
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
   import LanguageSelect from "../components/LanguageSelect.svelte";
 
@@ -22,6 +27,7 @@
   let hubUrl = $state(settings.hubUrl);
   let blindAfterMinutes: number | undefined = $state(settings.blindAfterMinutes);
   let maxSendAttempts: number | undefined = $state(settings.maxSendAttempts);
+  let sendGapSeconds: number | undefined = $state(settings.sendGapSeconds);
   let saved = $state(false);
 
   const operatorNameError = $derived(
@@ -43,13 +49,24 @@
       ? t("settings.maxSendAttemptsInvalid")
       : null,
   );
-  const canSave = $derived(!operatorNameError && !hubUrlError && !blindAfterError && !maxSendAttemptsError);
+  const sendGapError = $derived(
+    sendGapSeconds === undefined ||
+      !Number.isInteger(sendGapSeconds) ||
+      sendGapSeconds < 1 ||
+      sendGapSeconds > SEND_GAP_SECONDS_LIMIT
+      ? t("settings.sendGapInvalid")
+      : null,
+  );
+  const canSave = $derived(
+    !operatorNameError && !hubUrlError && !blindAfterError && !maxSendAttemptsError && !sendGapError,
+  );
 
   function save(event: SubmitEvent) {
     event.preventDefault();
     const minutes = blindAfterMinutes;
     const attempts = maxSendAttempts;
-    if (!canSave || minutes === undefined || attempts === undefined) {
+    const gap = sendGapSeconds;
+    if (!canSave || minutes === undefined || attempts === undefined || gap === undefined) {
       return;
     }
     updateSettings({
@@ -57,6 +74,7 @@
       hubUrl: hubUrl.trim(),
       blindAfterMinutes: minutes,
       maxSendAttempts: attempts,
+      sendGapSeconds: gap,
     });
     saved = true;
   }
@@ -133,6 +151,23 @@
     <small>{t("settings.maxSendAttemptsHelp")}</small>
     {#if maxSendAttemptsError}
       <small class="error">{maxSendAttemptsError}</small>
+    {/if}
+  </div>
+
+  <div class="field">
+    <label for="send-gap">{t("settings.sendGapSeconds")}</label>
+    <input
+      id="send-gap"
+      type="number"
+      min="1"
+      max={SEND_GAP_SECONDS_LIMIT}
+      step="1"
+      bind:value={sendGapSeconds}
+      aria-invalid={sendGapError !== null}
+    />
+    <small>{t("settings.sendGapHelp")}</small>
+    {#if sendGapError}
+      <small class="error">{sendGapError}</small>
     {/if}
   </div>
 

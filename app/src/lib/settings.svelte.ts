@@ -13,12 +13,17 @@ export interface Settings {
   // How many times a mesh message is transmitted before the app gives up (text-protocol.md:
   // "default 3 attempts, configurable").
   maxSendAttempts: number;
+  // The least time between two transmissions of the send-to-all queue (P0-08): the mesh
+  // tolerates a handful of messages a minute.
+  sendGapSeconds: number;
 }
 
 export const STORAGE_KEY = "bcentral.settings";
 export const DEFAULT_BLIND_AFTER_MINUTES = 15;
 export const DEFAULT_MAX_SEND_ATTEMPTS = 3;
 export const MAX_SEND_ATTEMPTS_LIMIT = 10;
+export const DEFAULT_SEND_GAP_SECONDS = 10;
+export const SEND_GAP_SECONDS_LIMIT = 600;
 
 function positiveInteger(value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
@@ -59,6 +64,11 @@ function load(): Settings {
       DEFAULT_MAX_SEND_ATTEMPTS,
       MAX_SEND_ATTEMPTS_LIMIT,
     ),
+    sendGapSeconds: positiveInteger(
+      stored["sendGapSeconds"],
+      DEFAULT_SEND_GAP_SECONDS,
+      SEND_GAP_SECONDS_LIMIT,
+    ),
   };
   if (settings.deviceId !== storedDeviceId) {
     // First run (or a damaged record): persist the freshly minted id at once, so a reload
@@ -86,6 +96,9 @@ export function updateSettings(patch: Partial<Omit<Settings, "deviceId">>): void
   }
   if (patch.maxSendAttempts !== undefined) {
     settings.maxSendAttempts = patch.maxSendAttempts;
+  }
+  if (patch.sendGapSeconds !== undefined) {
+    settings.sendGapSeconds = patch.sendGapSeconds;
   }
   persist(settings);
 }
