@@ -12,13 +12,16 @@
 
   interface Props {
     incidentId: string;
+    // True in a drill incident (P1-05): the shown prefix and the byte counter carry the
+    // ØVELSE prefix the store will put in front of every recipient's text.
+    drill?: boolean;
     // The register, sorted as the parent wants it shown.
     register: readonly RegisterEntry[];
     // Called with the stored messages, in recipient order; the parent queues them. Called
     // with what was stored even when composing stopped part-way (the error is shown here).
     onstored: (messages: JournalEntry[]) => void;
   }
-  let { incidentId, register, onstored }: Props = $props();
+  let { incidentId, drill = false, register, onstored }: Props = $props();
 
   // Which register entries are chosen, by id. A plain object so Svelte tracks the keys.
   let chosen: Record<string, boolean> = $state({});
@@ -61,6 +64,7 @@
     batchPreview(
       chosenIds.map((id) => last.get(id) ?? 0),
       body,
+      drill,
     ),
   );
   const radioReady = $derived(radio.state() === "connected" || radio.state() === "blind");

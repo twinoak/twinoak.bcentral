@@ -19,12 +19,15 @@
 
   interface Props {
     incidentId: string;
+    // True in a drill incident (P1-05): the shown prefix and the byte counter carry the
+    // ØVELSE prefix the store will put in front of the text.
+    drill?: boolean;
     // The register, sorted as the parent wants it shown.
     register: readonly RegisterEntry[];
     // Called with the stored message_out; the parent sends mesh messages and reloads its list.
     onsent: (message: JournalEntry) => void;
   }
-  let { incidentId, register, onsent }: Props = $props();
+  let { incidentId, drill = false, register, onsent }: Props = $props();
 
   const TRANSPORTS: readonly Transport[] = ["mesh", "phone", "courier", "verbal"];
 
@@ -59,7 +62,7 @@
     void loadLast(counterpartyId);
   });
 
-  const preview = $derived(previewText(last, body));
+  const preview = $derived(previewText(last, body, drill));
   const radioReady = $derived(radio.state() === "connected" || radio.state() === "blind");
   const radioBlocks = $derived(transport === "mesh" && !radioReady);
   const canSend = $derived(
@@ -115,7 +118,9 @@
       await loadLast(counterpartyId);
       onsent(message);
     } catch (failure) {
-      error = t("send.failed", { error: failure instanceof Error ? failure.message : String(failure) });
+      error = t("send.failed", {
+        error: failure instanceof Error ? failure.message : String(failure),
+      });
     } finally {
       busy = false;
     }

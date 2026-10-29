@@ -15,6 +15,7 @@ import {
   countNewRows,
   currentRun,
   findRow,
+  isDrillText,
   lastHeardFrom,
   openItems,
   slowestStatus,
@@ -511,6 +512,52 @@ describe("the status strip", () => {
     expect(bodyOf(message)).toBe("Meld status");
     expect(bodyOf({ ...message, text: "no prefix" })).toBe("no prefix");
     expect(bodyOf({ ...message, seqNo: undefined })).toBe("#3 Meld status");
+  });
+
+  it("a drill's text is read as such: the body is without 'ØVELSE #n ' and the batch row says drill (P1-05)", () => {
+    const drilled = { ...message, text: "ØVELSE #3 Meld status" };
+    expect(bodyOf(drilled)).toBe("Meld status");
+    expect(isDrillText(drilled)).toBe(true);
+    expect(isDrillText(message)).toBe(false);
+    // The prefix has to be exact: a different number or a word after it is not the prefix.
+    expect(isDrillText({ ...message, text: "ØVELSE #4 Meld status" })).toBe(false);
+    expect(bodyOf({ ...message, text: "ØVELSE #4 Meld status" })).toBe("ØVELSE #4 Meld status");
+    expect(isDrillText({ ...message, text: "ØVELSE: #3 Meld status" })).toBe(false);
+    expect(isDrillText({ ...message, seqNo: undefined, text: "ØVELSE #3 Meld status" })).toBe(
+      false,
+    );
+
+    const BATCH = "01JB8ZK3QX9V2M4N6P8R0T2X11";
+    const drillBatch = [HANS, id(950)].map((counterpartyId, i) => {
+      const out = messageOut({
+        counterpartyId,
+        seqNo: 1,
+        body: "Meld status",
+        at: at(20, i),
+        batchId: BATCH,
+      });
+      return { ...out, text: `ØVELSE ${out.text}` };
+    });
+    const realBatch = [HANS, id(951)].map((counterpartyId, i) =>
+      messageOut({
+        counterpartyId,
+        seqNo: 2,
+        body: "Meld status",
+        at: at(21, i),
+        batchId: id(960),
+      }),
+    );
+    const rows = buildTimeline([...drillBatch, ...realBatch]);
+    const drillRow = rows.find((row) => row.id === BATCH);
+    const realRow = rows.find((row) => row.id === id(960));
+    expect(drillRow?.kind === "batch" && { body: drillRow.body, drill: drillRow.drill }).toEqual({
+      body: "Meld status",
+      drill: true,
+    });
+    expect(realRow?.kind === "batch" && { body: realRow.body, drill: realRow.drill }).toEqual({
+      body: "Meld status",
+      drill: false,
+    });
   });
 });
 

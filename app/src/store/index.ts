@@ -4,8 +4,9 @@
 
 import { settings } from "../lib/settings.svelte.ts";
 import { now } from "../lib/clock.svelte.ts";
-import { currentIncidentId } from "../lib/currentIncident.svelte.ts";
+import { currentIncidentId, onCurrentIncidentChange } from "../lib/currentIncident.svelte.ts";
 import { openJournalStore, type JournalStore } from "./journalStore.ts";
+import { createDrillMode, type DrillMode } from "./drillMode.svelte.ts";
 import { downloadEnvelope } from "./export.ts";
 import { createMirror, type Mirror } from "./mirror.svelte.ts";
 import { saveRegisterEntry as saveWithNote, type SaveResult } from "./register.ts";
@@ -54,6 +55,15 @@ export const mirror: Mirror = createMirror<FileSystemDirectoryHandle>({
       : undefined,
 });
 
+// --- drill mode (P1-05) ----------------------------------------------------------------
+
+// Whether the current incident is a drill, for the band on every screen. main.ts starts it.
+export const drillMode: DrillMode = createDrillMode({
+  store: journalStore,
+  incidentId: currentIncidentId,
+  onIncidentChange: onCurrentIncidentChange,
+});
+
 export interface ExportResult {
   filename: string;
   // The same file's name in the journal folder, or null when no folder is set (or the write
@@ -62,10 +72,13 @@ export interface ExportResult {
 }
 
 // Builds, validates and downloads the export file, and writes it into the journal folder
-// when one is set; returns the names.
-export async function exportJournal(): Promise<ExportResult> {
+// when one is set; returns the names. With `scope`, the file holds the drills only or the
+// real incidents only (P1-05: the incident bar passes the current incident's kind, so a
+// drill's export never carries the real journal and the real journal's export never carries
+// a drill); without it, everything.
+export async function exportJournal(scope?: { drill: boolean }): Promise<ExportResult> {
   const store = await journalStore();
-  const envelope = await store.exportEnvelope();
+  const envelope = await store.exportEnvelope(scope);
   const filename = downloadEnvelope(envelope);
   const inFolder = await mirror.writeEnvelope(envelope);
   return { filename, inFolder };
@@ -116,9 +129,10 @@ export async function listIncidents(): Promise<Incident[]> {
   return await store.allIncidents();
 }
 
-export async function addIncident(name: string): Promise<Incident> {
+// `drill` is decided here, once (P1-05): the store refuses to change it later.
+export async function addIncident(name: string, drill = false): Promise<Incident> {
   const store = await journalStore();
-  return await store.createIncident({ name: name.trim(), createdBy: settings.operatorName.trim() });
+  return await store.createIncident({ name: name.trim(), createdBy: settings.operatorName.trim(), drill });
 }
 
 export async function closeIncident(incident: Incident, text: string): Promise<JournalEntry> {

@@ -12,9 +12,17 @@
   import { t, language } from "../i18n/index.svelte.ts";
   import { now } from "../lib/clock.svelte.ts";
   import { currentIncidentId } from "../lib/currentIncident.svelte.ts";
-  import { countersText, formatDateTime, formatTime, stripText } from "../lib/journalText.ts";
+  import {
+    batchText,
+    countersText,
+    formatDateTime,
+    formatTime,
+    incidentName,
+    stripText,
+  } from "../lib/journalText.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { settings } from "../lib/settings.svelte.ts";
+  import { isDrill } from "../store/incidents.ts";
   import {
     entriesForIncident,
     lastPrintAt,
@@ -92,7 +100,7 @@
       return;
     }
     const title = document.title;
-    document.title = t("print.pageTitle", { incident: incident.name });
+    document.title = t("print.pageTitle", { incident: incidentName(incident) });
     try {
       window.print();
     } finally {
@@ -200,9 +208,12 @@
     {t("print.noIncident")} <a href={hashFor("journal")}>{t("nav.journal")}</a>
   </p>
 {:else if incident !== null}
-  <article class="document">
+  <article class="document" data-drill={isDrill(incident) ? "true" : undefined}>
     <header>
-      <h1>{t("print.title", { incident: incident.name })}</h1>
+      <h1>{t("print.title", { incident: incidentName(incident) })}</h1>
+      {#if isDrill(incident)}
+        <p class="drill">{t("print.drill")}</p>
+      {/if}
       <dl>
         <dt>{t("print.device")}</dt>
         <dd>{settings.deviceId}</dd>
@@ -246,7 +257,7 @@
                 <td>{t("journal.type.message_out")}</td>
                 <td class="label">{t("journal.batch.toAll", { count: row.counters.total })}</td>
                 <td class="text">
-                  {t("journal.batch.text", { body: row.body })}
+                  {batchText(row.body, row.drill)}
                   <div class="strip">{countersText(row.counters)}</div>
                 </td>
                 <td class="status">{t(`journal.status.${row.status}`)}</td>
@@ -320,6 +331,15 @@
 
   header h1 {
     margin: 0 0 0.5rem;
+  }
+
+  header .drill {
+    margin: 0 0 0.75rem;
+    padding: 0.3rem 0.6rem;
+    border: 2px solid var(--ink);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    background: #f2b705;
   }
 
   header dl {

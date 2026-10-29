@@ -20,7 +20,7 @@
     recordManualStatus,
     reopenIncident,
   } from "../store/index.ts";
-  import { incidentStateOf } from "../store/incidents.ts";
+  import { incidentStateOf, isDrill } from "../store/incidents.ts";
   import {
     buildTimeline,
     entriesById,
@@ -51,6 +51,9 @@
   const incidentId = $derived(currentIncidentId());
   const current = $derived(incidents.find((incident) => incident.id === incidentId) ?? null);
   const incidentState = $derived(current === null ? null : incidentStateOf(entries, current.id));
+  // A drill incident (P1-05): the compose forms show the ØVELSE prefix, the export holds
+  // drills only.
+  const drill = $derived(isDrill(current));
   const sortedRegister = $derived(sortedByLabel(register, language()));
   const labels = $derived(new Map(register.map((entry) => [entry.id, entry.label])));
   const rows = $derived(buildTimeline(entries));
@@ -106,10 +109,16 @@
     setCurrentIncidentId(id);
   }
 
-  async function createIncident(name: string) {
-    const incident = await addIncident(name);
+  async function createIncident(name: string, isDrillIncident: boolean) {
+    const incident = await addIncident(name, isDrillIncident);
     setCurrentIncidentId(incident.id);
     await changed();
+  }
+
+  // The export file is the journal of the current incident's kind: drills only while a drill
+  // is current, real incidents only while a real one is, everything while none is selected.
+  function exportCurrentKind() {
+    return exportJournal(current === null ? undefined : { drill });
   }
 
   async function close(reason: string) {
@@ -202,7 +211,7 @@
   oncreate={createIncident}
   onclose={close}
   onreopen={reopen}
-  onexport={exportJournal}
+  onexport={exportCurrentKind}
   onprint={() => navigate("print")}
 />
 
@@ -239,6 +248,7 @@
             <ComposeForm
               bind:this={compose}
               incidentId={current.id}
+              {drill}
               register={sortedRegister}
               {onsent}
             />

@@ -14,6 +14,7 @@
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import {
+    batchText,
     countersText,
     formatDateTime,
     formatShortTime,
@@ -22,7 +23,12 @@
     rogerSource as rogerSourceOf,
     stripText,
   } from "../lib/journalText.ts";
-  import { countNewRows, findRow, type MessageView, type TimelineRow } from "../store/journalView.ts";
+  import {
+    countNewRows,
+    findRow,
+    type MessageView,
+    type TimelineRow,
+  } from "../store/journalView.ts";
   import { manualStatusesFor } from "../store/outgoing.ts";
   import type { JournalEntry, Status } from "../store/types.ts";
 
@@ -417,7 +423,7 @@
               <td>{t("journal.type.message_out")}</td>
               <td class="label">{t("journal.batch.toAll", { count: row.counters.total })}</td>
               <td class="text">
-                {t("journal.batch.text", { body: row.body })}
+                {batchText(row.body, row.drill)}
                 <div class="strip">{countersText(row.counters)}</div>
               </td>
               <td>

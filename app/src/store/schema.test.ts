@@ -44,6 +44,15 @@ describe("contract schema validators", () => {
     expect(validateJournalEntry({ ...byType("correction"), batchId })).toBe(false);
   });
 
+  it("allow drill: true on an incident and nothing but a boolean (P1-05)", () => {
+    const [incident] = loadWalkthrough().incidents;
+    expect(validateIncident({ ...incident, drill: true })).toBe(true);
+    expect(validateIncident({ ...incident, drill: false })).toBe(true);
+    expect(validateIncident(incident)).toBe(true);
+    expect(validateIncident({ ...incident, drill: "yes" })).toBe(false);
+    expect(validateIncident({ ...incident, drill: 1 })).toBe(false);
+  });
+
   it("allow refersTo on a message_out (a reply, P1-02) as the schema already did", () => {
     const walkthrough = loadWalkthrough();
     const out = walkthrough.entries.find((e) => e.type === "message_out");

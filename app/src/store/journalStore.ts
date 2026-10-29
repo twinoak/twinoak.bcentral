@@ -75,6 +75,16 @@ async function abortQuietly(tx: { abort(): void; done: Promise<void> }): Promise
   }
 }
 
+// Thrown by putIncident when the write would turn a real incident into a drill or a drill
+// into a real incident (P1-05): the flag is fixed at creation, because every message of a
+// drill went on the air with the ØVELSE prefix and a real incident's did not.
+export class DrillChangeError extends Error {
+  constructor(incidentId: string) {
+    super(`incident ${incidentId} cannot change between drill and real`);
+    this.name = "DrillChangeError";
+  }
+}
+
 // Thrown by the register write paths when another entry already holds the public key. One
 // radio is one register entry; a key is never shared (P0-03). The unique by-publicKey index
 // is the second line of defence behind this check.
@@ -342,19 +352,35 @@ export class JournalStore {
 
   // --- incidents -----------------------------------------------------------------------
 
-  // The single write path for incidents: validate, then put (insert or replace by id).
+  // The single write path for incidents: validate, then put (insert or replace by id). The
+  // drill flag of a stored incident never changes (P1-05): a put that would flip it is
+  // refused inside the transaction, so a concurrent create cannot slip past the check.
   async putIncident(incident: Incident): Promise<Incident> {
     const value = withoutUndefined(incident);
     assertValid(validateIncident, value, "incident");
-    await this.db.put("incidents", value);
-    this.notify({ kind: "incident", value });
-    return value;
+    const tx = this.db.transaction("incidents", "readwrite");
+    try {
+      const existing = await tx.store.get(value.id);
+      if (existing !== undefined && (existing.drill === true) !== (value.drill === true)) {
+        throw new DrillChangeError(value.id);
+      }
+      await tx.store.put(value);
+      await tx.done;
+      this.notify({ kind: "incident", value });
+      return value;
+    } catch (error) {
+      await abortQuietly(tx);
+      throw error;
+    }
   }
 
+  // A drill is stored with `drill: true`; a real incident has no `drill` key at all (the
+  // schema's "absent means real"), so real incidents look the same before and after P1-05.
   async createIncident(input: NewIncident): Promise<Incident> {
     const reading = this.clock();
     return await this.putIncident({
       ...input,
+      drill: input.drill === true ? true : undefined,
       id: ulid(),
       createdAt: reading.timestamp,
       clockTrust: reading.clockTrust,
@@ -463,13 +489,22 @@ export class JournalStore {
   // --- envelope ------------------------------------------------------------------------
 
   // The export file's content: the schema's envelope around everything in the store, read
-  // in one transaction, validated before it is handed out.
-  async exportEnvelope(): Promise<Envelope> {
+  // in one transaction, validated before it is handed out. With `scope`, only the incidents
+  // of that kind (drills, or real ones) and their entries (P1-05: drill journals are kept
+  // apart in exports); the register is shared and always complete. Without it, everything:
+  // the full backup the journal folder starts from.
+  async exportEnvelope(scope?: { drill: boolean }): Promise<Envelope> {
     const tx = this.db.transaction(["incidents", "register", "entries"], "readonly");
-    const incidents = await tx.objectStore("incidents").getAll();
+    let incidents = await tx.objectStore("incidents").getAll();
     const register = await tx.objectStore("register").getAll();
-    const entries = await tx.objectStore("entries").getAll();
+    let entries = await tx.objectStore("entries").getAll();
     await tx.done;
+
+    if (scope !== undefined) {
+      incidents = incidents.filter((incident) => (incident.drill === true) === scope.drill);
+      const kept = new Set(incidents.map((incident) => incident.id));
+      entries = entries.filter((entry) => kept.has(entry.incidentId));
+    }
 
     const envelope: Envelope = {
       format: ENVELOPE_FORMAT,

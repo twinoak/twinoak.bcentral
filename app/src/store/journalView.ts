@@ -15,7 +15,7 @@
 // message row says which incoming message it answers, the incoming row which messages answer
 // it; both are read off refersTo every time, nothing is stored on either entry.
 
-import { seqNoPrefix } from "./outgoing.ts";
+import { DRILL_PREFIX, messagePrefix } from "./outgoing.ts";
 import { isLater, statusOf } from "./status.ts";
 import type { JournalEntry, RegisterEntry, Status } from "./types.ts";
 
@@ -161,8 +161,12 @@ export type TimelineRow =
       id: string;
       entry: JournalEntry;
       batchId: string;
-      // The operator's text without the "#n " prefix, the same for every recipient.
+      // The operator's text without the "#n " (or "ØVELSE #n ") prefix, the same for every
+      // recipient.
       body: string;
+      // True when the messages went out with the ØVELSE prefix (a drill incident, P1-05), so
+      // the row can show the text as it went on the air.
+      drill: boolean;
       // In the order the messages were stored, which is the transmission order.
       messages: MessageView[];
       counters: BatchCounters;
@@ -171,13 +175,23 @@ export type TimelineRow =
       status: Status;
     };
 
-// The "#n " prefix off a message's text (text-protocol.md: the text is exactly "#<n> <text>").
+// Whether a stored message_out went out with the drill prefix: its text starts with
+// "ØVELSE #n " (text-protocol.md, Drill mode). Read off the text, which is what was on the air.
+export function isDrillText(message: JournalEntry): boolean {
+  return (
+    message.seqNo !== undefined &&
+    (message.text ?? "").startsWith(messagePrefix(message.seqNo, true))
+  );
+}
+
+// The "#n " prefix off a message's text (text-protocol.md: the text is exactly "#<n> <text>",
+// or "ØVELSE #<n> <text>" in a drill).
 export function bodyOf(message: JournalEntry): string {
   const text = message.text ?? "";
   if (message.seqNo === undefined) {
     return text;
   }
-  const prefix = seqNoPrefix(message.seqNo);
+  const prefix = messagePrefix(message.seqNo, text.startsWith(DRILL_PREFIX));
   return text.startsWith(prefix) ? text.slice(prefix.length) : text;
 }
 
@@ -331,6 +345,7 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
       entry: first.entry,
       batchId,
       body: bodyOf(first.entry),
+      drill: isDrillText(first.entry),
       messages: views,
       counters: batchCounters(views),
       status: slowestStatus(views),
