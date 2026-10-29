@@ -101,11 +101,20 @@ async function setUp(options: SetUpOptions = {}) {
   };
 }
 
+// Everything referring to the message, oldest first: the status chain, with a resend's
+// attempt text in brackets ("sent (attempt 2/3)"); anything that is not a status change is
+// named by its type (there should be none since P1-01).
 async function chain(store: JournalStore, message: JournalEntry): Promise<string[]> {
   const entries = await store.entriesReferringTo(message.id);
   return entries
     .sort((a, b) => a.deviceSeq - b.deviceSeq)
-    .map((entry) => (entry.type === "status_change" ? entry.newStatus ?? "" : `${entry.type}: ${entry.text ?? ""}`));
+    .map((entry) => {
+      if (entry.type !== "status_change") {
+        return `${entry.type}: ${entry.text ?? ""}`;
+      }
+      const attempt = entry.newStatus === "sent" && entry.text !== undefined ? ` (${entry.text})` : "";
+      return `${entry.newStatus ?? ""}${attempt}`;
+    });
 }
 
 describe("ackWindowMs", () => {
@@ -129,7 +138,7 @@ describe("outbox", () => {
 
     expect(result).toBe("delivered");
     expect(await store.statusOf(message.id)).toBe("delivered");
-    expect(await chain(store, message)).toEqual(["pending", "sent", "delivered"]);
+    expect(await chain(store, message)).toEqual(["sent", "delivered"]);
     const delivered = (await store.entriesReferringTo(message.id)).find((e) => e.newStatus === "delivered");
     expect(delivered?.text).toBe("round trip 800 ms");
     expect(delivered?.operator).toBe("Thomas");
@@ -148,7 +157,7 @@ describe("outbox", () => {
     await radio.disconnect();
   });
 
-  it("no ack three times -> given_up; same timestamp, attempts 0, 1, 2; a note per resend", async () => {
+  it("no ack three times -> given_up; same timestamp, attempts 0, 1, 2; a `sent` with the attempt per resend", async () => {
     const { store, radio, companion, outbox, compose } = await setUp({ onSendText: sentOnlyReply });
     await radio.connect("usb");
     const message = await compose("Kør til Nørregade 4");
@@ -162,17 +171,18 @@ describe("outbox", () => {
     expect(timestamps.size).toBe(1);
     expect(companion.sends.every((s) => s.text === "#1 Kør til Nørregade 4")).toBe(true);
     expect(await chain(store, message)).toEqual([
-      "pending",
       "sent",
-      "note: resend #1, attempt 2/3",
-      "note: resend #1, attempt 3/3",
+      "sent (attempt 2/3)",
+      "sent (attempt 3/3)",
       "given_up",
     ]);
     const givenUp = (await store.entriesReferringTo(message.id)).find((e) => e.newStatus === "given_up");
     expect(givenUp?.text).toBe("no ack after 3 attempts");
-    // Still one message_out: resends are not new messages.
+    // Still one message_out: resends are not new messages; and no note (P1-01).
     const all = await store.allEntries();
     expect(all.filter((e) => e.type === "message_out")).toHaveLength(1);
+    expect(all.filter((e) => e.type === "note")).toHaveLength(0);
+    expect(await store.statusOf(message.id)).toBe("given_up");
     await radio.disconnect();
   });
 
@@ -182,7 +192,7 @@ describe("outbox", () => {
     const message = await compose("x");
 
     expect(await outbox.send(message.id)).toBe("given_up");
-    expect(await chain(store, message)).toEqual(["pending", "given_up"]);
+    expect(await chain(store, message)).toEqual(["given_up"]);
     const givenUp = (await store.entriesReferringTo(message.id)).find((e) => e.newStatus === "given_up");
     expect(givenUp?.text).toBe("companion error 6");
     expect(companion.sends).toHaveLength(1);
@@ -222,12 +232,12 @@ describe("outbox", () => {
 
     expect(await outbox.send(message.id)).toBe("given_up");
     expect(companion.sends.map((s) => s.attempt)).toEqual([0, 1]);
-    expect(await chain(store, message)).toEqual(["pending", "sent", "note: resend #1, attempt 2/2", "given_up"]);
+    expect(await chain(store, message)).toEqual(["sent", "sent (attempt 2/2)", "given_up"]);
 
     setMaxAttempts(1);
     const second = await compose("y");
     expect(await outbox.send(second.id)).toBe("given_up");
-    expect(await chain(store, second)).toEqual(["pending", "sent", "given_up"]);
+    expect(await chain(store, second)).toEqual(["sent", "given_up"]);
     await radio.disconnect();
   });
 
@@ -247,7 +257,7 @@ describe("outbox", () => {
     expect(companion.sends[1]?.timestamp).toBe(first + 30);
     expect(companion.sends[1]?.text).toBe("#1 Kør til nr 4");
     expect((await store.allEntries()).filter((e) => e.type === "message_out")).toHaveLength(1);
-    expect(await chain(store, message)).toEqual(["pending", "sent", "given_up", "sent", "delivered"]);
+    expect(await chain(store, message)).toEqual(["sent", "given_up", "sent", "delivered"]);
     await radio.disconnect();
   });
 

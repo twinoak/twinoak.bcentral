@@ -44,8 +44,10 @@ export interface JournalStoreOptions {
 }
 
 // Monotonic within one process: ids minted in the same millisecond still sort in creation
-// order, so "time-ordered" holds for this device's own ids.
-const ulid = monotonicFactory();
+// order, so "time-ordered" holds for this device's own ids. Exported for the one id that is
+// minted outside the store: a send-to-all's batchId (outgoing.ts, P1-01).
+export const mintId = monotonicFactory();
+const ulid = mintId;
 
 // A caller may pass optional fields as `undefined`. The schema treats those as absent, but
 // IndexedDB would keep the key and JSON would drop it, so strip them before validating: what

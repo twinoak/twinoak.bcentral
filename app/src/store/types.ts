@@ -56,6 +56,8 @@ export interface JournalEntry {
   transport?: Transport;
   counterpartyId?: string;
   seqNo?: number;
+  // Set on every message_out one send-to-all created (P1-01); absent on a single send.
+  batchId?: string;
   text?: string;
   refersTo?: string;
   newStatus?: Status;
@@ -75,6 +77,8 @@ export interface NewMessageOut {
   operator: string;
   transport: Transport;
   counterpartyId: string;
+  // The batch this message belongs to (send-to-all); omitted for a single send.
+  batchId?: string;
 }
 
 export type NewIncident = Omit<Incident, "id" | "createdAt" | "clockTrust" | "createdOnDevice">;

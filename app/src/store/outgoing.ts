@@ -1,9 +1,10 @@
 // Outgoing messages above the store (P0-05): the "#n <text>" form and the 160-byte rule from
-// contract/text-protocol.md, composing a message_out with its reserved #n and its first
-// status_change, and the manual status changes the operator records for non-mesh transports.
-// The radio side (sending, acks, retries) is src/radio/outbox.svelte.ts.
+// contract/text-protocol.md, composing a message_out with its reserved #n, and the manual
+// status changes the operator records. A message_out is stored alone: pending is what a
+// message with no status_change is (status.ts), so none is written (P1-01). The radio side
+// (sending, acks, retries) is src/radio/outbox.svelte.ts.
 
-import type { JournalStore } from "./journalStore.ts";
+import { mintId, type JournalStore } from "./journalStore.ts";
 import type { JournalEntry, Status, Transport } from "./types.ts";
 
 // A MeshCore text message is at most 160 bytes of UTF-8 (text-protocol.md; MAX_TEXT_LEN in
@@ -96,19 +97,17 @@ export interface ComposeInput {
   transport: Transport;
   // The operator's text, without the prefix.
   body: string;
+  // Set by composeBatch on every message of one send-to-all; a single send has none.
+  batchId?: string;
 }
 
 export interface Composed {
   message: JournalEntry;
-  // The status_change -> pending written for a mesh message, which the radio will take from
-  // here; null for the other transports, whose status the operator sets by hand (the derived
-  // status of a message with no status_change is pending either way).
-  pending: JournalEntry | null;
 }
 
-// Reserves the recipient's next #n and stores the message_out in one transaction, then (mesh
-// only) the status_change -> pending. A body over the limit throws MessageTooLongError and
-// leaves the counter where it was.
+// Reserves the recipient's next #n and stores the message_out in one transaction, and nothing
+// else: its status is pending until the radio or the operator records a status_change. A body
+// over the limit throws MessageTooLongError and leaves the counter where it was.
 export async function composeMessage(store: JournalStore, input: ComposeInput): Promise<Composed> {
   const message = await store.appendMessageOut(
     {
@@ -116,14 +115,11 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
       operator: input.operator,
       transport: input.transport,
       counterpartyId: input.counterpartyId,
+      batchId: input.batchId,
     },
     (seqNo) => composeText(seqNo, input.body),
   );
-  if (input.transport !== "mesh") {
-    return { message, pending: null };
-  }
-  const pending = await appendStatusChange(store, message, "pending");
-  return { message, pending };
+  return { message };
 }
 
 export interface BatchComposeInput {
@@ -157,9 +153,11 @@ export class BatchComposeError extends Error {
 // "Send to all" (text-protocol.md): not a message type, but one message_out per recipient,
 // each with that recipient's own next #n, each with its own status. All of them are written
 // before any is transmitted (the queue takes them from here), so the journal shows the
-// whole batch at once. Mesh only: a batch goes through the radio. A repeated recipient is
-// refused before anything is written; a failure in the middle throws BatchComposeError
-// carrying the messages already stored.
+// whole batch at once. Every message carries the same batchId, a ULID minted here once per
+// batch (journal.schema.json), which is how the journal folds them into one row and the
+// queue keeps them together after a reload (P1-01). Mesh only: a batch goes through the
+// radio. A repeated recipient is refused before anything is written; a failure in the middle
+// throws BatchComposeError carrying the messages already stored.
 export async function composeBatch(store: JournalStore, input: BatchComposeInput): Promise<Composed[]> {
   if (new Set(input.counterpartyIds).size !== input.counterpartyIds.length) {
     throw new RangeError("a recipient is chosen twice");
@@ -167,6 +165,7 @@ export async function composeBatch(store: JournalStore, input: BatchComposeInput
   if (input.counterpartyIds.length === 0) {
     throw new RangeError("no recipients chosen");
   }
+  const batchId = mintId();
   const stored: Composed[] = [];
   for (const counterpartyId of input.counterpartyIds) {
     try {
@@ -177,6 +176,7 @@ export async function composeBatch(store: JournalStore, input: BatchComposeInput
           counterpartyId,
           transport: "mesh",
           body: input.body,
+          batchId,
         }),
       );
     } catch (error) {
@@ -187,8 +187,8 @@ export async function composeBatch(store: JournalStore, input: BatchComposeInput
 }
 
 // The one way a message's status moves: a status_change referring to it. `text` is the
-// reason or detail (an error code, a round-trip time, what the courier said); omitted when
-// there is nothing to say.
+// reason or detail (an error code, a round-trip time, the resend attempt "attempt 2/3", what
+// the courier said); omitted when there is nothing to say.
 export async function appendStatusChange(
   store: JournalStore,
   message: JournalEntry,

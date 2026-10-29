@@ -1,6 +1,8 @@
 <script lang="ts">
   // Open items (P0-07): per register entry, every outgoing message not yet roger, with the
-  // given-up ones flagged. Clicking one scrolls the timeline to it.
+  // given-up ones flagged. Newest first (P1-01): the groups in the order of their newest
+  // item, as openItems() hands them over, and the items within a group newest first.
+  // Clicking one scrolls the timeline to it.
   import { t, language } from "../i18n/index.svelte.ts";
   import type { OpenItem } from "../store/journalView.ts";
 
@@ -11,19 +13,13 @@
   }
   let { groups, labels, onselect }: Props = $props();
 
-  const sortedGroups = $derived.by(() => {
-    const collator = new Intl.Collator(language(), { numeric: true, sensitivity: "base" });
-    return [...groups.entries()]
-      .map(([counterpartyId, items]) => ({
-        counterpartyId,
-        label: labels.get(counterpartyId) ?? "",
-        items,
-      }))
-      .sort(
-        (a, b) =>
-          collator.compare(a.label, b.label) || a.counterpartyId.localeCompare(b.counterpartyId),
-      );
-  });
+  const sortedGroups = $derived(
+    [...groups.entries()].map(([counterpartyId, items]) => ({
+      counterpartyId,
+      label: labels.get(counterpartyId) ?? "",
+      items,
+    })),
+  );
 
   function formatTime(timestamp: string): string {
     return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "short" });

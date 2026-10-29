@@ -32,6 +32,18 @@ describe("contract schema validators", () => {
     expect(validateEnvelope({ ...walkthrough, exportedAt: "yesterday" })).toBe(false);
   });
 
+  it("allow batchId on a message_out only (P1-01)", () => {
+    const walkthrough = loadWalkthrough();
+    const batchId = "01JB8ZK3QX9V2M4N6P8R0T2X10";
+    const byType = (type: string) => walkthrough.entries.find((e) => e.type === type);
+    expect(validateJournalEntry({ ...byType("message_out"), batchId })).toBe(true);
+    expect(validateJournalEntry({ ...byType("message_out"), batchId: "batch-1" })).toBe(false);
+    expect(validateJournalEntry({ ...byType("note"), batchId })).toBe(false);
+    expect(validateJournalEntry({ ...byType("message_in"), batchId })).toBe(false);
+    expect(validateJournalEntry({ ...byType("status_change"), batchId })).toBe(false);
+    expect(validateJournalEntry({ ...byType("correction"), batchId })).toBe(false);
+  });
+
   it("check the date-time format", () => {
     const [entry] = loadWalkthrough().entries;
     expect(validateJournalEntry({ ...entry, timestamp: "2026-10-28 19:00" })).toBe(false);

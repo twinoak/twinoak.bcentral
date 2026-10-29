@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "../i18n/index.svelte.ts";
+  import { clockTrust } from "../lib/clock.svelte.ts";
   import { settings, hasOperatorName } from "../lib/settings.svelte.ts";
   import { route, hashFor } from "../lib/router.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
@@ -23,6 +24,12 @@
       {t("topbar.noOperator")}
     {/if}
   </span>
+
+  <!-- Said once, here, instead of a mark on every row (P1-01): the session's clock has not
+       been confirmed, so every entry written now is stamped clockTrust unknown. -->
+  {#if clockTrust() === "unknown"}
+    <a class="clock" href={hashFor("settings")}>{t("topbar.clockUnconfirmed")}</a>
+  {/if}
 
   <a
     class="radio"
@@ -104,6 +111,18 @@
   .operator.missing {
     opacity: 0.7;
     font-style: italic;
+  }
+
+  .clock {
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    background: #e0b64a;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .topbar a.clock {
+    color: var(--ink);
   }
 
   .radio {
