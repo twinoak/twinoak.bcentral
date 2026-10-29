@@ -1,30 +1,33 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
-  import type { RegisterEntry, RegisterOrigin } from "../store/types.ts";
+  import type { PendingRegisterRow, RegisterEntry, RegisterOrigin } from "../store/types.ts";
   import { isValidPublicKey, normalizePublicKey, REGISTER_ORIGINS } from "../store/register.ts";
-  import { DuplicatePublicKeyError } from "../store/journalStore.ts";
-  import { addRegisterEntry, saveRegisterEntry } from "../store/index.ts";
+  import { DuplicatePublicKeyError, NoPendingRowError } from "../store/journalStore.ts";
+  import { addRegisterEntry, bindPendingRegisterRow, saveRegisterEntry } from "../store/index.ts";
   import type { Contact } from "../radio/contactSource.ts";
   import ContactPicker from "./ContactPicker.svelte";
 
   interface Props {
     // The entry being edited; absent for a new one.
     entry?: RegisterEntry;
+    // The pending row being bound to a radio (P1-06): its fields seed the form, the key is
+    // what is missing. Absent otherwise; never together with `entry`.
+    pending?: PendingRegisterRow;
     // Everything in the register, for the duplicate-key check before the store is asked.
     existing: readonly RegisterEntry[];
     onsaved: (message: string) => void;
     oncancel: () => void;
   }
-  let { entry, existing, onsaved, oncancel }: Props = $props();
+  let { entry, pending, existing, onsaved, oncancel }: Props = $props();
 
-  // The entry as it was when the form opened. An edit form works on that snapshot on
-  // purpose: the drafts below are seeded from it once, and RegisterPage re-creates the form
-  // ({#key editing?.id}) when another entry is picked. untrack says so to the compiler, which
-  // would otherwise warn that each draft only captures the initial value
+  // The entry (or pending row) as it was when the form opened. An edit form works on that
+  // snapshot on purpose: the drafts below are seeded from it once, and RegisterPage
+  // re-creates the form ({#key editing?.id}) when another entry is picked. untrack says so to
+  // the compiler, which would otherwise warn that each draft only captures the initial value
   // (state_referenced_locally). The live `entry` is still read where it should be live: the
   // duplicate-key check, the title and save.
-  const initial = untrack(() => entry);
+  const initial: RegisterEntry | PendingRegisterRow | undefined = untrack(() => entry ?? pending);
 
   // Drafts: edited here, written to the store on save.
   let label = $state(initial?.label ?? "");
@@ -33,7 +36,8 @@
   let role = $state(initial?.role ?? "");
   let origin: RegisterOrigin = $state(initial?.origin ?? "issued");
   let notes = $state(initial?.notes ?? "");
-  let publicKey = $state(initial?.publicKey ?? "");
+  // A pending row has no key: that is what the form is for.
+  let publicKey = $state(untrack(() => entry?.publicKey ?? ""));
 
   let picking = $state(false);
   let busy = $state(false);
@@ -82,7 +86,10 @@
         notes: optional(notes),
         publicKey: normalizedKey,
       };
-      if (entry === undefined) {
+      if (pending !== undefined) {
+        await bindPendingRegisterRow(pending.id, fields);
+        onsaved(t("register.bound"));
+      } else if (entry === undefined) {
         await addRegisterEntry(fields);
         onsaved(t("register.saved"));
       } else {
@@ -90,6 +97,11 @@
         onsaved(result.note === null ? t("register.saved") : t("register.savedWithNote"));
       }
     } catch (failure) {
+      if (failure instanceof NoPendingRowError) {
+        // Bound or gone meanwhile (another tab): back to the list, which is reloaded.
+        onsaved(t("register.pendingGone"));
+        return;
+      }
       error =
         failure instanceof DuplicatePublicKeyError
           ? t("register.publicKeyTaken")
@@ -104,7 +116,9 @@
 
 <form onsubmit={save}>
   <h2>
-    {#if entry === undefined}
+    {#if pending !== undefined}
+      {t("register.formTitle.bind", { label: pending.label })}
+    {:else if entry === undefined}
       {t("register.formTitle.add")}
     {:else}
       {t("register.formTitle.edit", { label: entry.label })}
@@ -183,7 +197,9 @@
   </div>
 
   <div class="actions">
-    <button type="submit" disabled={!canSave}>{t("register.save")}</button>
+    <button type="submit" disabled={!canSave}>
+      {pending === undefined ? t("register.save") : t("register.bind")}
+    </button>
     <button type="button" class="secondary" onclick={oncancel}>{t("register.cancel")}</button>
     {#if error}
       <span class="error" role="alert">{error}</span>

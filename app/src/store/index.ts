@@ -7,9 +7,15 @@ import { now } from "../lib/clock.svelte.ts";
 import { currentIncidentId, onCurrentIncidentChange } from "../lib/currentIncident.svelte.ts";
 import { openJournalStore, type JournalStore } from "./journalStore.ts";
 import { createDrillMode, type DrillMode } from "./drillMode.svelte.ts";
-import { downloadEnvelope } from "./export.ts";
+import { downloadEnvelope, downloadText } from "./export.ts";
 import { createMirror, type Mirror } from "./mirror.svelte.ts";
-import { saveRegisterEntry as saveWithNote, type SaveResult } from "./register.ts";
+import { saveRegisterEntry as saveWithNote, sortedByLabel, type SaveResult } from "./register.ts";
+import { registerCsv, type RegisterImportPreview } from "./registerCsv.ts";
+import {
+  importRegister as importWithNote,
+  registerCsvFilename,
+  type ImportResult,
+} from "./registerImport.ts";
 import {
   composeBatch as composeBatchWithStore,
   composeMessage as composeWithStore,
@@ -26,7 +32,15 @@ import {
   type ManualMessageInInput,
 } from "./manual.ts";
 import { lastHeardFrom } from "./journalView.ts";
-import type { Incident, JournalEntry, NewRegisterEntry, RegisterEntry, Status } from "./types.ts";
+import { language } from "../i18n/index.svelte.ts";
+import type {
+  Incident,
+  JournalEntry,
+  NewRegisterEntry,
+  PendingRegisterRow,
+  RegisterEntry,
+  Status,
+} from "./types.ts";
 
 export const DATABASE_NAME = "bcentral";
 
@@ -120,6 +134,42 @@ export async function saveRegisterEntry(entry: RegisterEntry): Promise<SaveResul
     operator: settings.operatorName.trim(),
     incidentId: currentIncidentId(),
   });
+}
+
+// --- register import and export (P1-06) ------------------------------------------------
+
+export async function listPendingRegister(): Promise<PendingRegisterRow[]> {
+  const store = await journalStore();
+  return await store.pendingRegisterRows();
+}
+
+// A previewed file with no errors: stored, and noted in the current incident when one is open.
+export async function importRegisterPreview(
+  preview: RegisterImportPreview,
+  fileName: string,
+): Promise<ImportResult> {
+  const store = await journalStore();
+  return await importWithNote(store, preview, {
+    operator: settings.operatorName.trim(),
+    incidentId: currentIncidentId(),
+    fileName,
+  });
+}
+
+export async function bindPendingRegisterRow(id: string, fields: NewRegisterEntry): Promise<RegisterEntry> {
+  const store = await journalStore();
+  return await store.bindPendingRegisterRow(id, fields);
+}
+
+// The register as a CSV file, downloaded: entries by label, then the pending rows by label
+// with an empty key. Returns the file name.
+export async function exportRegisterCsv(): Promise<string> {
+  const store = await journalStore();
+  const entries = sortedByLabel(await store.allRegisterEntries(), language());
+  const pending = sortedByLabel(await store.pendingRegisterRows(), language());
+  const filename = registerCsvFilename(store.deviceId, now().timestamp);
+  downloadText(filename, registerCsv(entries, pending), "text/csv;charset=utf-8");
+  return filename;
 }
 
 // --- incidents (P0-05 list/create; P0-07 close/reopen, the incident bar) ----------------

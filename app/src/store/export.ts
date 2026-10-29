@@ -28,10 +28,10 @@ export function envelopeJson(envelope: Envelope): string {
   return JSON.stringify(envelope, null, 2) + "\n";
 }
 
-// Browser only: offers the file through a temporary <a download>.
-export function downloadEnvelope(envelope: Envelope): string {
-  const filename = envelopeFilename(envelope);
-  const blob = new Blob([envelopeJson(envelope)], { type: "application/json" });
+// Browser only: offers a text file through a temporary <a download>. Also the register's CSV
+// (P1-06).
+export function downloadText(filename: string, text: string, type: string): void {
+  const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -42,5 +42,10 @@ export function downloadEnvelope(envelope: Envelope): string {
   // Revoke once the download has had a moment to start; revoking synchronously after click
   // is reported to cancel the download in some Chromium versions.
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export function downloadEnvelope(envelope: Envelope): string {
+  const filename = envelopeFilename(envelope);
+  downloadText(filename, envelopeJson(envelope), "application/json");
   return filename;
 }

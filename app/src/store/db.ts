@@ -7,7 +7,7 @@
 // radio is one register entry (P0-03).
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { Incident, JournalEntry, RegisterEntry } from "./types.ts";
+import type { Incident, JournalEntry, PendingRegisterRow, RegisterEntry } from "./types.ts";
 
 // 1: P0-02 layout. 2: P0-03 adds the unique by-publicKey index on register.
 export const DATABASE_VERSION = 2;
@@ -25,9 +25,24 @@ export function metaSeqNoKey(counterpartyId: string): string {
   return `seqNo:${counterpartyId}`;
 }
 
+// A register row imported without a public key (P1-06), keyed by the row's own id; the row
+// moves to the register store, under the same id, when a key is bound to it.
+export const META_PENDING_REGISTER_PREFIX = "pendingRegister:";
+
+export function metaPendingRegisterKey(id: string): string {
+  return `${META_PENDING_REGISTER_PREFIX}${id}`;
+}
+
+// Every pendingRegister: key and nothing else: from the bare prefix up to the prefix followed
+// by the highest UTF-16 unit, which no id reaches.
+export function pendingRegisterKeyRange(): IDBKeyRange {
+  return IDBKeyRange.bound(META_PENDING_REGISTER_PREFIX, `${META_PENDING_REGISTER_PREFIX}￿`);
+}
+
 // What `meta` holds: the counters are numbers, the last print time a string, the journal
-// folder a directory handle. Each key has one type; `counter()` reads a counter key.
-export type MetaValue = number | string | FileSystemDirectoryHandle;
+// folder a directory handle, a pending register row an object. Each key has one type;
+// `counter()` reads a counter key.
+export type MetaValue = number | string | FileSystemDirectoryHandle | PendingRegisterRow;
 
 // A counter key's value: 0 while the key is absent. A counter key never holds anything but a
 // number; anything else is treated as absent rather than silently used in arithmetic.
