@@ -3,6 +3,10 @@
 // TX, one frame per notification (no '>' header, no length; the GATT packet is the frame).
 // First connection bonds with the companion's PIN (default 123456); the OS asks for it.
 //
+// The device the chooser picked is kept for the session (P1-07): after a drop
+// (gattserverdisconnected) or a disconnect(), connect() calls device.gatt.connect() again
+// instead of showing the chooser, which needs no user gesture.
+//
 // Lineage: meshguide.dk/lib/ble.js, same caveat as serial.ts (written from the protocol,
 // not copied; reconcile before extraction).
 
@@ -16,41 +20,56 @@ export const BLE_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 export const BLE_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 export const BLE_NAME_PREFIX = "MeshCore";
 
+export interface MeshCoreBleOptions {
+  // The browser's Web Bluetooth; navigator.bluetooth when not given (tests pass a fake).
+  bluetooth?: Bluetooth;
+}
+
 export class MeshCoreBle implements FrameTransport {
   readonly kind: TransportKind = "ble";
   onLog: (line: string) => void = () => undefined;
-  private device: BluetoothDevice | null = null;
+  private readonly bluetooth: Bluetooth | undefined;
+  private chosen: BluetoothDevice | null = null;
   private rx: BluetoothRemoteGATTCharacteristic | null = null;
   private tx: BluetoothRemoteGATTCharacteristic | null = null;
-  private readonly frames: Uint8Array[] = [];
+  private frames: Uint8Array[] = [];
   private waiter: Deferred<void> | null = null;
-  private closed = false;
+  private closed = true;
 
-  static isSupported(): boolean {
-    return typeof navigator !== "undefined" && navigator.bluetooth !== undefined;
+  constructor(options: MeshCoreBleOptions = {}) {
+    this.bluetooth =
+      options.bluetooth ?? (typeof navigator === "undefined" ? undefined : navigator.bluetooth);
+  }
+
+  get device(): BluetoothDevice | null {
+    return this.chosen;
   }
 
   async connect(): Promise<void> {
-    const bluetooth = typeof navigator === "undefined" ? undefined : navigator.bluetooth;
-    if (bluetooth === undefined) {
-      throw new Error("Web Bluetooth is not available in this browser");
+    let device = this.chosen;
+    if (device === null) {
+      if (this.bluetooth === undefined) {
+        throw new Error("Web Bluetooth is not available in this browser");
+      }
+      device = await this.bluetooth.requestDevice({
+        filters: [{ services: [BLE_SERVICE_UUID] }, { namePrefix: BLE_NAME_PREFIX }],
+        optionalServices: [BLE_SERVICE_UUID],
+      });
+      // Kept for the session; the listener stays with it across reconnects.
+      this.chosen = device;
+      device.addEventListener("gattserverdisconnected", this.onGattDisconnected);
     }
-    const device = await bluetooth.requestDevice({
-      filters: [{ services: [BLE_SERVICE_UUID] }, { namePrefix: BLE_NAME_PREFIX }],
-      optionalServices: [BLE_SERVICE_UUID],
-    });
     const gatt = device.gatt;
     if (gatt === undefined) {
       throw new Error("the chosen device has no GATT server");
     }
-    device.addEventListener("gattserverdisconnected", this.onGattDisconnected);
     const server = await gatt.connect();
     const service = await server.getPrimaryService(BLE_SERVICE_UUID);
     const rx = await service.getCharacteristic(BLE_RX_UUID);
     const tx = await service.getCharacteristic(BLE_TX_UUID);
     tx.addEventListener("characteristicvaluechanged", this.onNotification);
     await tx.startNotifications();
-    this.device = device;
+    this.frames = [];
     this.rx = rx;
     this.tx = tx;
     this.closed = false;
@@ -81,25 +100,22 @@ export class MeshCoreBle implements FrameTransport {
     this.waiter?.resolve();
   }
 
+  // Drops the GATT connection but keeps the device: the next connect() needs no chooser.
   async disconnect(): Promise<void> {
-    const { device, tx } = this;
+    const { chosen, tx } = this;
     this.closed = true;
     this.wake();
-    this.device = null;
     this.rx = null;
     this.tx = null;
     if (tx !== null) {
       tx.removeEventListener("characteristicvaluechanged", this.onNotification);
     }
-    if (device !== null) {
-      device.removeEventListener("gattserverdisconnected", this.onGattDisconnected);
-      if (device.gatt?.connected) {
-        try {
-          device.gatt.disconnect();
-          this.onLog("ble: disconnected");
-        } catch (error) {
-          this.onLog(`ble: disconnect failed: ${describeError(error)}`);
-        }
+    if (chosen !== null && chosen.gatt?.connected) {
+      try {
+        chosen.gatt.disconnect();
+        this.onLog("ble: disconnected");
+      } catch (error) {
+        this.onLog(`ble: disconnect failed: ${describeError(error)}`);
       }
     }
   }

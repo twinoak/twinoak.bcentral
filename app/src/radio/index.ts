@@ -7,6 +7,7 @@ import { currentIncidentId, onCurrentIncidentChange } from "../lib/currentIncide
 import { settings } from "../lib/settings.svelte.ts";
 import { journalStore } from "../store/index.ts";
 import { MeshCoreBle } from "./ble.ts";
+import { capabilityOf, transportSupportOf } from "./capability.ts";
 import { CompanionContactSource, type ContactSource } from "./contactSource.ts";
 import { createInbox } from "./inbox.svelte.ts";
 import { createOutbox } from "./outbox.svelte.ts";
@@ -14,22 +15,31 @@ import { createRadioStore } from "./radioStore.svelte.ts";
 import { createSendQueue } from "./sendQueue.svelte.ts";
 import { MeshCoreSerial, type TransportKind } from "./serial.ts";
 
+const inBrowser = typeof window !== "undefined" && typeof document !== "undefined";
+
 export const radio = createRadioStore({
   now: () => Date.now(),
   blindAfterMs: () => settings.blindAfterMinutes * 60_000,
-  createTransport: (kind: TransportKind) => (kind === "usb" ? new MeshCoreSerial() : new MeshCoreBle()),
+  createTransport: (kind: TransportKind, port?: SerialPort) =>
+    kind === "usb" ? new MeshCoreSerial({ port }) : new MeshCoreBle(),
   appName: "BCentral",
   logSink: (line) => console.log(line),
+  // The plug events and the granted ports (P1-07); undefined outside Chromium.
+  serial: typeof navigator === "undefined" ? undefined : navigator.serial,
+  // The link is checked when the laptop comes back (P1-07).
+  page: inBrowser
+    ? { document, window, isVisible: () => document.visibilityState === "visible" }
+    : undefined,
 });
 
 // Which transports this browser offers; both false outside Chromium.
-export const transportSupport: Readonly<Record<TransportKind, boolean>> = {
-  usb: MeshCoreSerial.isSupported(),
-  ble: MeshCoreBle.isSupported(),
-};
+export const transportSupport = transportSupportOf(
+  typeof navigator === "undefined" ? undefined : navigator,
+);
+export const capability = capabilityOf(transportSupport);
 
-// The top bar's elapsed time and the blind flip run on this tick, not on frames.
-if (typeof window !== "undefined") {
+// The top bar's elapsed time, the blind flip and the reconnect countdown run on this tick.
+if (inBrowser) {
   setInterval(() => radio.refreshNow(), 1000);
 }
 
@@ -81,3 +91,9 @@ function requeuePending(): void {
 }
 requeuePending();
 onCurrentIncidentChange(requeuePending);
+
+// Last, so the inbox and the queue are listening when the one granted USB port connects
+// without a gesture (P1-07).
+if (inBrowser) {
+  radio.start();
+}
