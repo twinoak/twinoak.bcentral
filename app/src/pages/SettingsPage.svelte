@@ -9,11 +9,38 @@
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
   import { builtAt, versionLabel } from "../lib/version.ts";
   import { updater } from "../lib/updates.svelte.ts";
+  import { formatBytes, persistence } from "../lib/persistence.svelte.ts";
+  import { mirror } from "../store/index.ts";
   import LanguageSelect from "../components/LanguageSelect.svelte";
 
   // Build time and "last checked" as the operator reads them, in the UI language.
   function formatInstant(iso: string): string {
     return new Date(iso).toLocaleString(language(), { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  // The journal folder (P1-04): picking, reconnecting and forgetting are user gestures here;
+  // the mirror's own state says how the folder is doing.
+  let folderBusy = $state(false);
+  let folderError: string | null = $state(null);
+  const mirrorState = $derived(mirror.state());
+  const usage = $derived(persistence.usage());
+
+  function formatClockTime(iso: string): string {
+    return new Date(iso).toLocaleTimeString(language(), { timeStyle: "medium" });
+  }
+
+  async function folderAction(action: () => Promise<void>) {
+    folderBusy = true;
+    folderError = null;
+    try {
+      await action();
+    } catch (failure) {
+      folderError = t("settings.journalFolder.chooseFailed", {
+        error: failure instanceof Error ? failure.message : String(failure),
+      });
+    } finally {
+      folderBusy = false;
+    }
   }
 
   // The PC's clock, shown so the operator can judge it before confirming it. Ticks once a
@@ -191,6 +218,81 @@
   </div>
 </form>
 
+<!-- The journal folder (P1-04): a copy of the journal outside the browser. The handle is kept
+     in the journal database; the browser re-asks for the permission after a restart. -->
+<section class="field folder" aria-labelledby="folder-heading">
+  <h2 id="folder-heading">{t("settings.journalFolder")}</h2>
+  <small>{t("settings.journalFolderHelp")}</small>
+  {#if !mirror.supported()}
+    <small class="error">{t("settings.journalFolder.unsupported")}</small>
+  {:else}
+    {#if mirrorState === "off"}
+      <small>{t("settings.journalFolder.none")}</small>
+    {:else}
+      <span class="folder-name" role="status">
+        {t("settings.journalFolder.current", { name: mirror.folderName() ?? "" })}
+      </span>
+      <small>{t("settings.journalFolder.file", { name: mirror.fileName() })}</small>
+      {#if mirrorState === "needsPermission"}
+        <small class="error" role="alert">{t("settings.journalFolder.needsPermission")}</small>
+      {:else if mirrorState === "error"}
+        <small class="error" role="alert"
+          >{t("settings.journalFolder.error", { error: mirror.error() ?? "" })}</small
+        >
+      {:else if mirror.lastWriteAt() !== null}
+        <small class="saved"
+          >{t("settings.journalFolder.lastWrite", {
+            time: formatClockTime(mirror.lastWriteAt() ?? ""),
+          })}</small
+        >
+      {:else}
+        <small>{t("settings.journalFolder.neverWritten")}</small>
+      {/if}
+      {#if mirror.pending() > 0}
+        <small>{t("settings.journalFolder.pending", { count: mirror.pending() })}</small>
+      {/if}
+    {/if}
+    <div class="actions">
+      {#if mirrorState === "needsPermission"}
+        <button
+          type="button"
+          disabled={folderBusy}
+          onclick={() => folderAction(() => mirror.reconnect())}
+        >
+          {t("settings.journalFolder.reconnect")}
+        </button>
+      {:else if mirrorState === "error"}
+        <button type="button" disabled={folderBusy} onclick={() => folderAction(() => mirror.retry())}>
+          {t("settings.journalFolder.retry")}
+        </button>
+      {/if}
+      <button
+        type="button"
+        class:secondary={mirrorState !== "off"}
+        disabled={folderBusy}
+        onclick={() => folderAction(() => mirror.chooseFolder())}
+      >
+        {mirrorState === "off"
+          ? t("settings.journalFolder.choose")
+          : t("settings.journalFolder.change")}
+      </button>
+      {#if mirrorState !== "off"}
+        <button
+          type="button"
+          class="secondary"
+          disabled={folderBusy}
+          onclick={() => folderAction(() => mirror.forget())}
+        >
+          {t("settings.journalFolder.forget")}
+        </button>
+      {/if}
+    </div>
+    {#if folderError}
+      <small class="error" role="alert">{folderError}</small>
+    {/if}
+  {/if}
+</section>
+
 <!-- Session state, not a saved setting: applies at once and lasts until the app is closed. -->
 <section class="field clock" aria-labelledby="clock-heading">
   <h2 id="clock-heading">{t("settings.clock")}</h2>
@@ -223,6 +325,26 @@
         {formatInstant(updater.lastCheckedAt() ?? "")}
       {:else}
         {t("settings.lastCheckedNever")}
+      {/if}
+    </dd>
+    <!-- Persistent storage (P1-04): what navigator.storage said on start. -->
+    <dt>{t("settings.storage")}</dt>
+    <dd>
+      {#if persistence.persisted() === null}
+        {t("settings.storage.unknown")}
+      {:else if persistence.persisted()}
+        {t("settings.storage.persisted")}
+      {:else}
+        <span class="error">{t("settings.storage.notPersisted")}</span>
+      {/if}
+      <br />
+      {#if usage === null}
+        {t("settings.storage.estimateUnavailable")}
+      {:else}
+        {t("settings.storage.estimate", {
+          usage: formatBytes(usage.usage, language()),
+          quota: formatBytes(usage.quota, language()),
+        })}
       {/if}
     </dd>
   </dl>
@@ -276,6 +398,7 @@
     color: var(--ok);
   }
 
+  .folder,
   .clock,
   .about {
     margin-top: 2rem;
@@ -283,10 +406,25 @@
     border-top: 1px solid var(--line);
   }
 
+  .folder h2,
   .clock h2,
   .about h2 {
     font-size: 1.1rem;
     margin: 0;
+  }
+
+  .folder-name {
+    font-weight: 600;
+  }
+
+  .folder .actions {
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .secondary {
+    background: #fff;
+    color: var(--navy);
   }
 
   .about dl {

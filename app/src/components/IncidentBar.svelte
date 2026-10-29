@@ -1,11 +1,12 @@
 <script lang="ts">
   // The incident bar (P0-07): which incident the journal shows, its name, when and by whom it
-  // was opened and whether it is open or closed; switch, create, close / reopen; and the
-  // export button. The parent owns the store calls and reloads; this component holds the
-  // form state and shows the outcome.
+  // was opened and whether it is open or closed; switch, create, close / reopen; the export
+  // button and the print button (P1-04). The parent owns the store calls and reloads; this
+  // component holds the form state and shows the outcome.
   import { t, language } from "../i18n/index.svelte.ts";
   import { settings } from "../lib/settings.svelte.ts";
   import type { IncidentState } from "../store/incidents.ts";
+  import type { ExportResult } from "../store/index.ts";
   import type { Incident } from "../store/types.ts";
 
   interface Props {
@@ -17,10 +18,21 @@
     oncreate: (name: string) => Promise<void>;
     onclose: (reason: string) => Promise<void>;
     onreopen: (reason: string) => Promise<void>;
-    onexport: () => Promise<string>;
+    onexport: () => Promise<ExportResult>;
+    // Opens the print view of the current incident.
+    onprint: () => void;
   }
-  let { incidents, current, incidentState, onpick, oncreate, onclose, onreopen, onexport }: Props =
-    $props();
+  let {
+    incidents,
+    current,
+    incidentState,
+    onpick,
+    oncreate,
+    onclose,
+    onreopen,
+    onexport,
+    onprint,
+  }: Props = $props();
 
   let newName = $state("");
   let reason = $state("");
@@ -94,8 +106,11 @@
     busy = true;
     error = null;
     try {
-      const filename = await onexport();
-      notice = t("journal.exported", { filename });
+      const result = await onexport();
+      notice =
+        result.inFolder === null
+          ? t("journal.exported", { filename: result.filename })
+          : t("journal.exportedToFolder", { filename: result.filename });
     } catch (failure) {
       error = t("journal.exportFailed", { error: describe(failure) });
     } finally {
@@ -128,6 +143,11 @@
 
     <span class="spacer"></span>
 
+    {#if current !== null}
+      <button type="button" class="secondary" onclick={onprint} disabled={busy}
+        >{t("journal.print")}</button
+      >
+    {/if}
     <button type="button" class="secondary" onclick={exportNow} disabled={busy}
       >{t("journal.export")}</button
     >

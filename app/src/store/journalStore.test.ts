@@ -369,3 +369,72 @@ describe("incidents and register", () => {
     store.close();
   });
 });
+
+describe("onWrite (P1-04)", () => {
+  it("tells a listener about every successful write, after it, with the value as stored", async () => {
+    const store = await openTestStore();
+    const seen: string[] = [];
+    const off = store.onWrite((written) => {
+      seen.push(`${written.kind}:${written.value.id}`);
+    });
+    const incident = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
+    const hans = await store.createRegisterEntry({ publicKey: HANS_KEY, label: "Hans", origin: "adhoc" });
+    const entry = await store.appendEntry(note("x"));
+    const order = await store.appendMessageOut(
+      { incidentId: INCIDENT, operator: "Thomas", transport: "mesh", counterpartyId: hans.id },
+      (n) => `#${n} x`,
+    );
+    expect(seen).toEqual([
+      `incident:${incident.id}`,
+      `registerEntry:${hans.id}`,
+      `entry:${entry.id}`,
+      `entry:${order.id}`,
+    ]);
+
+    // A refused write is no notification; a deduplicated message_in is none either.
+    await expect(store.appendEntry({ ...note("y"), type: "shout" as "note" })).rejects.toThrow();
+    const incoming = await store.appendEntry(messageIn("R1", "ab".repeat(32)));
+    await store.appendEntry(messageIn("R1", "ab".repeat(32)));
+    expect(seen.slice(4)).toEqual([`entry:${incoming.id}`]);
+
+    // A listener that throws does not fail the write; unsubscribing stops the calls.
+    store.onWrite(() => {
+      throw new Error("listener broke");
+    });
+    await store.appendEntry(note("z"));
+    expect(seen).toHaveLength(6);
+    off();
+    await store.appendEntry(note("w"));
+    expect(seen).toHaveLength(6);
+    store.close();
+  });
+});
+
+describe("print time and journal folder in meta (P1-04)", () => {
+  it("the last print time is null until recorded and moves only when recorded", async () => {
+    const store = await openTestStore();
+    expect(await store.lastPrintAt()).toBeNull();
+    await store.appendEntry(note("x"));
+    expect(await store.lastPrintAt()).toBeNull();
+    await store.recordPrint("2026-10-29T10:00:00.000Z");
+    expect(await store.lastPrintAt()).toBe("2026-10-29T10:00:00.000Z");
+    await store.recordPrint("2026-10-29T11:00:00.000Z");
+    expect(await store.lastPrintAt()).toBe("2026-10-29T11:00:00.000Z");
+    // The counters are untouched by the other meta keys.
+    expect(await store.lastDeviceSeq()).toBe(1);
+    store.close();
+  });
+
+  it("the journal folder is absent until set and gone after clearing", async () => {
+    const store = await openTestStore();
+    expect(await store.journalFolder()).toBeUndefined();
+    // A structured-cloneable stand-in for a directory handle (fake-indexeddb clones values).
+    const handle = { kind: "directory", name: "usb" } as unknown as FileSystemDirectoryHandle;
+    await store.setJournalFolder(handle);
+    expect(await store.journalFolder()).toEqual({ kind: "directory", name: "usb" });
+    await store.clearJournalFolder();
+    expect(await store.journalFolder()).toBeUndefined();
+    expect(await store.lastPrintAt()).toBeNull();
+    store.close();
+  });
+});

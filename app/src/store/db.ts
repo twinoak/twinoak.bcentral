@@ -1,5 +1,6 @@
 // The IndexedDB layout, through idb. Four object stores: the three the contract defines, keyed
-// by their ULID, and `meta` for this device's running counters (out-of-line string keys).
+// by their ULID, and `meta` for this device's running counters, the time of the last print and
+// the journal folder's directory handle (P1-04; out-of-line string keys).
 // The entry indexes are the ones the journal screen and the text protocol need: by incident,
 // by counterparty, by what an entry refers to, and the dedupe key (unique: the same incoming
 // message is never stored twice). The register has one index, by public key, unique: one
@@ -12,10 +13,26 @@ import type { Incident, JournalEntry, RegisterEntry } from "./types.ts";
 export const DATABASE_VERSION = 2;
 
 export const META_DEVICE_SEQ = "deviceSeq";
+// ISO timestamp of the last print of the journal (P1-04: "since last print").
+export const META_LAST_PRINT_AT = "lastPrintAt";
+// The FileSystemDirectoryHandle of the journal folder (P1-04). A handle is structured-
+// cloneable, so IndexedDB keeps it across browser restarts; the permission on it is not kept
+// and is asked for again on start.
+export const META_JOURNAL_FOLDER = "journalFolder";
 
 // Per-recipient #n counter (text-protocol.md), keyed by the register entry's id.
 export function metaSeqNoKey(counterpartyId: string): string {
   return `seqNo:${counterpartyId}`;
+}
+
+// What `meta` holds: the counters are numbers, the last print time a string, the journal
+// folder a directory handle. Each key has one type; `counter()` reads a counter key.
+export type MetaValue = number | string | FileSystemDirectoryHandle;
+
+// A counter key's value: 0 while the key is absent. A counter key never holds anything but a
+// number; anything else is treated as absent rather than silently used in arithmetic.
+export function counter(value: MetaValue | undefined): number {
+  return typeof value === "number" ? value : 0;
 }
 
 export interface JournalDb extends DBSchema {
@@ -37,7 +54,7 @@ export interface JournalDb extends DBSchema {
       "by-dedupeKey": string;
     };
   };
-  meta: { key: string; value: number };
+  meta: { key: string; value: MetaValue };
 }
 
 export type JournalDatabase = IDBPDatabase<JournalDb>;

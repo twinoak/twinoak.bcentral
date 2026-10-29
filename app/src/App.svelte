@@ -3,6 +3,7 @@
   import UpdateBanner from "./components/UpdateBanner.svelte";
   import HomePage from "./pages/HomePage.svelte";
   import JournalPage from "./pages/JournalPage.svelte";
+  import PrintPage from "./pages/PrintPage.svelte";
   import QueuePage from "./pages/QueuePage.svelte";
   import RadioPage from "./pages/RadioPage.svelte";
   import RegisterPage from "./pages/RegisterPage.svelte";
@@ -24,12 +25,15 @@
 <!-- Shown only when a new build is waiting; the reload is the operator's click. -->
 <UpdateBanner />
 
-<!-- The journal and queue screens have side panels and need the width; the others are forms. -->
-<main class:wide={shown === "journal" || shown === "queue"}>
+<!-- The journal and queue screens have side panels and need the width; the print view is a
+     table; the others are forms. -->
+<main class:wide={shown === "journal" || shown === "queue" || shown === "print"}>
   {#if shown === "settings"}
     <SettingsPage />
   {:else if shown === "journal"}
     <JournalPage />
+  {:else if shown === "print"}
+    <PrintPage />
   {:else if shown === "queue"}
     <QueuePage />
   {:else if shown === "register"}

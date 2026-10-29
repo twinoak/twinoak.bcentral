@@ -6,13 +6,20 @@
   import { formatElapsed } from "../lib/elapsed.ts";
   import { radio } from "../radio/index.ts";
   import { versionLabel } from "../lib/version.ts";
+  import { persistence } from "../lib/persistence.svelte.ts";
+  import { mirror } from "../store/index.ts";
   import LanguageSelect from "./LanguageSelect.svelte";
 
   const radioState = $derived(radio.state());
   const elapsed = $derived(radio.elapsedMs());
+  const mirrorState = $derived(mirror.state());
+  // The storage warning's remedy is a journal folder; once one is set the line has done its
+  // job and goes.
+  const storageWarning = $derived(persistence.persisted() === false && mirrorState === "off");
 </script>
 
-<header class="topbar">
+<!-- `no-print`: the print view (P1-04) prints the journal alone (app.css). -->
+<header class="topbar no-print">
   <a class="brand" href={hashFor("home")} title={t("topbar.about", { version: versionLabel() })}>
     {t("app.name")}
   </a>
@@ -29,6 +36,22 @@
        been confirmed, so every entry written now is stamped clockTrust unknown. -->
   {#if clockTrust() === "unknown"}
     <a class="clock" href={hashFor("settings")}>{t("topbar.clockUnconfirmed")}</a>
+  {/if}
+
+  <!-- The journal folder (P1-04), never silent: the permission is re-asked from this one
+       click (a user gesture); any other failure links to the settings page. -->
+  {#if mirrorState === "needsPermission"}
+    <button type="button" class="warning" onclick={() => mirror.reconnect()}>
+      {t("topbar.folderNeedsPermission")}
+    </button>
+  {:else if mirrorState === "error"}
+    <a class="warning" href={hashFor("settings")}>
+      {t("topbar.folderError", { error: mirror.error() ?? "" })}
+    </a>
+  {/if}
+
+  {#if storageWarning}
+    <a class="warning" href={hashFor("settings")}>{t("topbar.notPersisted")}</a>
   {/if}
 
   <a
@@ -122,6 +145,22 @@
   }
 
   .topbar a.clock {
+    color: var(--ink);
+  }
+
+  .warning {
+    padding: 0.15rem 0.6rem;
+    border: none;
+    border-radius: 999px;
+    background: #ef7a6d;
+    color: var(--ink);
+    font-size: inherit;
+    white-space: normal;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .topbar a.warning {
     color: var(--ink);
   }
 
