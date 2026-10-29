@@ -6,7 +6,10 @@
 import { monotonicFactory } from "ulid";
 import type { IDBPObjectStore } from "idb";
 import {
+  counter,
   META_DEVICE_SEQ,
+  META_JOURNAL_FOLDER,
+  META_LAST_PRINT_AT,
   metaSeqNoKey,
   openDatabase,
   type JournalDatabase,
@@ -87,6 +90,16 @@ export class DuplicatePublicKeyError extends Error {
   }
 }
 
+// What the store has just written, handed to onWrite listeners after the transaction is
+// done (P1-04: the journal folder mirror appends one line per write). The kinds are the
+// envelope's three arrays; `entry` is the store's own word for a journal entry.
+export type Written =
+  | { kind: "incident"; value: Incident }
+  | { kind: "registerEntry"; value: RegisterEntry }
+  | { kind: "entry"; value: JournalEntry };
+
+export type WriteListener = (written: Written) => void;
+
 type RegisterWriteStore = IDBPObjectStore<JournalDb, ["register"], "register", "readwrite">;
 type EntriesWriteStore = IDBPObjectStore<JournalDb, ("entries" | "meta")[], "entries", "readwrite">;
 type MetaWriteStore = IDBPObjectStore<JournalDb, ("entries" | "meta")[], "meta", "readwrite">;
@@ -103,6 +116,7 @@ export class JournalStore {
   readonly deviceId: string;
   readonly clock: Clock;
   private readonly db: JournalDatabase;
+  private readonly listeners = new Set<WriteListener>();
 
   constructor(db: JournalDatabase, options: JournalStoreOptions) {
     this.db = db;
@@ -112,6 +126,27 @@ export class JournalStore {
 
   close(): void {
     this.db.close();
+  }
+
+  // Called after every successful write, once per object written, with the value as stored.
+  // Returns the unsubscribe. A listener runs after the transaction is done, so it can neither
+  // fail the write nor hold it up; what it does with the value is its own business.
+  onWrite(listener: WriteListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  // A listener's failure is its own: it is not the store's write, which has already happened.
+  private notify(written: Written): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(written);
+      } catch {
+        // The listener owns its errors (the mirror shows its own state).
+      }
+    }
   }
 
   // --- entries -------------------------------------------------------------------------
@@ -137,6 +172,7 @@ export class JournalStore {
 
       const entry = await this.writeEntry(entries, meta, input, reading.timestamp, reading.clockTrust);
       await tx.done;
+      this.notify({ kind: "entry", value: entry });
       return entry;
     } catch (error) {
       await abortQuietly(tx);
@@ -154,7 +190,7 @@ export class JournalStore {
     const tx = this.db.transaction(["entries", "meta"], "readwrite");
     try {
       const meta = tx.objectStore("meta");
-      const seqNo = ((await meta.get(metaSeqNoKey(input.counterpartyId))) ?? 0) + 1;
+      const seqNo = counter(await meta.get(metaSeqNoKey(input.counterpartyId))) + 1;
       const text = compose(seqNo);
       const entry = await this.writeEntry(
         tx.objectStore("entries"),
@@ -164,6 +200,7 @@ export class JournalStore {
         reading.clockTrust,
       );
       await tx.done;
+      this.notify({ kind: "entry", value: entry });
       return entry;
     } catch (error) {
       await abortQuietly(tx);
@@ -181,7 +218,7 @@ export class JournalStore {
     timestamp: string,
     clockTrust: JournalEntry["clockTrust"],
   ): Promise<JournalEntry> {
-    const deviceSeq = ((await meta.get(META_DEVICE_SEQ)) ?? 0) + 1;
+    const deviceSeq = counter(await meta.get(META_DEVICE_SEQ)) + 1;
     const entry = withoutUndefined({
       ...input,
       id: ulid(),
@@ -199,7 +236,7 @@ export class JournalStore {
     // assigned the number (text-protocol.md: never reused, never reset).
     if (entry.type === "message_out" && entry.counterpartyId !== undefined && entry.seqNo !== undefined) {
       const key = metaSeqNoKey(entry.counterpartyId);
-      const current = (await meta.get(key)) ?? 0;
+      const current = counter(await meta.get(key));
       if (entry.seqNo > current) {
         await meta.put(entry.seqNo, key);
       }
@@ -256,12 +293,12 @@ export class JournalStore {
   // --- counters (meta) -----------------------------------------------------------------
 
   async lastDeviceSeq(): Promise<number> {
-    return (await this.db.get("meta", META_DEVICE_SEQ)) ?? 0;
+    return counter(await this.db.get("meta", META_DEVICE_SEQ));
   }
 
   // The highest #n used for this recipient from this device, 0 when none.
   async lastSeqNo(counterpartyId: string): Promise<number> {
-    return (await this.db.get("meta", metaSeqNoKey(counterpartyId))) ?? 0;
+    return counter(await this.db.get("meta", metaSeqNoKey(counterpartyId)));
   }
 
   // Reserves the next #n for this recipient. Atomic on the meta store: two callers never get
@@ -269,10 +306,38 @@ export class JournalStore {
   async nextSeqNo(counterpartyId: string): Promise<number> {
     const key = metaSeqNoKey(counterpartyId);
     const tx = this.db.transaction("meta", "readwrite");
-    const next = ((await tx.store.get(key)) ?? 0) + 1;
+    const next = counter(await tx.store.get(key)) + 1;
     await tx.store.put(next, key);
     await tx.done;
     return next;
+  }
+
+  // --- print and journal folder (meta, P1-04) --------------------------------------------
+
+  // When the journal was last printed (ISO timestamp), or null when never. Moved only by
+  // recordPrint, after a print.
+  async lastPrintAt(): Promise<string | null> {
+    const value = await this.db.get("meta", META_LAST_PRINT_AT);
+    return typeof value === "string" ? value : null;
+  }
+
+  async recordPrint(printedAt: string): Promise<void> {
+    await this.db.put("meta", printedAt, META_LAST_PRINT_AT);
+  }
+
+  // The journal folder's directory handle, kept across restarts; undefined when no folder
+  // is set. The browser keeps the handle, not the permission (store/mirror.svelte.ts).
+  async journalFolder(): Promise<FileSystemDirectoryHandle | undefined> {
+    const value = await this.db.get("meta", META_JOURNAL_FOLDER);
+    return typeof value === "object" ? value : undefined;
+  }
+
+  async setJournalFolder(handle: FileSystemDirectoryHandle): Promise<void> {
+    await this.db.put("meta", handle, META_JOURNAL_FOLDER);
+  }
+
+  async clearJournalFolder(): Promise<void> {
+    await this.db.delete("meta", META_JOURNAL_FOLDER);
   }
 
   // --- incidents -----------------------------------------------------------------------
@@ -282,6 +347,7 @@ export class JournalStore {
     const value = withoutUndefined(incident);
     assertValid(validateIncident, value, "incident");
     await this.db.put("incidents", value);
+    this.notify({ kind: "incident", value });
     return value;
   }
 
@@ -328,6 +394,7 @@ export class JournalStore {
       await assertPublicKeyFree(tx.store, value);
       await tx.store.put(value);
       await tx.done;
+      this.notify({ kind: "registerEntry", value });
       return value;
     } catch (error) {
       await abortQuietly(tx);
@@ -371,6 +438,9 @@ export class JournalStore {
         await tx.store.add(value);
       }
       await tx.done;
+      for (const value of values) {
+        this.notify({ kind: "registerEntry", value });
+      }
       return values;
     } catch (error) {
       await abortQuietly(tx);
@@ -434,7 +504,7 @@ export class JournalStore {
       }
 
       const meta = tx.objectStore("meta");
-      let deviceSeq = (await meta.get(META_DEVICE_SEQ)) ?? 0;
+      let deviceSeq = counter(await meta.get(META_DEVICE_SEQ));
       const seqNos = new Map<string, number>();
       for (const entry of envelope.entries) {
         if (entry.deviceId !== this.deviceId) {
@@ -449,13 +519,23 @@ export class JournalStore {
       await meta.put(deviceSeq, META_DEVICE_SEQ);
       for (const [counterpartyId, seqNo] of seqNos) {
         const key = metaSeqNoKey(counterpartyId);
-        const current = (await meta.get(key)) ?? 0;
+        const current = counter(await meta.get(key));
         if (seqNo > current) {
           await meta.put(seqNo, key);
         }
       }
 
       await tx.done;
+      // An import is a write like any other: the mirror gets every object in file order.
+      for (const incident of envelope.incidents) {
+        this.notify({ kind: "incident", value: incident });
+      }
+      for (const entry of envelope.register) {
+        this.notify({ kind: "registerEntry", value: entry });
+      }
+      for (const entry of envelope.entries) {
+        this.notify({ kind: "entry", value: entry });
+      }
     } catch (error) {
       await abortQuietly(tx);
       throw error;

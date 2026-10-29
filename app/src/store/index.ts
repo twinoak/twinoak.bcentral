@@ -7,6 +7,7 @@ import { now } from "../lib/clock.svelte.ts";
 import { currentIncidentId } from "../lib/currentIncident.svelte.ts";
 import { openJournalStore, type JournalStore } from "./journalStore.ts";
 import { downloadEnvelope } from "./export.ts";
+import { createMirror, type Mirror } from "./mirror.svelte.ts";
 import { saveRegisterEntry as saveWithNote, type SaveResult } from "./register.ts";
 import {
   composeBatch as composeBatchWithStore,
@@ -37,11 +38,49 @@ export function journalStore(): Promise<JournalStore> {
   return opening;
 }
 
-// Builds, validates and downloads the export file; returns its name.
-export async function exportJournal(): Promise<string> {
+// --- journal folder (P1-04) -------------------------------------------------------------
+
+// The app's mirror: the folder handle lives in the store's meta, the picker is the
+// browser's. main.ts starts it. Chromium only; elsewhere `supported()` is false.
+export const mirror: Mirror = createMirror<FileSystemDirectoryHandle>({
+  store: journalStore,
+  now: () => now().timestamp,
+  loadFolder: async () => await (await journalStore()).journalFolder(),
+  saveFolder: async (folder) => await (await journalStore()).setJournalFolder(folder),
+  clearFolder: async () => await (await journalStore()).clearJournalFolder(),
+  pickFolder:
+    typeof window !== "undefined" && "showDirectoryPicker" in window
+      ? () => window.showDirectoryPicker({ id: "bcentral-journal", mode: "readwrite" })
+      : undefined,
+});
+
+export interface ExportResult {
+  filename: string;
+  // The same file's name in the journal folder, or null when no folder is set (or the write
+  // failed, which the mirror's state shows).
+  inFolder: string | null;
+}
+
+// Builds, validates and downloads the export file, and writes it into the journal folder
+// when one is set; returns the names.
+export async function exportJournal(): Promise<ExportResult> {
   const store = await journalStore();
   const envelope = await store.exportEnvelope();
-  return downloadEnvelope(envelope);
+  const filename = downloadEnvelope(envelope);
+  const inFolder = await mirror.writeEnvelope(envelope);
+  return { filename, inFolder };
+}
+
+// --- print (P1-04) ----------------------------------------------------------------------
+
+export async function lastPrintAt(): Promise<string | null> {
+  const store = await journalStore();
+  return await store.lastPrintAt();
+}
+
+export async function recordPrint(printedAt: string): Promise<void> {
+  const store = await journalStore();
+  await store.recordPrint(printedAt);
 }
 
 // --- register (P0-03) ------------------------------------------------------------------

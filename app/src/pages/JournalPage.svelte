@@ -6,6 +6,7 @@
   // every entry the inbox or the outbox writes, and after every write from this screen.
   import { t, language } from "../i18n/index.svelte.ts";
   import { currentIncidentId, setCurrentIncidentId } from "../lib/currentIncident.svelte.ts";
+  import { navigate } from "../lib/router.svelte.ts";
   import { inbox, outbox, sendQueue } from "../radio/index.ts";
   import {
     addCorrection,
@@ -202,6 +203,7 @@
   onclose={close}
   onreopen={reopen}
   onexport={exportJournal}
+  onprint={() => navigate("print")}
 />
 
 {#if loadError}

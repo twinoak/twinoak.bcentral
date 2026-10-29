@@ -80,6 +80,35 @@ button:disabled {
   cursor: default;
 }
 
+/* The print view (P1-04): the journal alone on paper, with page numbers in the bottom
+   margin where the browser supports page margin boxes; Chromium's own header and footer
+   (on by default in its print dialog) carry the page number as well. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  :root {
+    background: #fff;
+    font-size: 11pt;
+  }
+
+  main,
+  main.wide {
+    max-width: none;
+    padding: 0;
+  }
+}
+
+@page {
+  margin: 15mm;
+
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-size: 9pt;
+  }
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

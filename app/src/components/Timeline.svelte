@@ -12,15 +12,17 @@
   // "↳ answers ‹time›" under its text and the incoming row "answered ‹time›", each a link to
   // the other row.
   import { tick } from "svelte";
-  import { t, language } from "../i18n/index.svelte.ts";
+  import { t } from "../i18n/index.svelte.ts";
   import {
-    countNewRows,
-    findRow,
-    type BatchCounters,
-    type MessageView,
-    type StripItem,
-    type TimelineRow,
-  } from "../store/journalView.ts";
+    countersText,
+    formatDateTime,
+    formatShortTime,
+    formatTime,
+    historyDetail as historyDetailOf,
+    rogerSource as rogerSourceOf,
+    stripText,
+  } from "../lib/journalText.ts";
+  import { countNewRows, findRow, type MessageView, type TimelineRow } from "../store/journalView.ts";
   import { manualStatusesFor } from "../store/outgoing.ts";
   import type { JournalEntry, Status } from "../store/types.ts";
 
@@ -107,71 +109,14 @@
     return failure instanceof Error ? failure.message : String(failure);
   }
 
-  function formatTime(timestamp: string): string {
-    return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "medium" });
-  }
-
-  function formatShortTime(timestamp: string): string {
-    return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "short" });
-  }
-
-  function formatDateTime(timestamp: string): string {
-    return new Date(timestamp).toLocaleString(language(), {
-      dateStyle: "medium",
-      timeStyle: "medium",
-    });
-  }
-
-  // One segment of the strip: the status and its time, or "waiting" with the latest attempt.
-  // While the outbox or the queue holds the message, its own progress text replaces the
-  // waiting / pending segment.
-  function stripText(item: StripItem, inflightText: string | null): string {
-    if ((item.kind === "waiting" || item.kind === "pending") && inflightText !== null) {
-      return inflightText;
-    }
-    if (item.kind === "waiting") {
-      return item.attempt === null
-        ? t("journal.strip.waiting")
-        : t("journal.strip.waitingAttempt", { attempt: item.attempt });
-    }
-    const label = t(`journal.status.${item.kind}`);
-    return item.at === null ? label : `${label} ${formatShortTime(item.at)}`;
-  }
-
-  function countersText(counters: BatchCounters): string {
-    const parts: string[] = [];
-    for (const key of ["pending", "sent", "delivered", "roger", "given_up"] as const) {
-      const n = key === "given_up" ? counters.givenUp : counters[key];
-      if (n > 0) {
-        parts.push(t(`journal.batch.counter.${key}`, { n }));
-      }
-    }
-    return parts.join(" · ");
-  }
-
-  // What a history line says: for a status change the status, then its text; a roger's text
-  // is the id of the incoming entry that caused it, shown as that entry's text when it is in
-  // this incident. For an old resend note, its text.
+  // The words of a row (strip, counters, history) live in lib/journalText.ts, shared with
+  // the print view (P1-04); only the incident's entries are bound here.
   function historyDetail(entry: JournalEntry): string {
-    if (entry.type !== "status_change") {
-      return entry.text ?? "";
-    }
-    const status = t(`journal.status.${entry.newStatus ?? "pending"}`);
-    if (entry.text === undefined) {
-      return status;
-    }
-    const referenced = entry.newStatus === "roger" ? byId.get(entry.text) : undefined;
-    if (referenced !== undefined) {
-      return `${status} · ${t("journal.rogerFrom", { text: referenced.text ?? "" })}`;
-    }
-    return `${status} · ${entry.text}`;
+    return historyDetailOf(entry, byId);
   }
 
   function rogerSource(entry: JournalEntry): JournalEntry | undefined {
-    if (entry.type !== "status_change" || entry.newStatus !== "roger" || entry.text === undefined) {
-      return undefined;
-    }
-    return byId.get(entry.text);
+    return rogerSourceOf(entry, byId);
   }
 
   function startCorrection(entry: JournalEntry) {

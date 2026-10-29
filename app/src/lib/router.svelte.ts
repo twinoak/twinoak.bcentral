@@ -1,9 +1,10 @@
-// Hash routing by hand: six screens, no library. "#/settings", "#/journal", "#/queue",
-// "#/register" and "#/radio" are routes; anything else is home. "#/send" (P0-05's stand-in
-// screen, absorbed into the journal screen in P0-07) opens the journal, so an old bookmark
-// still lands right. Later tasks add their screen to `Route` and `parseHash`.
+// Hash routing by hand: seven screens, no library. "#/settings", "#/journal", "#/queue",
+// "#/register", "#/radio" and "#/print" (the journal's print view, P1-04) are routes;
+// anything else is home. "#/send" (P0-05's stand-in screen, absorbed into the journal screen
+// in P0-07) opens the journal, so an old bookmark still lands right. Later tasks add their
+// screen to `Route` and `parseHash`.
 
-export type Route = "home" | "settings" | "journal" | "queue" | "register" | "radio";
+export type Route = "home" | "settings" | "journal" | "queue" | "register" | "radio" | "print";
 
 export function parseHash(hash: string): Route {
   if (hash === "#/settings") {
@@ -20,6 +21,9 @@ export function parseHash(hash: string): Route {
   }
   if (hash === "#/radio") {
     return "radio";
+  }
+  if (hash === "#/print") {
+    return "print";
   }
   return "home";
 }

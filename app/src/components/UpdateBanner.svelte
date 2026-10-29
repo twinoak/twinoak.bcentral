@@ -4,7 +4,7 @@
 </script>
 
 {#if updater.updateAvailable()}
-  <div class="banner" role="status">
+  <div class="banner no-print" role="status">
     <span>{t("update.available")}</span>
     <button type="button" onclick={() => updater.reload()}>{t("update.reload")}</button>
   </div>
