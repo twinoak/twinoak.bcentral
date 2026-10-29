@@ -4,9 +4,9 @@ Findings from review, one line each. Severity: blocker / fix-next / note.
 
 - [ ] note (walkthrough 2026-10-29): incoming messages land in the currently viewed incident when several are open — a guess, not a rule. Held for the users: `docs/open-questions.md` §1. Until then, test with one incident open.
 - [x] fix-next (fixed 2026-10-29): compose and manual-entry forms side by side; transport field before recipient; "Vælg en radio" → "Vælg en modtager"; transport label "Kanal" → "Via" ("Kanal" means channel messages in MeshCore).
-- [ ] fix-next (walkthrough 2026-10-29): a bare `?` after every time because the clock is unconfirmed — folded into P1-01 (one top-bar line, dimmed row mark, ✓ for manual).
+- [x] fix-next (walkthrough 2026-10-29): a bare `?` after every time because the clock is unconfirmed — folded into P1-01 (one top-bar line, dimmed row mark, ✓ for manual). (fixed in P1-03: verified already done by P1-01 `8aeac57` — `TopBar` carries the one `topbar.clockUnconfirmed` line, `Timeline` shows the dimmed `?` / green `✓` mark; nothing to change.)
 - [x] fix-next (fixed 2026-10-29): "Besked ud" → "Ny besked" / "New message".
-- [ ] fix-next (walkthrough 2026-10-29): no way to answer an incoming message from its row — written as P1-02.
+- [x] fix-next (walkthrough 2026-10-29): no way to answer an incoming message from its row — written as P1-02. (fixed in P1-03: verified already done by P1-02 `dcb9557` — Reply on every incoming row, `refersTo` on the answer; nothing to change.)
 
 ## Review of P1-01 (2026-10-29)
 

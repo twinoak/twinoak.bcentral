@@ -470,6 +470,33 @@ describe("status changes", () => {
     store.close();
   });
 
+  it("a manual given_up or roger on a mesh message needs a reason too, and the reason is the status change's text (P1-03)", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x");
+    await appendStatusChange(store, message, "sent");
+    const seqBefore = await store.lastDeviceSeq();
+    for (const status of ["given_up", "roger"] as const) {
+      await expect(recordManualStatus(store, message, status, { operator: "Anne", text: "" })).rejects.toBeInstanceOf(
+        ManualStatusError,
+      );
+      await expect(
+        recordManualStatus(store, message, status, { operator: "Anne", text: " \t " }),
+      ).rejects.toBeInstanceOf(ManualStatusError);
+    }
+    // Nothing was written by the refusals.
+    expect(await store.statusOf(message.id)).toBe("sent");
+    expect(await store.lastDeviceSeq()).toBe(seqBefore);
+
+    const roger = await recordManualStatus(store, message, "roger", { operator: "Anne", text: "  sagde ok på vej forbi  " });
+    expect(roger.type).toBe("status_change");
+    expect(roger.refersTo).toBe(message.id);
+    expect(roger.newStatus).toBe("roger");
+    expect(roger.text).toBe("sagde ok på vej forbi");
+    expect(roger.operator).toBe("Anne");
+    expect(await store.statusOf(message.id)).toBe("roger");
+    store.close();
+  });
+
   it("refuses a manual status on a non-message and a status that is not manual", async () => {
     const store = await openTestStore();
     const courier = await compose(store, "y", HANS, "courier");

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import type { RegisterEntry, RegisterOrigin } from "../store/types.ts";
   import { isValidPublicKey, normalizePublicKey, REGISTER_ORIGINS } from "../store/register.ts";
@@ -17,14 +18,22 @@
   }
   let { entry, existing, onsaved, oncancel }: Props = $props();
 
+  // The entry as it was when the form opened. An edit form works on that snapshot on
+  // purpose: the drafts below are seeded from it once, and RegisterPage re-creates the form
+  // ({#key editing?.id}) when another entry is picked. untrack says so to the compiler, which
+  // would otherwise warn that each draft only captures the initial value
+  // (state_referenced_locally). The live `entry` is still read where it should be live: the
+  // duplicate-key check, the title and save.
+  const initial = untrack(() => entry);
+
   // Drafts: edited here, written to the store on save.
-  let label = $state(entry?.label ?? "");
-  let person = $state(entry?.person ?? "");
-  let street = $state(entry?.street ?? "");
-  let role = $state(entry?.role ?? "");
-  let origin: RegisterOrigin = $state(entry?.origin ?? "issued");
-  let notes = $state(entry?.notes ?? "");
-  let publicKey = $state(entry?.publicKey ?? "");
+  let label = $state(initial?.label ?? "");
+  let person = $state(initial?.person ?? "");
+  let street = $state(initial?.street ?? "");
+  let role = $state(initial?.role ?? "");
+  let origin: RegisterOrigin = $state(initial?.origin ?? "issued");
+  let notes = $state(initial?.notes ?? "");
+  let publicKey = $state(initial?.publicKey ?? "");
 
   let picking = $state(false);
   let busy = $state(false);
