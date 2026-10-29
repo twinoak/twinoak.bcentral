@@ -87,6 +87,14 @@ export type NewIncident = Omit<Incident, "id" | "createdAt" | "clockTrust" | "cr
 
 export type NewRegisterEntry = Omit<RegisterEntry, "id" | "createdAt" | "createdOnDevice">;
 
+// A register row imported from a CSV file without a public key (P1-06). The schema requires
+// a key, so it is not a registerEntry yet: it waits in `meta` until a key is bound to it, and
+// then becomes a registerEntry with the same id and stamps. Not part of the contract; never
+// exported in the envelope, never mirrored.
+export type PendingRegisterRow = Omit<RegisterEntry, "publicKey">;
+
+export type NewPendingRegisterRow = Omit<PendingRegisterRow, "id" | "createdAt" | "createdOnDevice">;
+
 // The export file and the sync batch.
 export interface Envelope {
   format: "bcentral-journal";

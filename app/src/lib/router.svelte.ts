@@ -1,10 +1,14 @@
-// Hash routing by hand: seven screens, no library. "#/settings", "#/journal", "#/queue",
-// "#/register", "#/radio" and "#/print" (the journal's print view, P1-04) are routes;
-// anything else is home. "#/send" (P0-05's stand-in screen, absorbed into the journal screen
-// in P0-07) opens the journal, so an old bookmark still lands right. Later tasks add their
-// screen to `Route` and `parseHash`.
+// Hash routing by hand: eight screens, no library. "#/settings", "#/journal", "#/queue",
+// "#/register", "#/register/print" (the register's print view, P1-06), "#/radio" and
+// "#/print" (the journal's print view, P1-04) are routes; anything else is home. "#/send"
+// (P0-05's stand-in screen, absorbed into the journal screen in P0-07) opens the journal, so
+// an old bookmark still lands right. Later tasks add their screen to `Route`, `parseHash`
+// and `hashFor`.
 
-export type Route = "home" | "settings" | "journal" | "queue" | "register" | "radio" | "print";
+export type Route =
+  "home" | "settings" | "journal" | "queue" | "register" | "printRegister" | "radio" | "print";
+
+const PRINT_REGISTER_HASH = "#/register/print";
 
 export function parseHash(hash: string): Route {
   if (hash === "#/settings") {
@@ -19,6 +23,9 @@ export function parseHash(hash: string): Route {
   if (hash === "#/register") {
     return "register";
   }
+  if (hash === PRINT_REGISTER_HASH) {
+    return "printRegister";
+  }
   if (hash === "#/radio") {
     return "radio";
   }
@@ -29,7 +36,13 @@ export function parseHash(hash: string): Route {
 }
 
 export function hashFor(route: Route): string {
-  return route === "home" ? "#/" : `#/${route}`;
+  if (route === "home") {
+    return "#/";
+  }
+  if (route === "printRegister") {
+    return PRINT_REGISTER_HASH;
+  }
+  return `#/${route}`;
 }
 
 let current: Route = $state(typeof location === "undefined" ? "home" : parseHash(location.hash));

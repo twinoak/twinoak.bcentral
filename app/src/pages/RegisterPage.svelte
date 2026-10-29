@@ -1,61 +1,88 @@
 <script lang="ts">
   import { t, language } from "../i18n/index.svelte.ts";
-  import type { RegisterEntry } from "../store/types.ts";
-  import { listRegister } from "../store/index.ts";
+  import { hashFor } from "../lib/router.svelte.ts";
+  import type { PendingRegisterRow, RegisterEntry } from "../store/types.ts";
+  import { exportRegisterCsv, listPendingRegister, listRegister } from "../store/index.ts";
   import { sortedByLabel } from "../store/register.ts";
   import RegisterForm from "../components/RegisterForm.svelte";
   import AdhocBatchForm from "../components/AdhocBatchForm.svelte";
+  import RegisterImport from "../components/RegisterImport.svelte";
 
-  type Mode = "list" | "add" | "edit" | "batch";
+  // bind: a pending row (imported without a key, P1-06) gets its key and becomes an entry.
+  type Mode = "list" | "add" | "edit" | "batch" | "import" | "bind";
 
   let mode: Mode = $state("list");
   let editing: RegisterEntry | undefined = $state(undefined);
+  let binding: PendingRegisterRow | undefined = $state(undefined);
   let entries: RegisterEntry[] = $state([]);
+  let pending: PendingRegisterRow[] = $state([]);
   let loadError: string | null = $state(null);
   let status: string | null = $state(null);
+  let exportError: string | null = $state(null);
+  let busy = $state(false);
 
   const sorted = $derived(sortedByLabel(entries, language()));
+  const sortedPending = $derived(sortedByLabel(pending, language()));
+
+  function describe(failure: unknown): string {
+    return failure instanceof Error ? failure.message : String(failure);
+  }
 
   async function reload() {
     try {
       entries = await listRegister();
+      pending = await listPendingRegister();
       loadError = null;
     } catch (failure) {
-      loadError = t("register.loadFailed", {
-        error: failure instanceof Error ? failure.message : String(failure),
-      });
+      loadError = t("register.loadFailed", { error: describe(failure) });
     }
   }
   void reload();
 
-  function startAdd() {
+  function start(next: Mode) {
     status = null;
+    exportError = null;
     editing = undefined;
-    mode = "add";
-  }
-
-  function startBatch() {
-    status = null;
-    editing = undefined;
-    mode = "batch";
+    binding = undefined;
+    mode = next;
   }
 
   function startEdit(entry: RegisterEntry) {
-    status = null;
+    start("edit");
     editing = entry;
-    mode = "edit";
+  }
+
+  function startBind(row: PendingRegisterRow) {
+    start("bind");
+    binding = row;
   }
 
   function cancel() {
     editing = undefined;
+    binding = undefined;
     mode = "list";
   }
 
   async function onsaved(message: string) {
     status = message;
     editing = undefined;
+    binding = undefined;
     mode = "list";
     await reload();
+  }
+
+  async function exportCsv() {
+    busy = true;
+    status = null;
+    exportError = null;
+    try {
+      const filename = await exportRegisterCsv();
+      status = t("register.exported", { filename });
+    } catch (failure) {
+      exportError = t("register.exportFailed", { error: describe(failure) });
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
@@ -70,14 +97,32 @@
   {#key editing?.id}
     <RegisterForm entry={editing} existing={entries} {onsaved} oncancel={cancel} />
   {/key}
+{:else if mode === "bind"}
+  {#key binding?.id}
+    <RegisterForm pending={binding} existing={entries} {onsaved} oncancel={cancel} />
+  {/key}
 {:else if mode === "batch"}
   <AdhocBatchForm existing={entries} {onsaved} oncancel={cancel} />
+{:else if mode === "import"}
+  <RegisterImport existing={entries} onimported={onsaved} oncancel={cancel} />
 {:else}
   <div class="actions">
-    <button type="button" onclick={startAdd}>{t("register.add")}</button>
-    <button type="button" class="secondary" onclick={startBatch}>{t("register.addBatch")}</button>
+    <button type="button" onclick={() => start("add")}>{t("register.add")}</button>
+    <button type="button" class="secondary" onclick={() => start("batch")}
+      >{t("register.addBatch")}</button
+    >
+    <button type="button" class="secondary" onclick={() => start("import")}
+      >{t("register.import")}</button
+    >
+    <button type="button" class="secondary" onclick={exportCsv} disabled={busy}
+      >{t("register.export")}</button
+    >
+    <a class="button secondary" href={hashFor("printRegister")}>{t("register.print")}</a>
     {#if status}
       <span class="status" role="status">{status}</span>
+    {/if}
+    {#if exportError}
+      <span class="error" role="alert">{exportError}</span>
     {/if}
   </div>
 
@@ -116,6 +161,44 @@
         {/each}
       </tbody>
     </table>
+  {/if}
+
+  <!-- Rows imported without a key (P1-06): listed apart until a key is bound to them. -->
+  {#if sortedPending.length > 0}
+    <section class="pending" aria-labelledby="pending-heading">
+      <h2 id="pending-heading">{t("register.pending.title")}</h2>
+      <p class="muted">{t("register.pending.help")}</p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">{t("register.field.label")}</th>
+            <th scope="col">{t("register.field.person")}</th>
+            <th scope="col">{t("register.field.street")}</th>
+            <th scope="col">{t("register.field.role")}</th>
+            <th scope="col">{t("register.field.origin")}</th>
+            <th scope="col">{t("register.field.notes")}</th>
+            <th scope="col"><span class="visually-hidden">{t("register.pending.bind")}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each sortedPending as row (row.id)}
+            <tr>
+              <td class="label">{row.label}</td>
+              <td>{row.person ?? ""}</td>
+              <td>{row.street ?? ""}</td>
+              <td>{row.role ?? ""}</td>
+              <td>{t(`register.origin.${row.origin}`)}</td>
+              <td class="notes">{row.notes ?? ""}</td>
+              <td>
+                <button type="button" class="secondary small" onclick={() => startBind(row)}>
+                  {t("register.pending.bind")}
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </section>
   {/if}
 {/if}
 
@@ -162,9 +245,30 @@
     white-space: pre-wrap;
   }
 
+  .pending {
+    margin-top: 2rem;
+  }
+
+  .pending h2 {
+    font-size: 1.2rem;
+    margin: 0 0 0.25rem;
+  }
+
+  .pending p {
+    margin: 0 0 0.75rem;
+  }
+
   .secondary {
     background: #fff;
     color: var(--navy);
+  }
+
+  .button {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--navy);
+    border-radius: 4px;
+    text-decoration: none;
   }
 
   .small {

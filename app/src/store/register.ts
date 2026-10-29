@@ -150,8 +150,12 @@ export async function saveRegisterEntry(
 }
 
 // The register screen's order: by label in the UI language, numbers compared as numbers so
-// "radio #2" comes before "radio #10"; ties broken by id so the order is stable.
-export function sortedByLabel(entries: readonly RegisterEntry[], locale: string): RegisterEntry[] {
+// "radio #2" comes before "radio #10"; ties broken by id so the order is stable. Also for
+// the pending rows (P1-06), which have a label and an id too.
+export function sortedByLabel<T extends { id: string; label: string }>(
+  entries: readonly T[],
+  locale: string,
+): T[] {
   const collator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
   return [...entries].sort(
     (a, b) => collator.compare(a.label, b.label) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
