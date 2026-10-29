@@ -27,10 +27,10 @@ below applied first.
 - [x] blocker (fixed in review): `app/package-lock.json` was behind `package.json` (`ajv-formats`,
       `fake-indexeddb` missing), so `npm ci` would fail in Actions. Regenerated; commit it
       with P0-02. (P0-02)
-- [ ] blocker: commit P0-02 to P0-05 on `main` in task order, messages starting with the task
+- [x] blocker (done 2026-10-29): commit P0-02 to P0-05 on `main` in task order, messages starting with the task
       id, so the dependency check in `run-all.ps1` finds them. Each report's *Done* section
       names its files.
-- [ ] blocker: P0-01's commit is named `Scaffold`; the dependency check looks for `P0-01` in a
+- [x] blocker (done 2026-10-29): P0-01's commit is named `Scaffold`; the dependency check looks for `P0-01` in a
       subject. Either `git commit --allow-empty -m "P0-01 scaffold (see a4f9afe)"` or run with
       `-SkipDependencyCheck` once.
 - [x] fix-next (fixed in review): `run-all.ps1` ran sessions with `acceptEdits`, which blocks every

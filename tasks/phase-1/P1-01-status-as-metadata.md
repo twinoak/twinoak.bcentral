@@ -48,6 +48,12 @@ In:
 - **Human-readable export** (`print`/markdown, when it exists — today only JSON) follows the
   same folding: one line per message with its strip, batches as one block. JSON export is
   unchanged and still carries every entry.
+- **Clock-trust mark, said once.** Today every row shows a bare `?` because `clockTrust` is
+  `unknown` until the operator ticks "the clock on this PC is correct" (walkthrough finding
+  2026-10-29). Change to: a single line in the top bar while the session's clock is
+  unconfirmed ("Clock not confirmed — check it under Settings", linking there); on rows, a
+  dimmed mark with a tooltip for `unknown`, a small ✓ with tooltip for `manual`, nothing for
+  `ntp`. Confirming the clock is also the first item of the (later) shift-handover view.
 - i18n for every new string, `da.json` complete.
 
 Out: any change to `contract/text-protocol.md`; the hub; filtering or search.

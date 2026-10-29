@@ -42,13 +42,14 @@ paper drill produce them; the first ones:
 | Task | Delivers | Depends on |
 | --- | --- | --- |
 | P1-01 | Status as metadata on the message row (no `status_change` lines), send-to-all as one row via `batchId`, newest first everywhere, no `pending` entries written | P0-09 |
-| P1-02 | Walkthrough fixes: whatever the 2026-10-29 test and the next ones turn up (`tasks/phase-0/FOLLOWUPS.md`, `tasks/phase-1/FOLLOWUPS.md`) | P1-01 |
-| P1-03 | Export that cannot be forgotten: journal mirror to a local folder (File System Access API), "print journal since last" as a routine button, `navigator.storage.persist()` with a warning when refused | P1-01 |
-| P1-04 | Drill mode (*øvelse*): flag on the incident, `ØVELSE` prefix on outgoing text, drill journals kept apart | P1-01 |
-| P1-05 | Register import from CSV (the association's resident list) and export | P1-01 |
-| P1-06 | Radio robustness: auto-reconnect when the USB device returns, clear message when Web Serial is missing, BLE reconnect | P1-01 |
-| P1-07 | Shift handover view: everything open on one screen for the next operator | P1-02 |
-| P1-08 | Operator ergonomics: larger text, contrast, keyboard shortcuts for compose/send/roger, Danish strings reviewed by a human | P1-02 |
+| P1-02 | Reply from the row: a Reply button on every incoming message that prefills recipient and transport and links the answer (`refersTo`) | P1-01 |
+| P1-03 | Walkthrough fixes: whatever the 2026-10-29 test and the next ones turn up (`tasks/phase-0/FOLLOWUPS.md`, `tasks/phase-1/FOLLOWUPS.md`) | P1-02 |
+| P1-04 | Export that cannot be forgotten: journal mirror to a local folder (File System Access API), "print journal since last" as a routine button, `navigator.storage.persist()` with a warning when refused | P1-01 |
+| P1-05 | Drill mode (*øvelse*): flag on the incident, `ØVELSE` prefix on outgoing text, drill journals kept apart | P1-01 |
+| P1-06 | Register import from CSV (the association's resident list) and export | P1-01 |
+| P1-07 | Radio robustness: auto-reconnect when the USB device returns, clear message when Web Serial is missing, BLE reconnect | P1-01 |
+| P1-08 | Shift handover view: everything open on one screen for the next operator | P1-03 |
+| P1-09 | Operator ergonomics: larger text, contrast, keyboard shortcuts for compose/send/roger, Danish strings reviewed by a human | P1-03 |
 
 **Phase 1 walkthrough:** the phase-0 walkthrough again, with a 25-recipient roll call that
 reads as one line, a browser crash mid-queue with no lost entries, a drill incident that

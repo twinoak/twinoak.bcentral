@@ -28,4 +28,16 @@ Deterministic, but one more click on every incoming message at 03:00, and a cont
 
 **Until decided:** nothing is changed in the app. Test with one incident open at a time.
 
-## 2. (next)
+## 2. Open items: newest first, or most overdue first? (raised 2026-10-29)
+
+**Today:** the open-items panel (messages not yet roger'd) is newest first, like every other
+list. With 25 open, the one that has waited longest is at the bottom.
+
+**Question for the staff:** when you glance at the open items, do you want to see what you
+just sent, or what has gone unanswered longest?
+
+**Options:** newest first (consistent with the journal), or oldest-open first (the overdue one
+on top, like the "last heard from" panel). One line of code either way; the answer is about
+how the staff work.
+
+## 3. (next)

@@ -78,8 +78,9 @@ chain.
 
 "Send to all" is not a message type. It expands in the app into one outgoing message per
 recipient, each with that recipient's own next `n`, each with its own independent status.
-The app may remember that they were created together (a batch id) for display; the batch is
-not part of the exchanged data.
+Every message the batch creates carries the same `batchId` (an optional ULID on `message_out`,
+added to the schema 2026-10-29) so the journal can show the batch as one row; it changes
+nothing on the air.
 
 ## Drill mode — proposed, not decided
 
