@@ -6,6 +6,7 @@ import {
   CMD_GET_DEVICE_TIME,
   CMD_SEND_TXT_MSG,
   CMD_SET_DEVICE_TIME,
+  CMD_SYNC_NEXT_MESSAGE,
   CompanionClosedError,
   CompanionError,
   CompanionLink,
@@ -21,6 +22,7 @@ import {
   TXT_TYPE_PLAIN,
   appStartPayload,
   companionGetContacts,
+  companionNextMessage,
   companionQuery,
   companionSetTime,
   concatBytes,
@@ -51,6 +53,8 @@ import {
   STAFF_KEY,
   ackFrame,
   bytes,
+  channelMessageV1Frame,
+  channelMessageV3Frame,
   contactFrame,
   contactMessageV1Frame,
   contactMessageV3Frame,
@@ -60,6 +64,7 @@ import {
   endOfContactsFrame,
   errFrame,
   fromRadio,
+  noMoreMessagesFrame,
   okFrame,
   scriptedCompanion,
   selfInfoFrame,
@@ -555,5 +560,37 @@ describe("companion operations", () => {
   it("self info and app start agree on the protocol version", () => {
     expect(appStartPayload("x")[1]).toBe(deviceQueryPayload()[1]);
     expect(selfInfoFrame()[0]).toBe(RESP_CODE_SELF_INFO);
+  });
+
+  it("companionNextMessage sends CMD_SYNC_NEXT_MESSAGE and sorts the answer by kind", async () => {
+    const { transport, link } = openLink();
+    const answers = [
+      contactMessageV1Frame({ text: "R1" }),
+      contactMessageV3Frame({ text: "hej", senderKey: PETER_KEY, snr: 2 }),
+      channelMessageV1Frame("chatter"),
+      channelMessageV3Frame("chatter"),
+      noMoreMessagesFrame(),
+    ];
+    transport.autoReply = () => [answers.shift() ?? noMoreMessagesFrame()];
+
+    const first = await companionNextMessage(link);
+    const second = await companionNextMessage(link);
+    if (first.kind !== "contact" || second.kind !== "contact") {
+      throw new Error("expected two contact messages");
+    }
+    expect(first.message).toMatchObject({ version: 1, text: "R1", pubKeyPrefix: HANS_KEY.slice(0, 12) });
+    expect(second.message).toMatchObject({ version: 3, text: "hej", snr: 2 });
+    expect(await companionNextMessage(link)).toMatchObject({ kind: "channel" });
+    expect(await companionNextMessage(link)).toMatchObject({ kind: "channel" });
+    expect(await companionNextMessage(link)).toEqual({ kind: "empty" });
+    expect(transport.sent.every((payload) => payload.length === 1 && payload[0] === CMD_SYNC_NEXT_MESSAGE)).toBe(true);
+    expect(transport.sent).toHaveLength(5);
+  });
+
+  it("companionNextMessage passes a companion ERR through and never takes a push", async () => {
+    const { transport, link } = openLink();
+    transport.autoReply = () => [bytes(PUSH_CODE_MSG_WAITING), errFrame(4)];
+    await expect(companionNextMessage(link)).rejects.toBeInstanceOf(CompanionError);
+    expect(link.inbox).toEqual([bytes(PUSH_CODE_MSG_WAITING)]);
   });
 });

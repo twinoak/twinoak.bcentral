@@ -18,7 +18,7 @@
   import { MANUAL_STATUSES } from "../store/outgoing.ts";
   import { sortedByLabel } from "../store/register.ts";
   import { statusOf } from "../store/status.ts";
-  import { outbox } from "../radio/index.ts";
+  import { inbox, outbox } from "../radio/index.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
 
   let incidents: Incident[] = $state([]);
@@ -67,9 +67,11 @@
     }
   }
 
-  // Reload on an incident change and after every entry the outbox writes.
+  // Reload on an incident change and after every entry the outbox or the inbox writes (a
+  // roger from the field moves a message's status).
   $effect(() => {
     outbox.revision();
+    inbox.revision();
     void reload(incidentId);
   });
 

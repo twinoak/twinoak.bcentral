@@ -59,6 +59,9 @@ export interface RadioStore {
   // Every push frame (code >= 0x80) from whichever link is live, so a listener survives a
   // reconnect. Returns the unsubscribe. The outbox listens for PUSH_CODE_SEND_CONFIRMED here.
   onPush(listener: PushListener): () => void;
+  // Called once per successful connect(), after identity, clock and contacts are done; the
+  // inbox drains the companion's message queue on it (P0-06). Returns the unsubscribe.
+  onConnected(listener: () => void): () => void;
   connect(kind: TransportKind): Promise<void>;
   disconnect(): Promise<void>;
   // Reads the contact list from the companion again.
@@ -85,12 +88,31 @@ export function createRadioStore(deps: RadioStoreDeps): RadioStore {
   let link: CompanionLink | null = null;
   let transport: FrameTransport | null = null;
   const pushListeners = new Set<PushListener>();
+  const connectedListeners = new Set<() => void>();
 
   function onPush(listener: PushListener): () => void {
     pushListeners.add(listener);
     return () => {
       pushListeners.delete(listener);
     };
+  }
+
+  function onConnected(listener: () => void): () => void {
+    connectedListeners.add(listener);
+    return () => {
+      connectedListeners.delete(listener);
+    };
+  }
+
+  // A listener that throws must not stop the others or fail connect().
+  function connected(): void {
+    for (const listener of [...connectedListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        log(`connected listener failed: ${describeError(error)}`);
+      }
+    }
   }
 
   // A listener that throws must not stop the others or the read loop.
@@ -204,6 +226,11 @@ export function createRadioStore(deps: RadioStoreDeps): RadioStore {
     } catch (error) {
       log(`contact list failed: ${describeError(error)}`);
     }
+
+    // The companion may have gone away while the clock and contacts were read.
+    if (link === opened) {
+      connected();
+    }
   }
 
   // The read loop ended on its own: the device went away.
@@ -265,6 +292,7 @@ export function createRadioStore(deps: RadioStoreDeps): RadioStore {
     log: () => logLines,
     link: () => link,
     onPush,
+    onConnected,
     connect,
     disconnect,
     refreshContacts,

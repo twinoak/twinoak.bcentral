@@ -8,8 +8,12 @@ import {
   CMD_GET_DEVICE_TIME,
   CMD_SEND_TXT_MSG,
   CMD_SET_DEVICE_TIME,
+  CMD_SYNC_NEXT_MESSAGE,
   FRAME_FROM_RADIO,
+  PUSH_CODE_MSG_WAITING,
   PUSH_CODE_SEND_CONFIRMED,
+  RESP_CODE_CHANNEL_MSG_RECV,
+  RESP_CODE_CHANNEL_MSG_RECV_V3,
   RESP_CODE_CONTACT,
   RESP_CODE_CONTACTS_START,
   RESP_CODE_CONTACT_MSG_RECV,
@@ -18,6 +22,7 @@ import {
   RESP_CODE_DEVICE_INFO,
   RESP_CODE_END_OF_CONTACTS,
   RESP_CODE_ERR,
+  RESP_CODE_NO_MORE_MESSAGES,
   RESP_CODE_OK,
   RESP_CODE_SELF_INFO,
   RESP_CODE_SENT,
@@ -218,6 +223,26 @@ export function contactMessageV3Frame(fixture: MessageFixture): Uint8Array {
   );
 }
 
+// RESP_CODE_CHANNEL_MSG_RECV (v1): code, channel index, path length, txt type, uint32 sender
+// timestamp, text. v3 puts SNR and two reserved bytes after the code, as the contact form
+// does. BCentral never parses either beyond the code; the fixture exists so the inbox can be
+// shown to leave them out of the journal.
+export function channelMessageV1Frame(text: string, channelIndex = 0): Uint8Array {
+  return bytes(RESP_CODE_CHANNEL_MSG_RECV, channelIndex, 0, 0, u32(EPOCH), encoder.encode(text));
+}
+
+export function channelMessageV3Frame(text: string, channelIndex = 0): Uint8Array {
+  return bytes(RESP_CODE_CHANNEL_MSG_RECV_V3, 0, [0, 0], channelIndex, 0, 0, u32(EPOCH), encoder.encode(text));
+}
+
+export function noMoreMessagesFrame(): Uint8Array {
+  return bytes(RESP_CODE_NO_MORE_MESSAGES);
+}
+
+export function msgWaitingFrame(): Uint8Array {
+  return bytes(PUSH_CODE_MSG_WAITING);
+}
+
 // What a CMD_SEND_TXT_MSG payload carried, read back from its bytes (layout in serial.ts).
 export interface SentText {
   txtType: number;
@@ -245,10 +270,14 @@ export function decodeTextMessagePayload(payload: Uint8Array): SentText {
   };
 }
 
-// A scripted companion: answers the commands P0-04 and P0-05 send. Its clock starts at
+// A scripted companion: answers the commands P0-04 to P0-06 send. Its clock starts at
 // `time` and only moves forward, as the firmware's does. Every text message it is handed is
 // recorded in `sends`; `onSendText` decides the answer (default: SENT with ack 0x1000 + n and
-// the ack push right behind it, i.e. a delivered message).
+// the ack push right behind it, i.e. a delivered message). Received messages queue in
+// `messages` (frames from contactMessageV*Frame / channelMessageV*Frame); each
+// CMD_SYNC_NEXT_MESSAGE hands out the oldest, or NO_MORE_MESSAGES when the queue is empty,
+// and `syncs` counts those commands. The MSG_WAITING push the firmware sends when a message
+// lands is the test's to push on the transport (msgWaitingFrame()).
 export interface ScriptedCompanion {
   reply: (payload: Uint8Array) => Uint8Array[];
   contacts: Uint8Array[];
@@ -258,6 +287,8 @@ export interface ScriptedCompanion {
   broken: boolean;
   sends: SentText[];
   onSendText: (sent: SentText, index: number) => Uint8Array[];
+  messages: Uint8Array[];
+  syncs: number;
 }
 
 export const FIRST_ACK = 0x1000;
@@ -286,6 +317,8 @@ export function scriptedCompanion(
     broken: false,
     sends: [],
     onSendText: options.onSendText ?? deliveredReply,
+    messages: [],
+    syncs: 0,
     reply: (payload: Uint8Array): Uint8Array[] => {
       if (companion.broken) {
         return [errFrame(1)];
@@ -296,6 +329,11 @@ export function scriptedCompanion(
           const index = companion.sends.length;
           companion.sends.push(sent);
           return companion.onSendText(sent, index);
+        }
+        case CMD_SYNC_NEXT_MESSAGE: {
+          companion.syncs += 1;
+          const next = companion.messages.shift();
+          return [next ?? noMoreMessagesFrame()];
         }
         case CMD_DEVICE_QUERY:
           return [deviceInfoFrame()];

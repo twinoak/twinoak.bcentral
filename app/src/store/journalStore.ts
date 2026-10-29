@@ -19,7 +19,7 @@ import {
   validateJournalEntry,
   validateRegisterEntry,
 } from "./schema.ts";
-import { latestStatusChange, statusOf } from "./status.ts";
+import { isLater, latestStatusChange, statusOf } from "./status.ts";
 import {
   ENVELOPE_FORMAT,
   ENVELOPE_VERSION,
@@ -233,6 +233,22 @@ export class JournalStore {
   // Derived status of an outgoing message: see status.ts.
   async statusOf(messageOutId: string): Promise<Status> {
     return statusOf(await this.entriesReferringTo(messageOutId), messageOutId);
+  }
+
+  // When this register entry was last heard from: the timestamp of the latest message_in
+  // whose counterparty it is (P0-06), or null when none. Derived on every call; nothing is
+  // stored on the register entry.
+  async lastHeardAt(counterpartyId: string): Promise<string | null> {
+    let latest: JournalEntry | undefined;
+    for (const entry of await this.entriesForCounterparty(counterpartyId)) {
+      if (entry.type !== "message_in") {
+        continue;
+      }
+      if (latest === undefined || isLater(entry, latest)) {
+        latest = entry;
+      }
+    }
+    return latest?.timestamp ?? null;
   }
 
   // --- counters (meta) -----------------------------------------------------------------

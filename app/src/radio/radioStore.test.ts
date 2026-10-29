@@ -184,6 +184,35 @@ describe("radio store", () => {
     expect(transport.disconnectCalls).toBe(1);
   });
 
+  it("tells onConnected listeners once per successful connect, after the contacts are read", async () => {
+    const { store, transport, companion } = setUp();
+    const seen: number[] = [];
+    const stop = store.onConnected(() => seen.push(store.contacts().length));
+    store.onConnected(() => {
+      throw new Error("boom");
+    });
+
+    companion.broken = true;
+    await expect(store.connect("usb")).rejects.toBeInstanceOf(CompanionError);
+    expect(seen).toEqual([]);
+
+    companion.broken = false;
+    await store.connect("usb");
+    expect(seen).toEqual([2]);
+    expect(store.log().some((line) => line.includes("connected listener failed: boom"))).toBe(true);
+    await store.disconnect();
+
+    await store.connect("usb");
+    expect(seen).toEqual([2, 2]);
+    await store.disconnect();
+
+    stop();
+    await store.connect("usb");
+    expect(seen).toEqual([2, 2]);
+    expect(transport.connectCalls).toBe(4);
+    await store.disconnect();
+  });
+
   it("refuses a second connect while connected", async () => {
     const { store } = setUp();
     await store.connect("usb");
