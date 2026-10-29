@@ -87,6 +87,15 @@
     {t("nav.journal")}
   </a>
 
+  <!-- The shift handover (P1-08), next to the journal: the first screen a new operator opens. -->
+  <a
+    class="nav"
+    href={hashFor("handover")}
+    aria-current={route() === "handover" ? "page" : undefined}
+  >
+    {t("nav.handover")}
+  </a>
+
   <a
     class="nav"
     href={hashFor("queue")}

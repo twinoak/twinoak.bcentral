@@ -2,6 +2,7 @@
   import DrillBand from "./components/DrillBand.svelte";
   import TopBar from "./components/TopBar.svelte";
   import UpdateBanner from "./components/UpdateBanner.svelte";
+  import HandoverPage from "./pages/HandoverPage.svelte";
   import HomePage from "./pages/HomePage.svelte";
   import JournalPage from "./pages/JournalPage.svelte";
   import PrintPage from "./pages/PrintPage.svelte";
@@ -41,18 +42,21 @@
 <!-- Shown only when a new build is waiting; the reload is the operator's click. -->
 <UpdateBanner />
 
-<!-- The journal and queue screens have side panels and need the width; the print views are
-     tables; the others are forms. -->
+<!-- The journal, queue and handover screens have side panels and need the width; the print
+     views are tables; the others are forms. -->
 <main
   class:wide={shown === "journal" ||
     shown === "queue" ||
     shown === "print" ||
-    shown === "printRegister"}
+    shown === "printRegister" ||
+    shown === "handover"}
 >
   {#if shown === "settings"}
     <SettingsPage />
   {:else if shown === "journal"}
     <JournalPage />
+  {:else if shown === "handover"}
+    <HandoverPage />
   {:else if shown === "print"}
     <PrintPage />
   {:else if shown === "queue"}

@@ -2,7 +2,7 @@
 // and the session clock. Screens import from here; tests open their own store through
 // openJournalStore() with a fake IndexedDB.
 
-import { settings } from "../lib/settings.svelte.ts";
+import { settings, updateSettings } from "../lib/settings.svelte.ts";
 import { now } from "../lib/clock.svelte.ts";
 import { currentIncidentId, onCurrentIncidentChange } from "../lib/currentIncident.svelte.ts";
 import { openJournalStore, type JournalStore } from "./journalStore.ts";
@@ -32,7 +32,13 @@ import {
   type ManualMessageInInput,
 } from "./manual.ts";
 import { lastHeardFrom } from "./journalView.ts";
-import { language } from "../i18n/index.svelte.ts";
+import {
+  composeStatusRequest,
+  recordHandover,
+  sendByCourier,
+  type CourierHandoff,
+} from "./handover.ts";
+import { language, t } from "../i18n/index.svelte.ts";
 import type {
   Incident,
   JournalEntry,
@@ -242,6 +248,41 @@ export async function entriesForIncident(incidentId: string): Promise<JournalEnt
 export async function lastSeqNo(counterpartyId: string): Promise<number> {
   const store = await journalStore();
   return await store.lastSeqNo(counterpartyId);
+}
+
+// --- shift handover (P1-08) ------------------------------------------------------------
+
+// The handover: one note "handover: ‹old› → ‹new›" in the incident, then the operator name in
+// the settings (so every entry from now on, and the top bar, carry the new name). The note
+// first: a refused note leaves the name as it was. Returns null, and changes nothing, when the
+// name did not change.
+export async function handOver(incidentId: string, to: string): Promise<JournalEntry | null> {
+  const store = await journalStore();
+  const note = await recordHandover(store, { incidentId, from: settings.operatorName, to });
+  if (note !== null) {
+    updateSettings({ operatorName: to.trim() });
+  }
+  return note;
+}
+
+// "#n Meld status" to one radio, stored; sending it is the outbox's job (the page's).
+export async function sendStatusRequest(incidentId: string, counterpartyId: string): Promise<Composed> {
+  const store = await journalStore();
+  return await composeStatusRequest(store, {
+    incidentId,
+    operator: settings.operatorName.trim(),
+    counterpartyId,
+  });
+}
+
+// The decision "send by courier" on a given-up message: the courier copy, and the original
+// closed with the reason "sent by courier as #n".
+export async function handOffToCourier(message: JournalEntry): Promise<CourierHandoff> {
+  const store = await journalStore();
+  return await sendByCourier(store, message, {
+    operator: settings.operatorName.trim(),
+    reason: (copy) => t("handover.givenUp.courierReason", { n: copy.seqNo ?? 0 }),
+  });
 }
 
 // --- send to all (P0-08) ---------------------------------------------------------------
