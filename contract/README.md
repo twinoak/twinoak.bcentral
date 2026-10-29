@@ -16,4 +16,5 @@ Rules the schema encodes:
 - journal entries are append-only and immutable; a correction is a new entry
 - status is never stored on a message, only derived from `status_change` entries
 - every timestamp carries a clock trust (`ntp` / `manual` / `unknown`)
+- a send-to-all stamps one `batchId` on every `message_out` it creates; a single send has none
 - incoming mesh messages carry a dedupe key (sender key + sender timestamp + text) so a radio retry or a sync replay never produces two entries

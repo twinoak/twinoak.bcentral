@@ -30,8 +30,11 @@ function appCommit(): string {
   }
 }
 
-export default defineConfig(({ command }) => ({
-  base: command === "build" ? PAGES_BASE : "/",
+export default defineConfig(({ command, isPreview }) => ({
+  // The built files reference PAGES_BASE, so `vite preview` must serve them there too;
+  // only the dev server runs at "/". Open http://localhost:4173/twinoak.bcentral/ after
+  // `npm run preview`.
+  base: command === "build" || isPreview ? PAGES_BASE : "/",
   define: {
     __APP_VERSION__: JSON.stringify(appVersion()),
     __APP_COMMIT__: JSON.stringify(appCommit()),

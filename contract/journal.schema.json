@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/twinoak/twinoak.bcentral/contract/journal.schema.json",
   "title": "BCentral journal",
-  "description": "Draft of 2026-10-28. The data the app stores, exports and syncs to a hub. Entries are append-only and immutable; status is derived from status_change entries, never stored on the thing it describes. Every id is a ULID minted at creation, so objects can be created offline on any device and merged by union.",
+  "description": "Draft of 2026-10-28, batchId added 2026-10-29. The data the app stores, exports and syncs to a hub. Entries are append-only and immutable; status is derived from status_change entries, never stored on the thing it describes. Every id is a ULID minted at creation, so objects can be created offline on any device and merged by union.",
   "type": "object",
   "properties": {
     "format": { "const": "bcentral-journal" },
@@ -93,6 +93,7 @@
         "transport": { "$ref": "#/$defs/transport" },
         "counterpartyId": { "$ref": "#/$defs/ulid", "description": "Register entry of the other end" },
         "seqNo": { "type": "integer", "minimum": 1, "description": "The #n of an outgoing message, per recipient per device; see text-protocol.md" },
+        "batchId": { "$ref": "#/$defs/ulid", "description": "Set on every message_out created by one send-to-all; the journal view groups them. Absent on a single send." },
         "text": { "type": "string" },
         "refersTo": { "$ref": "#/$defs/ulid", "description": "Another entry (reply, status change, correction) or an incident (status change)" },
         "newStatus": {
@@ -118,7 +119,7 @@
           "description": "message_in: field → staff, stored as received. refersTo is set only by the operator by hand. dedupeKey is required for transport=mesh.",
           "properties": { "type": { "const": "message_in" } },
           "required": ["transport", "counterpartyId", "text"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] } ] },
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["batchId"] }, { "required": ["newStatus"] } ] },
           "if": { "properties": { "transport": { "const": "mesh" } } },
           "then": { "required": ["dedupeKey"] }
         },
@@ -126,19 +127,19 @@
           "description": "note: anything the operator writes into the journal that is not a message — a phone call made, a decision, an observation.",
           "properties": { "type": { "const": "note" } },
           "required": ["text"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["batchId"] }, { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
         },
         {
           "description": "status_change: the only way status ever changes. refersTo is a message_out (pending/sent/delivered/roger/given_up) or an incident (closed/reopened). A roger recorded from an incoming message also carries the incoming entry's id in text, or the operator's reason for a manual change.",
           "properties": { "type": { "const": "status_change" } },
           "required": ["refersTo", "newStatus"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["counterpartyId"] }, { "required": ["dedupeKey"] } ] }
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["batchId"] }, { "required": ["counterpartyId"] }, { "required": ["dedupeKey"] } ] }
         },
         {
           "description": "correction: the entry refersTo was wrong; text says what is right. The original is never edited or removed.",
           "properties": { "type": { "const": "correction" } },
           "required": ["refersTo", "text"],
-          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
+          "not": { "anyOf": [ { "required": ["seqNo"] }, { "required": ["batchId"] }, { "required": ["newStatus"] }, { "required": ["dedupeKey"] } ] }
         }
       ]
     }

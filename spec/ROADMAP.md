@@ -32,19 +32,37 @@ need, nothing else. No hub.
 7. Close the browser, reopen: everything is there. Export: the file validates against the schema.
 8. Unplug the radio: the app says it is blind.
 
-## Phase 1 — the hub
+## Phase 1 — a solid PWA
+
+Decided 2026-10-29 after the first hardware walkthrough: the hub is fair-weather
+functionality and waits; the PWA is what must work when the power is out, so it gets a phase
+of its own first. Tasks are written as the walkthrough findings and the association's first
+paper drill produce them; the first ones:
+
+| Task | Delivers | Depends on |
+| --- | --- | --- |
+| P1-01 | Status as metadata on the message row (no `status_change` lines), send-to-all as one row via `batchId`, newest first everywhere, no `pending` entries written | P0-09 |
+| P1-02 | Walkthrough fixes: whatever the 2026-10-29 test and the next ones turn up (`tasks/phase-0/FOLLOWUPS.md`, `tasks/phase-1/FOLLOWUPS.md`) | P1-01 |
+| P1-03 | Export that cannot be forgotten: journal mirror to a local folder (File System Access API), "print journal since last" as a routine button, `navigator.storage.persist()` with a warning when refused | P1-01 |
+| P1-04 | Drill mode (*øvelse*): flag on the incident, `ØVELSE` prefix on outgoing text, drill journals kept apart | P1-01 |
+| P1-05 | Register import from CSV (the association's resident list) and export | P1-01 |
+| P1-06 | Radio robustness: auto-reconnect when the USB device returns, clear message when Web Serial is missing, BLE reconnect | P1-01 |
+| P1-07 | Shift handover view: everything open on one screen for the next operator | P1-02 |
+| P1-08 | Operator ergonomics: larger text, contrast, keyboard shortcuts for compose/send/roger, Danish strings reviewed by a human | P1-02 |
+
+**Phase 1 walkthrough:** the phase-0 walkthrough again, with a 25-recipient roll call that
+reads as one line, a browser crash mid-queue with no lost entries, a drill incident that
+leaves the real journal untouched, and a laptop handed to a second operator who finds every
+open item without asking.
+
+## Phase 2 — the hub
 
 Self-hosted C#/ASP.NET Core in Docker. Receives journal envelopes from any number of apps,
 merges by ULID union, dedupes `message_in` by key, shows a read-only merged journal. Sync is
 up only, paused offline, resumed when online, with the app showing when it last synced.
 Discord bridge as the first internet-side platform. Written in `contract/sync-api.openapi.yaml`
-before any code.
-
-## Phase 2 — hardening for a real drill
-
-Drill mode if adopted, "print journal since last time", File System Access API journal mirror
-to a local folder, the "prepare radio for BCentral" page (in meshguide), and whatever the
-first real drill with the association turns up.
+before any code. Also here: the "prepare radio for BCentral" page (in meshguide) and the
+single-file offline kit, if still wanted.
 
 ## Not planned
 

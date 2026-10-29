@@ -32,11 +32,12 @@ in a total failure BCentral is replaced by people on bicycles carrying notes.
 - App: Vite + Svelte 5 + TypeScript PWA, offline-first, Chromium browsers on laptops
 - Hub: C#/ASP.NET Core, packaged in Docker
 - Language: English throughout; the UI is translatable, Danish first
-- Full log in [docs/decisions.md](docs/decisions.md)
+- Full log in [docs/decisions.md](docs/decisions.md); what the users still have to decide in [docs/open-questions.md](docs/open-questions.md)
 
 ## Status
 
-Brainstorm and contract done, phase 0 tasks written, no app or hub code yet.
+Phase 0 (walking skeleton) is merged and proven on real radios (2026-10-29). Phase 1 makes the
+PWA solid; the hub comes in phase 2.
 Start with [docs/brainstorm-2026-10-28.md](docs/brainstorm-2026-10-28.md), then [contract/](contract/),
 then [spec/ROADMAP.md](spec/ROADMAP.md) and [tasks/](tasks/).
 

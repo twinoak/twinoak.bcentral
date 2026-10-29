@@ -87,6 +87,15 @@
 
   <div class="row">
     <div class="field">
+      <label for="send-transport">{t("send.transport")}</label>
+      <select id="send-transport" bind:value={transport}>
+        {#each TRANSPORTS as option (option)}
+          <option value={option}>{t(`send.transport.${option}`)}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="field">
       <label for="send-recipient">{t("send.recipient")}</label>
       <select id="send-recipient" bind:value={counterpartyId} disabled={register.length === 0}>
         <option value="">{t("send.recipient.choose")}</option>
@@ -97,15 +106,6 @@
       {#if register.length === 0}
         <small class="error">{t("send.recipient.none")}</small>
       {/if}
-    </div>
-
-    <div class="field">
-      <label for="send-transport">{t("send.transport")}</label>
-      <select id="send-transport" bind:value={transport}>
-        {#each TRANSPORTS as option (option)}
-          <option value={option}>{t(`send.transport.${option}`)}</option>
-        {/each}
-      </select>
     </div>
   </div>
 

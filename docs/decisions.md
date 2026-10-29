@@ -4,6 +4,12 @@ Newest first. One line per decision, with the reason. Reversals get a new row, n
 
 | Date | Decision | Why |
 | --- | --- | --- |
+| 2026-10-29 | Delivery status is shown as metadata on the message row, never as journal lines; the store keeps `status_change` entries | A message form carries its own "sent at / acknowledged at" fields; four lines per message made the journal unreadable in the first walkthrough. Keeping the entries keeps immutability and merge-by-union. |
+| 2026-10-29 | `pending` is implicit (a `message_out` without `sent`); no `pending` status change is written | One entry fewer per message, no information lost. |
+| 2026-10-29 | Send-to-all messages carry a shared `batchId` (optional ULID on `message_out`) and render as one row | Grouping must survive a reload; the only contract change from the walkthrough. |
+| 2026-10-29 | Lists are newest first | The staff look for what just happened. |
+| 2026-10-29 | Phase 1 is "a solid PWA"; the hub moves to phase 2 | The hub is fair-weather functionality; the PWA is what must work when the power is out. |
+| 2026-10-29 | `vite preview` serves at the Pages base like the build | Previewing the build at `/` loaded HTML as JS (walkthrough finding). |
 | 2026-10-28 | App stack: Vite + Svelte 5 + TypeScript, `idb` for IndexedDB, `ulid`, `ajv` validating every write against the contract schema, plain JSON i18n with a tiny `t()`, `vite-plugin-pwa`, Vitest | Small, no promise plumbing, the schema as the law in practice, no i18n framework to fight. |
 | 2026-10-28 | Radio layer ported from meshguide/automagical (`lib/serial.js`, `lib/ble.js`, the send/ack pattern in `lib/remote-cli.js`), extracted to its own package later | Proven code, same author, same licence; extract when it works here too. |
 | 2026-10-28 | Work runs as phases of task files under `tasks/`, one unattended Claude Code session per task, reviewed per merge | Same pattern as meshmaster; one developer, many small verifiable steps. |

@@ -221,19 +221,21 @@
         />
       </section>
 
-      <section aria-labelledby="compose-heading">
-        <h2 id="compose-heading">{t("journal.compose.title")}</h2>
-        {#key current.id}
-          <ComposeForm incidentId={current.id} register={sortedRegister} {onsent} />
-        {/key}
-      </section>
+      <div class="forms">
+        <section aria-labelledby="compose-heading">
+          <h2 id="compose-heading">{t("journal.compose.title")}</h2>
+          {#key current.id}
+            <ComposeForm incidentId={current.id} register={sortedRegister} {onsent} />
+          {/key}
+        </section>
 
-      <section aria-labelledby="manual-heading">
-        <h2 id="manual-heading">{t("journal.add.title")}</h2>
-        {#key current.id}
-          <ManualEntryForm incidentId={current.id} register={sortedRegister} onadded={changed} />
-        {/key}
-      </section>
+        <section aria-labelledby="manual-heading">
+          <h2 id="manual-heading">{t("journal.add.title")}</h2>
+          {#key current.id}
+            <ManualEntryForm incidentId={current.id} register={sortedRegister} onadded={changed} />
+          {/key}
+        </section>
+      </div>
     </div>
 
     <aside class="side">
@@ -256,8 +258,16 @@
     align-items: start;
   }
 
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+    align-items: start;
+  }
+
   @media (max-width: 60rem) {
-    .layout {
+    .layout,
+    .forms {
       grid-template-columns: minmax(0, 1fr);
     }
   }
