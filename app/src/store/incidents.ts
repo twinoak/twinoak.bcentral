@@ -1,13 +1,33 @@
 // Incidents above the store (P0-07): open or closed, derived from the status_change entries
 // that refer to the incident itself (schema: refersTo is "an incident (closed/reopened)"),
 // and the two writes that move it. An incident with no status_change is open. Nothing is
-// stored on the incident; the latest status_change wins, as for a message.
+// stored on the incident; the latest status_change wins, as for a message. Whether an
+// incident is a drill (P1-05) is the one thing that is stored on it, fixed at creation.
 
 import type { JournalStore } from "./journalStore.ts";
 import { latestStatusChange } from "./status.ts";
 import type { Incident, JournalEntry } from "./types.ts";
 
 export type IncidentState = "open" | "closed";
+
+// A drill is an incident with `drill: true` (journal.schema.json); absent or false is a real
+// incident, and so is no incident at all.
+export function isDrill(incident: Incident | null | undefined): boolean {
+  return incident?.drill === true;
+}
+
+// Real incidents and drills apart, each newest first: the switcher's two headings and the
+// two export files (P1-05).
+export function splitByDrill(incidents: readonly Incident[]): {
+  real: Incident[];
+  drills: Incident[];
+} {
+  const newestFirst = [...incidents].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return {
+    real: newestFirst.filter((incident) => !isDrill(incident)),
+    drills: newestFirst.filter(isDrill),
+  };
+}
 
 export function incidentStateOf(
   entries: readonly JournalEntry[],

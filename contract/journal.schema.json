@@ -46,7 +46,7 @@
         "clockTrust": { "$ref": "#/$defs/clockTrust" },
         "createdOnDevice": { "$ref": "#/$defs/ulid" },
         "createdBy": { "type": "string", "description": "Operator name as typed" },
-        "drill": { "type": "boolean", "description": "Proposed, not decided: true for an exercise (øvelse)" }
+        "drill": { "type": "boolean", "description": "True for an exercise (øvelse): every outgoing text of the incident is prefixed 'ØVELSE ' before '#n ' (text-protocol.md), and the incident is kept apart from real ones in lists and exports. Fixed at creation; absent means a real incident." }
       },
       "required": ["id", "name", "createdAt", "clockTrust", "createdOnDevice", "createdBy"],
       "additionalProperties": false

@@ -306,6 +306,54 @@ describe("send queue (send to all, P0-08)", () => {
     queue.stop();
   });
 
+  it("requeuePending never mixes a drill and a real incident: each gets its own pending messages only (P1-05)", async () => {
+    const { store, queue, register } = await setUp({ recipients: 2, gapMs: 1000 });
+    const real = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
+    const drill = await store.createIncident({ name: "Øvelse", createdBy: "Thomas", drill: true });
+    const ids = register.map((entry) => entry.id);
+    const realBatch = (
+      await composeBatch(store, {
+        incidentId: real.id,
+        operator: "Thomas",
+        counterpartyIds: ids,
+        body: "rigtig",
+      })
+    ).map((c) => c.message);
+    const drillBatch = (
+      await composeBatch(store, {
+        incidentId: drill.id,
+        operator: "Thomas",
+        counterpartyIds: ids,
+        body: "øvelse",
+      })
+    ).map((c) => c.message);
+    expect(realBatch.map((m) => m.text)).toEqual(["#1 rigtig", "#1 rigtig"]);
+    expect(drillBatch.map((m) => m.text)).toEqual(["ØVELSE #2 øvelse", "ØVELSE #2 øvelse"]);
+
+    // The real incident is current after a reload: only its messages come back.
+    const restoredReal = await queue.requeuePending(real.id);
+    expect(restoredReal.map((b) => b.id)).toEqual([realBatch[0]?.batchId]);
+    expect(restoredReal.flatMap((b) => b.items.map((item) => item.text))).toEqual([
+      "#1 rigtig",
+      "#1 rigtig",
+    ]);
+    expect(queue.waiting()).toEqual(realBatch.map((m) => m.id));
+
+    // Then the drill is picked: its own messages, under its own batch, nothing of the real one twice.
+    const restoredDrill = await queue.requeuePending(drill.id);
+    expect(restoredDrill.map((b) => b.id)).toEqual([drillBatch[0]?.batchId]);
+    expect(restoredDrill.flatMap((b) => b.items.map((item) => item.incidentId))).toEqual([
+      drill.id,
+      drill.id,
+    ]);
+    expect(restoredDrill.flatMap((b) => b.items.map((item) => item.text))).toEqual([
+      "ØVELSE #2 øvelse",
+      "ØVELSE #2 øvelse",
+    ]);
+    expect(queue.waiting()).toEqual([...realBatch, ...drillBatch].map((m) => m.id));
+    queue.stop();
+  });
+
   it("requeuePending skips what is not pending, not mesh, or already held", async () => {
     const { store, radio, queue, register, batch } = await setUp({ recipients: 4, gapMs: 1000 });
     const messages = await batch();

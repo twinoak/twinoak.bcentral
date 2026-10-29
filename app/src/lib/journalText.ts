@@ -2,8 +2,20 @@
 // print view (P1-04) so both say the same thing. Everything user-facing goes through t().
 
 import { t, language } from "../i18n/index.svelte.ts";
+import { isDrill } from "../store/incidents.ts";
 import type { BatchCounters, StripItem } from "../store/journalView.ts";
-import type { JournalEntry } from "../store/types.ts";
+import type { Incident, JournalEntry } from "../store/types.ts";
+
+// The incident's name as every screen shows it: with the drill prefix in front for a drill
+// (P1-05), the plain name otherwise.
+export function incidentName(incident: Incident): string {
+  return isDrill(incident) ? t("drill.incidentName", { name: incident.name }) : incident.name;
+}
+
+// The batch row's text as it went on the air: "#n body", or "ØVELSE #n body" in a drill.
+export function batchText(body: string, drill: boolean): string {
+  return t(drill ? "journal.batch.textDrill" : "journal.batch.text", { body });
+}
 
 export function formatTime(timestamp: string): string {
   return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "medium" });

@@ -12,6 +12,8 @@
   import { settings } from "../lib/settings.svelte.ts";
   import { inbox, outbox, radio, sendQueue } from "../radio/index.ts";
   import type { Batch, QueueItem } from "../radio/sendQueue.svelte.ts";
+  import { incidentName } from "../lib/journalText.ts";
+  import { isDrill } from "../store/incidents.ts";
   import { entriesForIncident, listIncidents, listRegister } from "../store/index.ts";
   import { sortedByLabel } from "../store/register.ts";
   import { statusOf } from "../store/status.ts";
@@ -211,9 +213,14 @@
         <a href={hashFor("journal")}>{t("nav.journal")}</a>
       </p>
     {:else}
-      <p class="muted">{t("queue.compose.incident", { name: current.name })}</p>
+      <p class="muted">{t("queue.compose.incident", { name: incidentName(current) })}</p>
       {#key current.id}
-        <BatchComposeForm incidentId={current.id} register={sortedRegister} {onstored} />
+        <BatchComposeForm
+          incidentId={current.id}
+          drill={isDrill(current)}
+          register={sortedRegister}
+          {onstored}
+        />
       {/key}
     {/if}
   </section>

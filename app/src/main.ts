@@ -4,7 +4,7 @@ import "./app.css";
 import App from "./App.svelte";
 import { updater } from "./lib/updates.svelte.ts";
 import { persistence } from "./lib/persistence.svelte.ts";
-import { mirror } from "./store/index.ts";
+import { drillMode, mirror } from "./store/index.ts";
 
 const target = document.getElementById("app");
 if (!target) {
@@ -18,5 +18,8 @@ updater.start(registerSW);
 // through the top bar; neither can fail the app.
 void persistence.start();
 void mirror.start();
+
+// The drill band on every screen (P1-05) follows the current incident from here on.
+void drillMode.start();
 
 mount(App, { target });

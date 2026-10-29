@@ -1,7 +1,9 @@
 // Export: the envelope as a downloadable .json file named
-// bcentral-journal-<deviceId>-<timestamp>.json. The envelope itself is built and validated by
+// bcentral-journal-<deviceId>-<timestamp>.json, or …-<timestamp>-drill.json when the envelope
+// holds drills only (P1-05). The envelope itself is built and validated by
 // JournalStore.exportEnvelope(); this module only turns it into a file.
 
+import { isDrill } from "./incidents.ts";
 import type { Envelope } from "./types.ts";
 
 // exportedAt without fractional seconds and without colons, so the name is legal on Windows
@@ -10,8 +12,15 @@ export function filenameTimestamp(exportedAt: string): string {
   return exportedAt.replace(/\.\d+(?=Z$)/, "").replace(/:/g, "");
 }
 
+// A drill export: every incident in the file is a drill, and there is at least one. A file
+// with no incidents, or with a real incident among them, is a journal export.
+export function isDrillEnvelope(envelope: Envelope): boolean {
+  return envelope.incidents.length > 0 && envelope.incidents.every(isDrill);
+}
+
 export function envelopeFilename(envelope: Envelope): string {
-  return `bcentral-journal-${envelope.deviceId}-${filenameTimestamp(envelope.exportedAt)}.json`;
+  const suffix = isDrillEnvelope(envelope) ? "-drill" : "";
+  return `bcentral-journal-${envelope.deviceId}-${filenameTimestamp(envelope.exportedAt)}${suffix}.json`;
 }
 
 // Pretty-printed like contract/examples/walkthrough.json, so a human can read the file.

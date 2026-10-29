@@ -350,6 +350,9 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
     start();
   }
 
+  // Only the given incident's own messages, read by incident: a drill's pending messages are
+  // never queued again while a real incident is current, nor a real incident's while a drill
+  // is (P1-05), because nothing outside `incidentId` is looked at.
   async function requeuePending(incidentId: string): Promise<readonly Batch[]> {
     const store = await deps.store();
     const entries = await store.entriesForIncident(incidentId);

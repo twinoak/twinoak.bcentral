@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { envelopeFilename, envelopeJson, filenameTimestamp } from "./export.ts";
+import { envelopeFilename, envelopeJson, filenameTimestamp, isDrillEnvelope } from "./export.ts";
 import { loadWalkthrough } from "../test-support/walkthrough.ts";
+import type { Incident } from "./types.ts";
 
 describe("export file", () => {
   it("names the file bcentral-journal-<deviceId>-<timestamp>.json", () => {
@@ -8,6 +9,26 @@ describe("export file", () => {
     expect(envelopeFilename(envelope)).toBe(
       "bcentral-journal-01JB8ZK3QX9V2M4N6P8R0T2W4Y-2026-10-28T193000Z.json",
     );
+  });
+
+  it("a file of drills alone is named -drill; a mixed or empty file is not (P1-05)", () => {
+    const envelope = loadWalkthrough();
+    const [real] = envelope.incidents as [Incident];
+    const drill: Incident = {
+      ...real,
+      id: "01JB8ZK3QX9V2M4N6P8R0T2X20",
+      name: "Øvelse",
+      drill: true,
+    };
+    const drills = { ...envelope, incidents: [drill], entries: [] };
+    expect(isDrillEnvelope(drills)).toBe(true);
+    expect(envelopeFilename(drills)).toBe(
+      "bcentral-journal-01JB8ZK3QX9V2M4N6P8R0T2W4Y-2026-10-28T193000Z-drill.json",
+    );
+    expect(isDrillEnvelope(envelope)).toBe(false);
+    expect(isDrillEnvelope({ ...envelope, incidents: [real, drill] })).toBe(false);
+    expect(isDrillEnvelope({ ...envelope, incidents: [], entries: [] })).toBe(false);
+    expect(isDrillEnvelope({ ...envelope, incidents: [{ ...real, drill: false }] })).toBe(false);
   });
 
   it("drops fractional seconds and colons from the timestamp so the name is legal on Windows", () => {

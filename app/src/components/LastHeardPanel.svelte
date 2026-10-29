@@ -1,6 +1,8 @@
 <script lang="ts">
   // "Last heard from" (P0-07): every register entry with the time since its latest incoming
-  // message, the quiet ones on top. The elapsed time ticks once a second.
+  // message, the quiet ones on top. The elapsed time ticks once a second. Counted over the
+  // whole journal, drills included (P1-05): the register is shared, and a message in a drill
+  // is real radio contact; the heading's tooltip says so.
   import { t, language } from "../i18n/index.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
   import type { LastHeard } from "../store/journalView.ts";
@@ -28,7 +30,7 @@
 </script>
 
 <section class="panel" aria-labelledby="heard-heading">
-  <h2 id="heard-heading">{t("journal.heard.title")}</h2>
+  <h2 id="heard-heading" title={t("journal.heard.help")}>{t("journal.heard.title")}</h2>
   {#if rows.length === 0}
     <p class="muted">{t("journal.heard.empty")}</p>
   {:else}

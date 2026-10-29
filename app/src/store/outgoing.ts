@@ -1,15 +1,23 @@
 // Outgoing messages above the store (P0-05): the "#n <text>" form and the 160-byte rule from
 // contract/text-protocol.md, composing a message_out with its reserved #n, and the manual
 // status changes the operator records. A message_out is stored alone: pending is what a
-// message with no status_change is (status.ts), so none is written (P1-01). The radio side
+// message with no status_change is (status.ts), so none is written (P1-01). In a drill
+// incident (P1-05) the text is "ØVELSE #n <text>" on every transport; the prefix is part of
+// the stored text, so the journal shows exactly what went on the air. The radio side
 // (sending, acks, retries) is src/radio/outbox.svelte.ts.
 
 import { mintId, type JournalStore } from "./journalStore.ts";
+import { isDrill } from "./incidents.ts";
 import type { JournalEntry, Status, Transport } from "./types.ts";
 
 // A MeshCore text message is at most 160 bytes of UTF-8 (text-protocol.md; MAX_TEXT_LEN in
 // src/radio/serial.ts is the same number, and outgoing.test.ts checks that they agree).
 export const MAX_MESSAGE_BYTES = 160;
+
+// The on-air prefix of a drill incident's messages (text-protocol.md, Drill mode). Not
+// translated and never through t(): the people reading it on their phones are Danish and the
+// word must be identical everywhere.
+export const DRILL_PREFIX = "ØVELSE ";
 
 const encoder = new TextEncoder();
 
@@ -24,6 +32,12 @@ export function seqNoPrefix(seqNo: number): string {
     throw new RangeError(`seqNo must be a whole number >= 1, got ${seqNo}`);
   }
   return `#${seqNo} `;
+}
+
+// Everything in front of the operator's text: "#n " for a real incident, "ØVELSE #n " for a
+// drill. The whole of it counts against the byte limit.
+export function messagePrefix(seqNo: number, drill: boolean): string {
+  return (drill ? DRILL_PREFIX : "") + seqNoPrefix(seqNo);
 }
 
 export class MessageTooLongError extends Error {
@@ -42,15 +56,16 @@ export class EmptyMessageError extends Error {
   }
 }
 
-// The text as transmitted and stored: the prefix, then the body with surrounding whitespace
-// removed. Throws on an empty body or more than MAX_MESSAGE_BYTES in total; this is the store
-// path's refusal of a 161-byte message (the UI disables Send before it gets here).
-export function composeText(seqNo: number, body: string): string {
+// The text as transmitted and stored: the prefix ("#n ", or "ØVELSE #n " in a drill), then
+// the body with surrounding whitespace removed. Throws on an empty body or more than
+// MAX_MESSAGE_BYTES in total, the drill prefix included; this is the store path's refusal of
+// a 161-byte message (the UI disables Send before it gets here).
+export function composeText(seqNo: number, body: string, drill = false): string {
   const trimmed = body.trim();
   if (trimmed === "") {
     throw new EmptyMessageError();
   }
-  const text = seqNoPrefix(seqNo) + trimmed;
+  const text = messagePrefix(seqNo, drill) + trimmed;
   const bytes = byteLength(text);
   if (bytes > MAX_MESSAGE_BYTES) {
     throw new MessageTooLongError(bytes);
@@ -59,7 +74,8 @@ export function composeText(seqNo: number, body: string): string {
 }
 
 // What the compose screen shows while typing: the predicted prefix (the recipient's last #n
-// plus one), the byte count of the whole message, and whether it may be sent.
+// plus one, with ØVELSE in front in a drill), the byte count of the whole message, and
+// whether it may be sent.
 export interface ComposePreview {
   seqNo: number;
   prefix: string;
@@ -68,9 +84,9 @@ export interface ComposePreview {
   tooLong: boolean;
 }
 
-export function previewText(lastSeqNo: number, body: string): ComposePreview {
+export function previewText(lastSeqNo: number, body: string, drill = false): ComposePreview {
   const seqNo = lastSeqNo + 1;
-  const prefix = seqNoPrefix(seqNo);
+  const prefix = messagePrefix(seqNo, drill);
   const trimmed = body.trim();
   const bytes = byteLength(prefix + trimmed);
   return { seqNo, prefix, bytes, empty: trimmed === "", tooLong: bytes > MAX_MESSAGE_BYTES };
@@ -80,14 +96,18 @@ export function previewText(lastSeqNo: number, body: string): ComposePreview {
 // recipient, so it is computed for the longest "#n " prefix among them, i.e. the highest
 // last #n. A text that fits the longest prefix fits all; composeText still refuses per
 // recipient at write time. No recipients chosen: the preview is as for a first message.
-export function batchPreview(lastSeqNos: readonly number[], body: string): ComposePreview {
+export function batchPreview(
+  lastSeqNos: readonly number[],
+  body: string,
+  drill = false,
+): ComposePreview {
   let highest = 0;
   for (const last of lastSeqNos) {
     if (last > highest) {
       highest = last;
     }
   }
-  return previewText(highest, body);
+  return previewText(highest, body, drill);
 }
 
 export interface ComposeInput {
@@ -130,10 +150,18 @@ export function replySnippet(text: string, max: number = REPLY_SNIPPET_LENGTH): 
   return `${characters.slice(0, max).join("")}…`;
 }
 
+// Whether the incident is a drill, read from the store: the prefix follows the incident the
+// message is filed under, never a flag the caller passes, so a drill's text cannot be sent
+// without it. An incident that is not in the store (imported data, tests) is not a drill.
+async function isDrillIncident(store: JournalStore, incidentId: string): Promise<boolean> {
+  return isDrill(await store.getIncident(incidentId));
+}
+
 // Reserves the recipient's next #n and stores the message_out in one transaction, and nothing
 // else: its status is pending until the radio or the operator records a status_change. A body
 // over the limit throws MessageTooLongError and leaves the counter where it was. A reply
-// (refersTo) is checked against the store first: its target must be a message_in.
+// (refersTo) is checked against the store first: its target must be a message_in. In a drill
+// incident the text gets the ØVELSE prefix (P1-05), on every transport.
 export async function composeMessage(store: JournalStore, input: ComposeInput): Promise<Composed> {
   if (input.refersTo !== undefined) {
     const target = await store.getEntry(input.refersTo);
@@ -144,6 +172,7 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
       throw new ReplyTargetError(`entry ${input.refersTo} is a ${target.type}, not a message_in`);
     }
   }
+  const drill = await isDrillIncident(store, input.incidentId);
   const message = await store.appendMessageOut(
     {
       incidentId: input.incidentId,
@@ -153,7 +182,7 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
       batchId: input.batchId,
       refersTo: input.refersTo,
     },
-    (seqNo) => composeText(seqNo, input.body),
+    (seqNo) => composeText(seqNo, input.body, drill),
   );
   return { message };
 }

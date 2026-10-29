@@ -8,6 +8,8 @@ import {
 } from "../test-support/testStore.ts";
 import { loadWalkthrough } from "../test-support/walkthrough.ts";
 import { dedupeKey } from "./dedupeKey.ts";
+import { envelopeFilename } from "./export.ts";
+import { DrillChangeError } from "./journalStore.ts";
 import { validateEnvelope, ValidationError } from "./schema.ts";
 import type { JournalEntry, NewJournalEntry } from "./types.ts";
 
@@ -317,15 +319,45 @@ describe("incidents and register", () => {
   it("putIncident validates and replaces by id", async () => {
     const store = await openTestStore();
     const incident = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
-    await store.putIncident({ ...incident, name: "Strømsvigt 28. oktober", drill: true });
+    await store.putIncident({ ...incident, name: "Strømsvigt 28. oktober" });
     expect(await store.getIncident(incident.id)).toStrictEqual({
       ...incident,
       name: "Strømsvigt 28. oktober",
-      drill: true,
     });
     await expect(store.putIncident({ ...incident, name: "" })).rejects.toThrow(ValidationError);
     await expect(store.createIncident({ name: "", createdBy: "Thomas" })).rejects.toThrow(ValidationError);
     expect((await store.allIncidents()).length).toBe(1);
+    store.close();
+  });
+
+  it("a drill is created with drill: true, a real incident without the key, and neither can become the other (P1-05)", async () => {
+    const store = await openTestStore();
+    const drill = await store.createIncident({ name: "Øvelse 2. november", createdBy: "Thomas", drill: true });
+    expect(drill.drill).toBe(true);
+    const real = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas", drill: false });
+    expect("drill" in real).toBe(false);
+    expect(await store.getIncident(drill.id)).toStrictEqual(drill);
+    expect(await store.getIncident(real.id)).toStrictEqual(real);
+
+    // The flag is fixed at creation: a real incident cannot be converted to a drill or back.
+    await expect(store.putIncident({ ...real, drill: true })).rejects.toBeInstanceOf(DrillChangeError);
+    await expect(store.putIncident({ ...drill, drill: false })).rejects.toBeInstanceOf(DrillChangeError);
+    const { drill: _dropped, ...withoutFlag } = drill;
+    void _dropped;
+    await expect(store.putIncident(withoutFlag)).rejects.toBeInstanceOf(DrillChangeError);
+    expect(await store.getIncident(drill.id)).toStrictEqual(drill);
+    expect(await store.getIncident(real.id)).toStrictEqual(real);
+
+    // Anything else about an incident may still be put, with the flag as it is; an explicit
+    // false on a real incident is the same kind and is stored as given (the schema allows it).
+    await store.putIncident({ ...drill, name: "Øvelse, efterår" });
+    expect(await store.getIncident(drill.id)).toStrictEqual({ ...drill, name: "Øvelse, efterår" });
+    await store.putIncident({ ...real, name: "Strømsvigt 28. oktober", drill: false });
+    expect(await store.getIncident(real.id)).toStrictEqual({
+      ...real,
+      name: "Strømsvigt 28. oktober",
+      drill: false,
+    });
     store.close();
   });
 
@@ -366,6 +398,42 @@ describe("incidents and register", () => {
     expect(envelope.incidents).toStrictEqual([incident]);
     expect(envelope.register).toStrictEqual([]);
     expect(envelope.entries).toStrictEqual([entry]);
+    store.close();
+  });
+
+  it("exportEnvelope keeps drills and real incidents apart when scoped, and the drill file is named -drill (P1-05)", async () => {
+    const store = await openTestStore();
+    const hans = await store.createRegisterEntry({ publicKey: HANS_KEY, label: "Hans", origin: "adhoc" });
+    const real = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
+    const drill = await store.createIncident({ name: "Øvelse", createdBy: "Thomas", drill: true });
+    const realNote = await store.appendEntry({ ...note("rigtig"), incidentId: real.id });
+    const drillOrder = await store.appendEntry({
+      ...messageOut(hans.id, 1, "ØVELSE #1 Meld status"),
+      incidentId: drill.id,
+    });
+    const drillNote = await store.appendEntry({ ...note("øvelse"), incidentId: drill.id });
+
+    const drills = await store.exportEnvelope({ drill: true });
+    expect(validateEnvelope(drills)).toBe(true);
+    expect(drills.incidents).toStrictEqual([drill]);
+    expect(drills.incidents.every((i) => i.drill === true)).toBe(true);
+    expect(drills.entries).toStrictEqual([drillOrder, drillNote]);
+    // The register is shared: the same radios in both files.
+    expect(drills.register).toStrictEqual([hans]);
+    expect(envelopeFilename(drills)).toMatch(/-drill\.json$/);
+
+    const reals = await store.exportEnvelope({ drill: false });
+    expect(validateEnvelope(reals)).toBe(true);
+    expect(reals.incidents).toStrictEqual([real]);
+    expect(reals.entries).toStrictEqual([realNote]);
+    expect(reals.register).toStrictEqual([hans]);
+    expect(envelopeFilename(reals)).not.toMatch(/-drill/);
+
+    // Unscoped: everything, as the journal folder's starting point; no -drill in the name.
+    const all = await store.exportEnvelope();
+    expect(all.incidents).toStrictEqual([real, drill]);
+    expect(all.entries).toStrictEqual([realNote, drillOrder, drillNote]);
+    expect(envelopeFilename(all)).not.toMatch(/-drill/);
     store.close();
   });
 });

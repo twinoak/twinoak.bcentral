@@ -3,6 +3,7 @@ import { openTestStore, uniqueDatabaseName } from "../test-support/testStore.ts"
 import { MAX_TEXT_LEN } from "../radio/serial.ts";
 import {
   BatchComposeError,
+  DRILL_PREFIX,
   EmptyMessageError,
   MAX_MESSAGE_BYTES,
   ManualStatusError,
@@ -16,6 +17,7 @@ import {
   composeMessage,
   composeText,
   manualStatusesFor,
+  messagePrefix,
   previewText,
   recordManualStatus,
   replySnippet,
@@ -98,6 +100,119 @@ describe("the #n prefix and the byte limit", () => {
     const body = bodyOfBytes(9, 160);
     expect(batchPreview([2, 8], body).tooLong).toBe(false);
     expect(batchPreview([2, 9], body).tooLong).toBe(true);
+  });
+});
+
+describe("drill mode: the ØVELSE prefix (P1-05)", () => {
+  // "ØVELSE " is 8 bytes of UTF-8 (Ø is two), so a drill leaves 8 bytes less for the text.
+  const DRILL_BYTES = 8;
+
+  it("the on-air prefix is the Danish word, untranslated, before '#n '", () => {
+    expect(DRILL_PREFIX).toBe("ØVELSE ");
+    expect(byteLength(DRILL_PREFIX)).toBe(DRILL_BYTES);
+    expect(messagePrefix(12, true)).toBe("ØVELSE #12 ");
+    expect(messagePrefix(12, false)).toBe("#12 ");
+    expect(composeText(12, "Kør til Nørregade 4", true)).toBe("ØVELSE #12 Kør til Nørregade 4");
+    expect(composeText(12, "Kør til Nørregade 4")).toBe("#12 Kør til Nørregade 4");
+    expect(composeText(3, "  Meld status \n", true)).toBe("ØVELSE #3 Meld status");
+  });
+
+  it("the counter includes the prefix: 160 bytes in all, 161 refused", () => {
+    const body = "x".repeat(160 - DRILL_BYTES - seqNoPrefix(3).length);
+    expect(byteLength(composeText(3, body, true))).toBe(160);
+    expect(() => composeText(3, `${body}x`, true)).toThrow(MessageTooLongError);
+    // The same body is fine in a real incident, with room to spare.
+    expect(byteLength(composeText(3, `${body}x`))).toBe(153);
+    // A body that fills 160 with "#1 " is 8 bytes over once the drill prefix is in front.
+    expect(() => composeText(1, bodyOfBytes(1, 160), true)).toThrow(MessageTooLongError);
+    try {
+      composeText(1, bodyOfBytes(1, 160), true);
+    } catch (error) {
+      expect((error as MessageTooLongError).bytes).toBe(168);
+    }
+  });
+
+  it("the preview shows the prefix and counts it, for one recipient and for a batch", () => {
+    // 8 (ØVELSE ) + 3 (#3 ) + 3 (hej).
+    expect(previewText(2, "hej", true)).toEqual({
+      seqNo: 3,
+      prefix: "ØVELSE #3 ",
+      bytes: 14,
+      empty: false,
+      tooLong: false,
+    });
+    expect(previewText(2, "hej")).toEqual({ seqNo: 3, prefix: "#3 ", bytes: 6, empty: false, tooLong: false });
+    expect(previewText(0, bodyOfBytes(1, 160), true).tooLong).toBe(true);
+    expect(previewText(0, bodyOfBytes(1, 160)).tooLong).toBe(false);
+    expect(batchPreview([0, 11, 3], "hej", true)).toEqual(previewText(11, "hej", true));
+    expect(batchPreview([2, 8], bodyOfBytes(9, 160), true).tooLong).toBe(true);
+    expect(batchPreview([2, 8], bodyOfBytes(9, 160 - DRILL_BYTES), true).tooLong).toBe(false);
+  });
+
+  it("a message in a drill incident is stored as 'ØVELSE #n …' on every transport; a real incident's has no prefix", async () => {
+    const store = await openTestStore();
+    const drill = await store.createIncident({ name: "Øvelse 2. november", createdBy: "Thomas", drill: true });
+    const real = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
+    for (const transport of ["mesh", "courier", "phone", "verbal"] as const) {
+      const { message } = await composeMessage(store, {
+        incidentId: drill.id,
+        operator: "Thomas",
+        counterpartyId: HANS,
+        transport,
+        body: "Meld status",
+      });
+      expect(message.text).toBe(`ØVELSE #${message.seqNo} Meld status`);
+      expect(message.transport).toBe(transport);
+    }
+    expect(await store.lastSeqNo(HANS)).toBe(4);
+    const { message: plain } = await composeMessage(store, {
+      incidentId: real.id,
+      operator: "Thomas",
+      counterpartyId: HANS,
+      transport: "mesh",
+      body: "Meld status",
+    });
+    // The counter is per recipient, shared across incidents (text-protocol.md: never reset).
+    expect(plain.text).toBe("#5 Meld status");
+    // An incident the store does not know is not a drill.
+    const { message: unknown } = await compose(store, "Meld status", PETER);
+    expect(unknown.text).toBe("#1 Meld status");
+    store.close();
+  });
+
+  it("the store path refuses 161 bytes with the prefix and leaves the counter untouched", async () => {
+    const store = await openTestStore();
+    const drill = await store.createIncident({ name: "Øvelse", createdBy: "Thomas", drill: true });
+    const body = bodyOfBytes(1, 160);
+    await expect(
+      composeMessage(store, { incidentId: drill.id, operator: "Thomas", counterpartyId: HANS, transport: "mesh", body }),
+    ).rejects.toBeInstanceOf(MessageTooLongError);
+    expect(await store.lastSeqNo(HANS)).toBe(0);
+    expect(await store.allEntries()).toEqual([]);
+    const { message } = await composeMessage(store, {
+      incidentId: drill.id,
+      operator: "Thomas",
+      counterpartyId: HANS,
+      transport: "mesh",
+      body: body.slice(DRILL_BYTES),
+    });
+    expect(byteLength(message.text ?? "")).toBe(160);
+    expect(message.text?.startsWith("ØVELSE #1 ")).toBe(true);
+    store.close();
+  });
+
+  it("a send-to-all in a drill prefixes every recipient's message", async () => {
+    const store = await openTestStore();
+    const drill = await store.createIncident({ name: "Øvelse", createdBy: "Thomas", drill: true });
+    const batch = await composeBatch(store, {
+      incidentId: drill.id,
+      operator: "Thomas",
+      counterpartyIds: [HANS, PETER],
+      body: "Meld status",
+    });
+    expect(batch.map((c) => c.message.text)).toEqual(["ØVELSE #1 Meld status", "ØVELSE #1 Meld status"]);
+    expect(new Set(batch.map((c) => c.message.batchId)).size).toBe(1);
+    store.close();
   });
 });
 

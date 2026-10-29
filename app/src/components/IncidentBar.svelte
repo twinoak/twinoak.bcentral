@@ -1,11 +1,14 @@
 <script lang="ts">
   // The incident bar (P0-07): which incident the journal shows, its name, when and by whom it
   // was opened and whether it is open or closed; switch, create, close / reopen; the export
-  // button and the print button (P1-04). The parent owns the store calls and reloads; this
+  // button and the print button (P1-04). A new incident can be a drill (P1-05): a checkbox,
+  // off by default, decided once; the switcher then lists drills under their own heading
+  // with the drill prefix on the name. The parent owns the store calls and reloads; this
   // component holds the form state and shows the outcome.
   import { t, language } from "../i18n/index.svelte.ts";
+  import { incidentName } from "../lib/journalText.ts";
   import { settings } from "../lib/settings.svelte.ts";
-  import type { IncidentState } from "../store/incidents.ts";
+  import { isDrill, splitByDrill, type IncidentState } from "../store/incidents.ts";
   import type { ExportResult } from "../store/index.ts";
   import type { Incident } from "../store/types.ts";
 
@@ -15,7 +18,7 @@
     // null while no incident is selected. (Not `state`: that name collides with the rune.)
     incidentState: IncidentState | null;
     onpick: (id: string | null) => void;
-    oncreate: (name: string) => Promise<void>;
+    oncreate: (name: string, drill: boolean) => Promise<void>;
     onclose: (reason: string) => Promise<void>;
     onreopen: (reason: string) => Promise<void>;
     onexport: () => Promise<ExportResult>;
@@ -35,14 +38,15 @@
   }: Props = $props();
 
   let newName = $state("");
+  let newDrill = $state(false);
   let reason = $state("");
   let busy = $state(false);
   let notice: string | null = $state(null);
   let error: string | null = $state(null);
 
-  const sortedIncidents = $derived(
-    [...incidents].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
-  );
+  // Real incidents and drills, each newest first. The headings appear once there is a drill
+  // to put under one; until then the list is as it was.
+  const grouped = $derived(splitByDrill(incidents));
 
   function describe(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
@@ -71,9 +75,11 @@
     busy = true;
     error = null;
     try {
-      await oncreate(name);
-      notice = t("journal.incident.created", { name });
+      const drill = newDrill;
+      await oncreate(name, drill);
+      notice = t(drill ? "journal.incident.createdDrill" : "journal.incident.created", { name });
       newName = "";
+      newDrill = false;
     } catch (failure) {
       error = t("journal.incident.createFailed", { error: describe(failure) });
     } finally {
@@ -124,10 +130,29 @@
     <h2 id="incident-heading">{t("journal.incident.label")}</h2>
     <select aria-labelledby="incident-heading" value={current?.id ?? ""} onchange={pick}>
       <option value="">{t("journal.incident.choose")}</option>
-      {#each sortedIncidents as incident (incident.id)}
-        <option value={incident.id}>{incident.name}</option>
-      {/each}
+      {#if grouped.drills.length === 0}
+        {#each grouped.real as incident (incident.id)}
+          <option value={incident.id}>{incident.name}</option>
+        {/each}
+      {:else}
+        {#if grouped.real.length > 0}
+          <optgroup label={t("journal.incident.group.real")}>
+            {#each grouped.real as incident (incident.id)}
+              <option value={incident.id}>{incident.name}</option>
+            {/each}
+          </optgroup>
+        {/if}
+        <optgroup label={t("journal.incident.group.drill")}>
+          {#each grouped.drills as incident (incident.id)}
+            <option value={incident.id}>{incidentName(incident)}</option>
+          {/each}
+        </optgroup>
+      {/if}
     </select>
+
+    {#if current !== null && isDrill(current)}
+      <span class="drill" data-drill>{t("drill.band")}</span>
+    {/if}
 
     {#if current !== null && incidentState !== null}
       <span class="opened">
@@ -161,6 +186,10 @@
         aria-label={t("journal.incident.newName")}
         bind:value={newName}
       />
+      <label class="check" title={t("journal.incident.drillHelp")}>
+        <input type="checkbox" bind:checked={newDrill} />
+        {t("journal.incident.drill")}
+      </label>
       <button type="submit" class="secondary" disabled={busy || newName.trim() === ""}>
         {t("journal.incident.create")}
       </button>
@@ -241,6 +270,27 @@
 
   .state[data-state="closed"] {
     color: var(--error);
+  }
+
+  .drill {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    background: #f2b705;
+    color: var(--ink);
+  }
+
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+  }
+
+  .check input {
+    margin: 0;
   }
 
   .closed {
