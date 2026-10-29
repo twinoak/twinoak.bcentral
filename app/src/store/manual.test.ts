@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { openTestStore } from "../test-support/testStore.ts";
 import { ManualEntryError, appendCorrection, appendMessageIn, appendNote } from "./manual.ts";
-import { composeMessage } from "./outgoing.ts";
+import { appendStatusChange, composeMessage } from "./outgoing.ts";
 import { applyIncoming } from "./incoming.ts";
 import type { JournalStore } from "./journalStore.ts";
 
@@ -69,18 +69,19 @@ describe("correction", () => {
   it("can correct any entry type, including a status change", async () => {
     const store = await openTestStore();
     const entry = await hans(store);
-    const { pending } = await composeMessage(store, {
+    const { message } = await composeMessage(store, {
       incidentId: INCIDENT,
       operator: "Anne",
       counterpartyId: entry.id,
       transport: "mesh",
       body: "Meld status",
     });
-    const correction = await appendCorrection(store, pending as NonNullable<typeof pending>, {
+    const sent = await appendStatusChange(store, message, "sent");
+    const correction = await appendCorrection(store, sent, {
       operator: "Anne",
       text: "sent to the wrong radio",
     });
-    expect(correction.refersTo).toBe(pending?.id);
+    expect(correction.refersTo).toBe(sent.id);
     store.close();
   });
 

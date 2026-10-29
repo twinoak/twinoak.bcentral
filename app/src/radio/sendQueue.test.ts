@@ -14,7 +14,7 @@ import type { JournalStore } from "../store/journalStore.ts";
 import type { JournalEntry, RegisterEntry } from "../store/types.ts";
 import { createOutbox, type Outbox } from "./outbox.svelte.ts";
 import { createRadioStore, type RadioStore } from "./radioStore.svelte.ts";
-import { SendQueueError, createSendQueue } from "./sendQueue.svelte.ts";
+import { SendQueueError, createSendQueue, type Batch } from "./sendQueue.svelte.ts";
 
 const INCIDENT = "01JB8ZK3QX9V2M4N6P8R0T2W4Z";
 const GAP_MS = 40;
@@ -164,11 +164,13 @@ describe("send queue (send to all, P0-08)", () => {
     expect(await statuses(store, messages)).toEqual(new Array<string>(25).fill("pending"));
     expect(companion.sends).toHaveLength(0);
 
-    const created = queue.enqueue(messages);
+    const [created] = queue.enqueue(messages) as [Batch];
     expect(created.items.map((item) => item.counterpartyId)).toEqual(
       register.map((entry) => entry.id),
     );
     expect(created.restored).toBe(false);
+    // The batch is the messages' own batchId, not an id of the queue's (P1-01).
+    expect(created.id).toBe(messages[0]?.batchId);
     expect(queue.batches()).toEqual([created]);
     expect(queue.waiting().length + (queue.sending() === null ? 0 : 1)).toBe(25);
 
@@ -246,9 +248,12 @@ describe("send queue (send to all, P0-08)", () => {
 
     // A fresh app: a new outbox and queue over the same store.
     const restoredQueue = makeQueue(makeOutbox());
-    const restored = await restoredQueue.requeuePending(INCIDENT);
-    expect(restored).not.toBeNull();
+    const [restored] = await restoredQueue.requeuePending(INCIDENT);
+    expect(restored).toBeDefined();
     expect(restored?.restored).toBe(true);
+    // Under the batch's own id, so the grouping survived the reload.
+    expect(restored?.id).toBe(messages[0]?.batchId);
+    expect(restoredQueue.batches()).toHaveLength(1);
     expect(restored?.items).toHaveLength(25 - sentBeforeReload);
     // In the original order: the first pending one is the first not yet sent.
     expect(restored?.items.map((item) => item.counterpartyId)).toEqual(
@@ -265,9 +270,40 @@ describe("send queue (send to all, P0-08)", () => {
     expect(outs.every((entry) => entry.seqNo === 1)).toBe(true);
     expect(new Set(outs.map((entry) => entry.counterpartyId)).size).toBe(25);
     // Nothing left to restore.
-    expect(await restoredQueue.requeuePending(INCIDENT)).toBeNull();
+    expect(await restoredQueue.requeuePending(INCIDENT)).toEqual([]);
     restoredQueue.stop();
     await radio.disconnect();
+  });
+
+  it("after a reload, pending messages of two batches and a single send come back as three batches by batchId", async () => {
+    const { store, queue, register, batch } = await setUp({ recipients: 4, gapMs: 1000 });
+    const first = await batch("first", [register[0]?.id ?? "", register[1]?.id ?? ""]);
+    const second = await batch("second", [register[2]?.id ?? "", register[3]?.id ?? ""]);
+    const single = await composeMessage(store, {
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      counterpartyId: register[0]?.id ?? "",
+      transport: "mesh",
+      body: "alone",
+    });
+    expect(single.message.batchId).toBeUndefined();
+
+    const restored = await queue.requeuePending(INCIDENT);
+    expect(restored.map((b) => b.id)).toEqual([
+      first[0]?.batchId,
+      second[0]?.batchId,
+      single.message.id,
+    ]);
+    expect(restored.map((b) => b.items.map((item) => item.messageId))).toEqual([
+      first.map((m) => m.id),
+      second.map((m) => m.id),
+      [single.message.id],
+    ]);
+    expect(restored.every((b) => b.restored)).toBe(true);
+    // Newest batch first on the screen; the waiting order is the storage order.
+    expect(queue.batches().map((b) => b.id)).toEqual([...restored.map((b) => b.id)].reverse());
+    expect(queue.waiting()).toEqual([...first, ...second, single.message].map((m) => m.id));
+    queue.stop();
   });
 
   it("requeuePending skips what is not pending, not mesh, or already held", async () => {
@@ -303,12 +339,18 @@ describe("send queue (send to all, P0-08)", () => {
       transport: "courier",
       body: "med bud",
     });
-    // Held by a batch of its own (paused: no radio), so not restored a second time.
+    // Already held (paused: no radio), so not restored a second time; the straggler of the
+    // same batch joins its batch instead of making a new one.
     queue.enqueue([messages[2] as JournalEntry]);
     expect(queue.phase()).toBe("paused");
 
-    const restored = await queue.requeuePending(INCIDENT);
-    expect(restored?.items.map((item) => item.messageId)).toEqual([messages[3]?.id]);
+    const [restored] = await queue.requeuePending(INCIDENT);
+    expect(restored?.id).toBe(messages[0]?.batchId);
+    expect(restored?.items.map((item) => item.messageId)).toEqual([
+      messages[2]?.id,
+      messages[3]?.id,
+    ]);
+    expect(queue.batches()).toHaveLength(1);
     expect(queue.waiting()).toEqual([messages[2]?.id, messages[3]?.id]);
     queue.stop();
     await radio.disconnect();
@@ -352,7 +394,7 @@ describe("send queue (send to all, P0-08)", () => {
     });
     await connectedRadio(radio);
     const messages = await batch();
-    const created = queue.enqueue(messages);
+    const [created] = queue.enqueue(messages) as [Batch];
     await untilIdle(queue);
     expect(await statuses(store, messages)).toEqual([
       "delivered",

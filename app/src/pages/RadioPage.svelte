@@ -13,7 +13,8 @@
   const device = $derived(radio.deviceInfo());
   const contacts = $derived(radio.contacts());
   const elapsed = $derived(radio.elapsedMs());
-  const log = $derived(radio.log());
+  // Newest line on top (P1-01): the store keeps the log oldest first.
+  const log = $derived([...radio.log()].reverse());
   const anySupport = transportSupport.usb || transportSupport.ble;
 
   function describe(failure: unknown): string {

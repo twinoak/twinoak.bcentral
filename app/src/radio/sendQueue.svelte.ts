@@ -1,10 +1,10 @@
 // The send-to-all queue (P0-08): the messages of a batch, one message_out per recipient,
 // handed to P0-05's one-at-a-time outbox in order with a minimum gap between transmissions
 // (settings; the mesh tolerates a handful of messages a minute). The queue stores nothing:
-// a batch is an in-memory list of message ids for the queue screen (text-protocol.md: "a
-// batch id ... not part of the exchanged data"), every status is derived from the journal,
-// and after a reload the pending messages are found in the store and queued again
-// (requeuePending).
+// a batch is the in-memory list of message ids sharing one batchId (the field composeBatch
+// stamps on every message of a send-to-all, P1-01), every status is derived from the journal,
+// and after a reload the pending messages are found in the store and queued again under their
+// own batchId (requeuePending), so the grouping survives the reload.
 //
 // While the radio is disconnected the queue pauses instead of letting the outbox give up on
 // every recipient in turn (FOLLOWUPS.md fix-next for P0-08); it goes on when a radio has
@@ -51,8 +51,10 @@ export interface QueueItem {
 }
 
 export interface Batch {
-  // In memory only; never in the data.
+  // The messages' batchId; a single message without one is a batch of its own, keyed by
+  // the message id.
   id: string;
+  // When the queue first saw the batch (this session's clock, for the screen's title).
   createdAtMs: number;
   // True for a batch made of pending messages found in the store after a reload.
   restored: boolean;
@@ -61,14 +63,17 @@ export interface Batch {
 }
 
 export interface SendQueue {
-  // Queues stored mesh message_out entries as one batch, in the given order, and starts
-  // sending. Refuses a message that is not a mesh message_out or is already queued.
-  enqueue(messages: readonly JournalEntry[], options?: { restored?: boolean }): Batch;
+  // Queues stored mesh message_out entries in the given order and starts sending. Messages
+  // sharing a batchId form one batch (a batch already known to this session is extended);
+  // one without a batchId is a batch of its own. Returns the batches created or extended.
+  // Refuses a message that is not a mesh message_out or is already queued.
+  enqueue(messages: readonly JournalEntry[], options?: { restored?: boolean }): readonly Batch[];
   // Queues messages of earlier batches again (the given-up ones, from the queue screen).
   retry(messageIds: readonly string[]): void;
   // Finds the incident's mesh message_out entries whose derived status is pending and that
-  // nobody holds, and queues them as a restored batch; null when there are none.
-  requeuePending(incidentId: string): Promise<Batch | null>;
+  // nobody holds, and queues them as restored batches by their batchId; empty when there
+  // are none.
+  requeuePending(incidentId: string): Promise<readonly Batch[]>;
   // Newest batch first.
   batches(): readonly Batch[];
   // Message ids not yet handed to the outbox, in order.
@@ -112,7 +117,6 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
 
   let running = false;
   let stopped = false;
-  let batchCount = 0;
   // When the last transmission ended (the outbox resolved); the gap counts from here.
   let lastFinishedAt: number | null = null;
   // Resolved by whatever the loop is waiting for: the gap timer, a connect, stop().
@@ -250,14 +254,18 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
     }
   }
 
-  function enqueue(messages: readonly JournalEntry[], options: { restored?: boolean } = {}): Batch {
+  function enqueue(
+    messages: readonly JournalEntry[],
+    options: { restored?: boolean } = {},
+  ): readonly Batch[] {
     if (stopped) {
       throw new SendQueueError(t("queue.error.stopped"));
     }
     if (messages.length === 0) {
       throw new SendQueueError(t("queue.error.noRecipients"));
     }
-    const items: QueueItem[] = [];
+    // Items by batch id, in the order the batches first appear; items in message order.
+    const grouped = new Map<string, QueueItem[]>();
     for (const message of messages) {
       if (
         message.type !== "message_out" ||
@@ -267,9 +275,14 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
       ) {
         throw new SendQueueError(t("send.error.notMesh"));
       }
-      if (held(message.id) || items.some((item) => item.messageId === message.id)) {
+      if (
+        held(message.id) ||
+        [...grouped.values()].flat().some((item) => item.messageId === message.id)
+      ) {
         throw new SendQueueError(t("send.error.alreadyQueued"));
       }
+      const batchId = message.batchId ?? message.id;
+      const items = grouped.get(batchId) ?? [];
       items.push({
         messageId: message.id,
         incidentId: message.incidentId,
@@ -277,24 +290,41 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
         seqNo: message.seqNo,
         text: message.text ?? "",
       });
+      grouped.set(batchId, items);
     }
-    batchCount += 1;
-    const batch: Batch = {
-      id: `batch-${batchCount}`,
-      createdAtMs: deps.now(),
-      restored: options.restored ?? false,
-      items,
-    };
-    batches = [batch, ...batches];
-    const ids = items.map((item) => item.messageId);
+
+    const touched: Batch[] = [];
+    let next = batches;
+    for (const [id, items] of grouped) {
+      const existing = next.find((batch) => batch.id === id);
+      if (existing !== undefined) {
+        const extended: Batch = { ...existing, items: [...existing.items, ...items] };
+        next = next.map((batch) => (batch === existing ? extended : batch));
+        touched.push(extended);
+        continue;
+      }
+      const batch: Batch = {
+        id,
+        createdAtMs: deps.now(),
+        restored: options.restored ?? false,
+        items,
+      };
+      next = [batch, ...next];
+      touched.push(batch);
+    }
+    batches = next;
+
+    const ids = messages.map((message) => message.id);
     forget(ids);
     waiting = [...waiting, ...ids];
     touch();
-    log(
-      `batch ${batch.id}: ${items.length} message(s) queued${batch.restored ? " (restored)" : ""}`,
-    );
+    for (const batch of touched) {
+      log(
+        `batch ${batch.id}: ${batch.items.length} message(s) queued${batch.restored ? " (restored)" : ""}`,
+      );
+    }
     start();
-    return batch;
+    return touched;
   }
 
   function retry(messageIds: readonly string[]): void {
@@ -320,7 +350,7 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
     start();
   }
 
-  async function requeuePending(incidentId: string): Promise<Batch | null> {
+  async function requeuePending(incidentId: string): Promise<readonly Batch[]> {
     const store = await deps.store();
     const entries = await store.entriesForIncident(incidentId);
     const pending = sortedOldestFirst(entries).filter(
@@ -331,7 +361,7 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
         statusOf(entries, entry.id) === "pending",
     );
     if (pending.length === 0) {
-      return null;
+      return [];
     }
     return enqueue(pending, { restored: true });
   }

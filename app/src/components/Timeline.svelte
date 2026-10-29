@@ -1,12 +1,23 @@
 <script lang="ts">
-  // The incident's journal in time order (P0-07): one row per entry, newest at the bottom,
-  // with status changes and corrections indented under the entry they refer to. Auto-scrolls
-  // to the newest entry unless the operator has scrolled up. Row actions: a correction of
-  // any entry, a manual status change on an outgoing message (with a required reason), and
-  // Retry / Send for a mesh message the outbox is not holding.
+  // The incident's journal as a stack of message slips (P0-07, reshaped in P1-01): one row
+  // per entry, newest on top. An outgoing message carries its status strip ("sent 14:31 ·
+  // delivered 14:32 · roger 14:35") under its text; its transitions are not rows but a
+  // history the operator opens on the row. The messages of one send-to-all are one row with
+  // counters that opens into one row per recipient. Corrections show under the entry they
+  // correct. The view stays at the top unless the operator scrolled down; then new rows
+  // arrive above without moving the viewport and a "N new" pill jumps back to the top.
+  // Row actions: a correction of any entry, a manual status change on an outgoing message
+  // (with a required reason), and Retry / Send for a mesh message nobody is sending.
   import { tick } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
-  import type { TimelineRow } from "../store/journalView.ts";
+  import {
+    countNewRows,
+    findRow,
+    type BatchCounters,
+    type MessageView,
+    type StripItem,
+    type TimelineRow,
+  } from "../store/journalView.ts";
   import { manualStatusesFor } from "../store/outgoing.ts";
   import type { JournalEntry, Status } from "../store/types.ts";
 
@@ -16,7 +27,8 @@
     labels: ReadonlyMap<string, string>;
     // Every entry of the incident by id, to resolve a roger's text (the incoming entry's id).
     byId: ReadonlyMap<string, JournalEntry>;
-    // What the outbox is doing with a message right now, or null when it does not hold it.
+    // What the outbox or the queue is doing with a message right now, or null when neither
+    // holds it.
     inflight: (messageId: string) => string | null;
     canRetry: (message: JournalEntry) => boolean;
     onretry: (message: JournalEntry) => void;
@@ -26,9 +38,13 @@
   let { rows, labels, byId, inflight, canRetry, onretry, onmanual, oncorrect }: Props = $props();
 
   let box: HTMLDivElement | undefined = $state(undefined);
-  // True while the view is at the bottom; a scroll up turns it off, a scroll back down on.
-  let stickToBottom = $state(true);
+  // True while the view is at the top; a scroll down turns it off, a scroll back up on.
+  let stickToTop = $state(true);
+  // The row ids on the timeline when the operator scrolled down; rows not in it are new.
+  let seen: ReadonlySet<string> | null = $state.raw(null);
   let highlighted: string | null = $state(null);
+  // Which batch rows show their recipients and which messages show their history.
+  let expanded: Record<string, boolean> = $state({});
 
   // Which row has its correction form or its status form open, and the texts typed in them.
   let correcting: string | null = $state(null);
@@ -38,40 +54,47 @@
   let error: string | null = $state(null);
   let busy = $state(false);
 
-  const AT_BOTTOM_SLACK_PX = 8;
+  const AT_TOP_SLACK_PX = 8;
+
+  const newCount = $derived(seen === null ? 0 : countNewRows(rows, seen));
 
   function onscroll() {
     if (box === undefined) {
       return;
     }
-    stickToBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - AT_BOTTOM_SLACK_PX;
+    if (box.scrollTop <= AT_TOP_SLACK_PX) {
+      stickToTop = true;
+      seen = null;
+    } else if (stickToTop) {
+      stickToTop = false;
+      seen = new Set(rows.map((row) => row.id));
+    }
   }
 
-  // After every change to the rows (new entries, new children), follow the bottom unless the
-  // operator scrolled up. $effect runs after the DOM has been updated.
-  $effect(() => {
-    void rows;
-    if (box !== undefined && stickToBottom) {
-      box.scrollTop = box.scrollHeight;
+  function jumpToTop() {
+    stickToTop = true;
+    seen = null;
+    if (box !== undefined) {
+      box.scrollTop = 0;
     }
-  });
+  }
 
   export async function scrollToEntry(id: string): Promise<void> {
+    const row = findRow(rows, id);
+    if (row?.kind === "batch") {
+      expanded[row.id] = true;
+    }
     await tick();
     const target = box?.querySelector<HTMLElement>(`[data-entry-id="${id}"]`);
     if (target === undefined || target === null) {
       return;
     }
-    stickToBottom = false;
     target.scrollIntoView({ block: "center" });
     highlighted = id;
   }
 
-  function jumpToLatest() {
-    stickToBottom = true;
-    if (box !== undefined) {
-      box.scrollTop = box.scrollHeight;
-    }
+  function toggle(id: string) {
+    expanded[id] = expanded[id] !== true;
   }
 
   function describe(failure: unknown): string {
@@ -82,6 +105,10 @@
     return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "medium" });
   }
 
+  function formatShortTime(timestamp: string): string {
+    return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "short" });
+  }
+
   function formatDateTime(timestamp: string): string {
     return new Date(timestamp).toLocaleString(language(), {
       dateStyle: "medium",
@@ -89,29 +116,56 @@
     });
   }
 
-  // What a child row says: for a status change the status, then its text; a roger's text is
-  // the id of the incoming entry that caused it, shown as that entry's text when it is in
-  // this incident. For a correction, the correction's text.
-  function childDetail(child: JournalEntry): string {
-    if (child.type === "correction") {
-      return child.text ?? "";
+  // One segment of the strip: the status and its time, or "waiting" with the latest attempt.
+  // While the outbox or the queue holds the message, its own progress text replaces the
+  // waiting / pending segment.
+  function stripText(item: StripItem, inflightText: string | null): string {
+    if ((item.kind === "waiting" || item.kind === "pending") && inflightText !== null) {
+      return inflightText;
     }
-    const status = t(`journal.status.${child.newStatus ?? "pending"}`);
-    if (child.text === undefined) {
+    if (item.kind === "waiting") {
+      return item.attempt === null
+        ? t("journal.strip.waiting")
+        : t("journal.strip.waitingAttempt", { attempt: item.attempt });
+    }
+    const label = t(`journal.status.${item.kind}`);
+    return item.at === null ? label : `${label} ${formatShortTime(item.at)}`;
+  }
+
+  function countersText(counters: BatchCounters): string {
+    const parts: string[] = [];
+    for (const key of ["pending", "sent", "delivered", "roger", "given_up"] as const) {
+      const n = key === "given_up" ? counters.givenUp : counters[key];
+      if (n > 0) {
+        parts.push(t(`journal.batch.counter.${key}`, { n }));
+      }
+    }
+    return parts.join(" · ");
+  }
+
+  // What a history line says: for a status change the status, then its text; a roger's text
+  // is the id of the incoming entry that caused it, shown as that entry's text when it is in
+  // this incident. For an old resend note, its text.
+  function historyDetail(entry: JournalEntry): string {
+    if (entry.type !== "status_change") {
+      return entry.text ?? "";
+    }
+    const status = t(`journal.status.${entry.newStatus ?? "pending"}`);
+    if (entry.text === undefined) {
       return status;
     }
-    const referenced = child.newStatus === "roger" ? byId.get(child.text) : undefined;
+    const referenced = entry.newStatus === "roger" ? byId.get(entry.text) : undefined;
     if (referenced !== undefined) {
       return `${status} · ${t("journal.rogerFrom", { text: referenced.text ?? "" })}`;
     }
-    return `${status} · ${child.text}`;
+    return `${status} · ${entry.text}`;
   }
 
-  function rogerSource(child: JournalEntry): JournalEntry | undefined {
-    if (child.type !== "status_change" || child.newStatus !== "roger" || child.text === undefined) {
+  function rogerSource(entry: JournalEntry): JournalEntry | undefined {
+    if (entry.type !== "status_change" || entry.newStatus !== "roger" || entry.text === undefined) {
       return undefined;
     }
-    return byId.get(child.text);
+    return byId.get(entry.text);
   }
 
   function startCorrection(entry: JournalEntry) {
@@ -169,15 +223,196 @@
     }
   }
 
-  function canChangeStatus(row: TimelineRow): boolean {
+  function canChangeStatus(view: MessageView): boolean {
     return (
-      row.entry.type === "message_out" &&
-      row.status !== "roger" &&
-      row.entry.transport !== undefined &&
-      inflight(row.entry.id) === null
+      view.status !== "roger" &&
+      view.entry.transport !== undefined &&
+      inflight(view.entry.id) === null
     );
   }
 </script>
+
+<!-- The time, with the clock-trust mark: a dimmed "?" for unknown, a small "✓" for manual,
+     nothing for ntp; the sentence from the settings as its tooltip. The top bar says once
+     that the session's clock is unconfirmed, so the mark here can be quiet. -->
+{#snippet timeCell(entry: JournalEntry)}
+  <td class="time" title={formatDateTime(entry.timestamp)}>
+    {formatTime(entry.timestamp)}{#if entry.clockTrust !== "ntp"}<abbr
+        class="trust"
+        data-trust={entry.clockTrust}
+        title={t(`settings.clockTrust.${entry.clockTrust}`)}
+        >{t(`journal.trust.${entry.clockTrust}`)}</abbr
+      >{/if}
+  </td>
+{/snippet}
+
+{#snippet correctButton(entry: JournalEntry)}
+  <button type="button" class="secondary small" onclick={() => startCorrection(entry)}>
+    {t("journal.action.correct")}
+  </button>
+{/snippet}
+
+{#snippet correctionForm(entry: JournalEntry)}
+  {#if correcting === entry.id}
+    <tr class="form">
+      <td colspan="7">
+        <form class="inline" onsubmit={(event) => saveCorrection(entry, event)}>
+          <input
+            type="text"
+            placeholder={t("journal.correction.text")}
+            aria-label={t("journal.correction.text")}
+            bind:value={correctionText}
+          />
+          <button type="submit" class="small" disabled={busy || correctionText.trim() === ""}>
+            {t("journal.action.save")}
+          </button>
+          <button type="button" class="secondary small" onclick={cancelForms}
+            >{t("journal.action.cancel")}</button
+          >
+        </form>
+      </td>
+    </tr>
+  {/if}
+{/snippet}
+
+{#snippet correctionRows(corrections: readonly JournalEntry[])}
+  {#each corrections as correction (correction.id)}
+    <tr
+      class="child"
+      data-type="correction"
+      data-entry-id={correction.id}
+      class:highlighted={highlighted === correction.id}
+    >
+      {@render timeCell(correction)}
+      <td>{correction.operator}</td>
+      <td>{t("journal.type.correction")}</td>
+      <td></td>
+      <td class="text indented" colspan="2">{correction.text ?? ""}</td>
+      <td class="actions">{@render correctButton(correction)}</td>
+    </tr>
+    {@render correctionForm(correction)}
+  {/each}
+{/snippet}
+
+<!-- An outgoing message: its row with the strip, then (when open) its history, its
+     corrections and the forms. `nested` marks a recipient row inside a batch. -->
+{#snippet messageRows(view: MessageView, nested: boolean)}
+  {@const entry = view.entry}
+  {@const inflightText = inflight(entry.id)}
+  <tr
+    class:child={nested}
+    data-type="message_out"
+    data-entry-id={entry.id}
+    class:highlighted={highlighted === entry.id}
+  >
+    {@render timeCell(entry)}
+    <td>{entry.operator}</td>
+    <td>
+      {t("journal.type.message_out")}
+      {#if entry.transport !== undefined && entry.transport !== "mesh"}
+        <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
+      {/if}
+    </td>
+    <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
+    <td class="text" class:indented={nested}>
+      {entry.text ?? ""}
+      <div class="strip">
+        {#each view.strip as item, index (index)}
+          {#if index > 0}<span class="dot">·</span>{/if}
+          <span data-kind={item.kind} title={item.at === null ? undefined : formatDateTime(item.at)}
+            >{stripText(item, inflightText)}</span
+          >
+        {/each}
+      </div>
+    </td>
+    <td>
+      <span class="chip" data-status={view.status}>{t(`journal.status.${view.status}`)}</span>
+    </td>
+    <td class="actions">
+      {#if canRetry(entry)}
+        <button type="button" class="secondary small" onclick={() => onretry(entry)}>
+          {view.status === "given_up" ? t("send.retry") : t("send.sendNow")}
+        </button>
+      {/if}
+      {#if canChangeStatus(view)}
+        <button type="button" class="secondary small" onclick={() => startStatus(entry)}>
+          {t("journal.action.status")}
+        </button>
+      {/if}
+      {#if view.history.length > 0}
+        <button
+          type="button"
+          class="secondary small"
+          aria-expanded={expanded[entry.id] === true}
+          onclick={() => toggle(entry.id)}
+        >
+          {expanded[entry.id] === true
+            ? t("journal.action.hideHistory")
+            : t("journal.action.history", { count: view.history.length })}
+        </button>
+      {/if}
+      {@render correctButton(entry)}
+    </td>
+  </tr>
+
+  {#if changingStatus === entry.id && entry.transport !== undefined}
+    <tr class="form">
+      <td colspan="7">
+        <div class="inline">
+          <input
+            type="text"
+            placeholder={t("journal.manual.reason")}
+            aria-label={t("journal.manual.reason")}
+            bind:value={reason}
+          />
+          {#each manualStatusesFor(entry.transport) as next (next)}
+            <button
+              type="button"
+              class="small"
+              disabled={busy || reason.trim() === ""}
+              onclick={() => saveStatus(entry, next)}
+            >
+              {t(`send.manual.${next}`)}
+            </button>
+          {/each}
+          <button type="button" class="secondary small" onclick={cancelForms}
+            >{t("journal.action.cancel")}</button
+          >
+        </div>
+      </td>
+    </tr>
+  {/if}
+  {@render correctionForm(entry)}
+
+  {#if expanded[entry.id] === true}
+    {#each view.history as item (item.entry.id)}
+      {@const source = rogerSource(item.entry)}
+      <tr
+        class="child history"
+        data-type={item.entry.type}
+        data-entry-id={item.entry.id}
+        class:highlighted={highlighted === item.entry.id}
+      >
+        {@render timeCell(item.entry)}
+        <td>{item.entry.operator}</td>
+        <td>{t(`journal.type.${item.entry.type}`)}</td>
+        <td></td>
+        <td class="text indented" colspan="2">
+          {historyDetail(item.entry)}
+          {#if source !== undefined}
+            <button type="button" class="link" onclick={() => scrollToEntry(source.id)}>
+              {formatTime(source.timestamp)}
+            </button>
+          {/if}
+        </td>
+        <td class="actions">{@render correctButton(item.entry)}</td>
+      </tr>
+      {@render correctionForm(item.entry)}
+      {@render correctionRows(item.corrections)}
+    {/each}
+  {/if}
+  {@render correctionRows(view.corrections)}
+{/snippet}
 
 <div class="timeline" bind:this={box} {onscroll}>
   {#if rows.length === 0}
@@ -196,174 +431,71 @@
         </tr>
       </thead>
       <tbody>
-        {#each rows as row (row.entry.id)}
-          {@const entry = row.entry}
-          {@const inflightText = entry.type === "message_out" ? inflight(entry.id) : null}
-          <tr
-            data-type={entry.type}
-            data-entry-id={entry.id}
-            class:highlighted={highlighted === entry.id}
-          >
-            <td class="time" title={formatDateTime(entry.timestamp)}>
-              {formatTime(entry.timestamp)}{#if entry.clockTrust !== "ntp"}<abbr
-                  class="trust"
-                  title={t(`settings.clockTrust.${entry.clockTrust}`)}
-                  >{t(`journal.trust.${entry.clockTrust}`)}</abbr
-                >{/if}
-            </td>
-            <td>{entry.operator}</td>
-            <td>
-              {t(`journal.type.${entry.type}`)}
-              {#if entry.transport !== undefined && entry.transport !== "mesh"}
-                <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
-              {/if}
-            </td>
-            <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
-            <td class="text">
-              {#if entry.type === "status_change"}
-                {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
-                  · {entry.text}{/if}
-              {:else}
-                {entry.text ?? ""}
-              {/if}
-            </td>
-            <td>
-              {#if row.status !== null}
-                <span class="chip" data-status={row.status}>
-                  {inflightText ?? t(`journal.status.${row.status}`)}
-                </span>
-              {/if}
-            </td>
-            <td class="actions">
-              {#if entry.type === "message_out" && canRetry(entry)}
-                <button type="button" class="secondary small" onclick={() => onretry(entry)}>
-                  {row.status === "given_up" ? t("send.retry") : t("send.sendNow")}
-                </button>
-              {/if}
-              {#if canChangeStatus(row)}
-                <button type="button" class="secondary small" onclick={() => startStatus(entry)}>
-                  {t("journal.action.status")}
-                </button>
-              {/if}
-              <button type="button" class="secondary small" onclick={() => startCorrection(entry)}>
-                {t("journal.action.correct")}
-              </button>
-            </td>
-          </tr>
-
-          {#each row.children as child (child.id)}
-            {@const source = rogerSource(child)}
-            <tr
-              class="child"
-              data-type={child.type}
-              data-entry-id={child.id}
-              class:highlighted={highlighted === child.id}
-            >
-              <td class="time" title={formatDateTime(child.timestamp)}>
-                {formatTime(child.timestamp)}{#if child.clockTrust !== "ntp"}<abbr
-                    class="trust"
-                    title={t(`settings.clockTrust.${child.clockTrust}`)}
-                    >{t(`journal.trust.${child.clockTrust}`)}</abbr
-                  >{/if}
+        {#each rows as row (row.id)}
+          {#if row.kind === "message"}
+            {@render messageRows(row.message, false)}
+          {:else if row.kind === "batch"}
+            <tr data-type="batch" data-entry-id={row.id} class:highlighted={highlighted === row.id}>
+              {@render timeCell(row.entry)}
+              <td>{row.entry.operator}</td>
+              <td>{t("journal.type.message_out")}</td>
+              <td class="label">{t("journal.batch.toAll", { count: row.counters.total })}</td>
+              <td class="text">
+                {t("journal.batch.text", { body: row.body })}
+                <div class="strip">{countersText(row.counters)}</div>
               </td>
-              <td>{child.operator}</td>
-              <td>{t(`journal.type.${child.type}`)}</td>
-              <td></td>
-              <td class="text indented" colspan="2">
-                {childDetail(child)}
-                {#if source !== undefined}
-                  <button type="button" class="link" onclick={() => scrollToEntry(source.id)}>
-                    {formatTime(source.timestamp)}
-                  </button>
-                {/if}
+              <td>
+                <span class="chip" data-status={row.status}
+                  >{t(`journal.status.${row.status}`)}</span
+                >
               </td>
               <td class="actions">
                 <button
                   type="button"
                   class="secondary small"
-                  onclick={() => startCorrection(child)}
+                  aria-expanded={expanded[row.id] === true}
+                  onclick={() => toggle(row.id)}
                 >
-                  {t("journal.action.correct")}
+                  {expanded[row.id] === true
+                    ? t("journal.batch.collapse")
+                    : t("journal.batch.expand", { count: row.counters.total })}
                 </button>
               </td>
             </tr>
-            {#if correcting === child.id}
-              <tr class="form">
-                <td colspan="7">
-                  <form class="inline" onsubmit={(event) => saveCorrection(child, event)}>
-                    <input
-                      type="text"
-                      placeholder={t("journal.correction.text")}
-                      aria-label={t("journal.correction.text")}
-                      bind:value={correctionText}
-                    />
-                    <button
-                      type="submit"
-                      class="small"
-                      disabled={busy || correctionText.trim() === ""}
-                    >
-                      {t("journal.action.save")}
-                    </button>
-                    <button type="button" class="secondary small" onclick={cancelForms}
-                      >{t("journal.action.cancel")}</button
-                    >
-                  </form>
-                </td>
-              </tr>
+            {#if expanded[row.id] === true}
+              {#each row.messages as view (view.entry.id)}
+                {@render messageRows(view, true)}
+              {/each}
             {/if}
-          {/each}
-
-          {#if correcting === entry.id}
-            <tr class="form">
-              <td colspan="7">
-                <form class="inline" onsubmit={(event) => saveCorrection(entry, event)}>
-                  <input
-                    type="text"
-                    placeholder={t("journal.correction.text")}
-                    aria-label={t("journal.correction.text")}
-                    bind:value={correctionText}
-                  />
-                  <button
-                    type="submit"
-                    class="small"
-                    disabled={busy || correctionText.trim() === ""}
-                  >
-                    {t("journal.action.save")}
-                  </button>
-                  <button type="button" class="secondary small" onclick={cancelForms}
-                    >{t("journal.action.cancel")}</button
-                  >
-                </form>
+          {:else}
+            {@const entry = row.entry}
+            <tr
+              data-type={entry.type}
+              data-entry-id={entry.id}
+              class:highlighted={highlighted === entry.id}
+            >
+              {@render timeCell(entry)}
+              <td>{entry.operator}</td>
+              <td>
+                {t(`journal.type.${entry.type}`)}
+                {#if entry.transport !== undefined && entry.transport !== "mesh"}
+                  <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
+                {/if}
               </td>
-            </tr>
-          {/if}
-
-          {#if changingStatus === entry.id && entry.transport !== undefined}
-            <tr class="form">
-              <td colspan="7">
-                <div class="inline">
-                  <input
-                    type="text"
-                    placeholder={t("journal.manual.reason")}
-                    aria-label={t("journal.manual.reason")}
-                    bind:value={reason}
-                  />
-                  {#each manualStatusesFor(entry.transport) as next (next)}
-                    <button
-                      type="button"
-                      class="small"
-                      disabled={busy || reason.trim() === ""}
-                      onclick={() => saveStatus(entry, next)}
-                    >
-                      {t(`send.manual.${next}`)}
-                    </button>
-                  {/each}
-                  <button type="button" class="secondary small" onclick={cancelForms}
-                    >{t("journal.action.cancel")}</button
-                  >
-                </div>
+              <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
+              <td class="text">
+                {#if entry.type === "status_change"}
+                  {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
+                    · {entry.text}{/if}
+                {:else}
+                  {entry.text ?? ""}
+                {/if}
               </td>
+              <td></td>
+              <td class="actions">{@render correctButton(entry)}</td>
             </tr>
+            {@render correctionForm(entry)}
+            {@render correctionRows(row.corrections)}
           {/if}
         {/each}
       </tbody>
@@ -375,9 +507,9 @@
   {#if error}
     <span class="error" role="alert">{error}</span>
   {/if}
-  {#if !stickToBottom}
-    <button type="button" class="secondary small" onclick={jumpToLatest}
-      >{t("journal.timeline.jumpToLatest")}</button
+  {#if newCount > 0}
+    <button type="button" class="pill" onclick={jumpToTop}
+      >{t("journal.timeline.newRows", { n: newCount })}</button
     >
   {/if}
 </div>
@@ -386,6 +518,8 @@
   .timeline {
     max-height: 60vh;
     overflow-y: auto;
+    /* Rows inserted above the viewport must not move what the operator is reading. */
+    overflow-anchor: auto;
     border: 1px solid var(--line);
     border-radius: 6px;
     background: #fff;
@@ -435,9 +569,18 @@
 
   .trust {
     margin-left: 0.15rem;
+    font-size: 0.8em;
     color: var(--muted);
     text-decoration: none;
     cursor: help;
+  }
+
+  .trust[data-trust="unknown"] {
+    opacity: 0.45;
+  }
+
+  .trust[data-trust="manual"] {
+    color: var(--ok);
   }
 
   .label {
@@ -450,9 +593,28 @@
     width: 45%;
   }
 
+  .strip {
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .strip .dot {
+    margin: 0 0.3rem;
+  }
+
+  .strip [data-kind="delivered"],
+  .strip [data-kind="roger"] {
+    color: var(--ok);
+  }
+
+  .strip [data-kind="given_up"] {
+    color: var(--error);
+  }
+
   .indented {
     padding-left: 1.5rem;
-    color: var(--muted);
   }
 
   tr.child td {
@@ -460,8 +622,16 @@
     font-size: 0.9rem;
   }
 
+  tr.history td {
+    color: var(--muted);
+  }
+
   tr[data-type="message_in"] {
     background: #eef4fb;
+  }
+
+  tr[data-type="batch"] td {
+    background: var(--light);
   }
 
   tr.highlighted {
@@ -501,6 +671,10 @@
     white-space: nowrap;
   }
 
+  .actions button + button {
+    margin-left: 0.25rem;
+  }
+
   .inline {
     display: flex;
     align-items: center;
@@ -520,6 +694,11 @@
 
   .small {
     padding: 0.25rem 0.6rem;
+  }
+
+  .pill {
+    padding: 0.2rem 0.8rem;
+    border-radius: 999px;
   }
 
   .link {

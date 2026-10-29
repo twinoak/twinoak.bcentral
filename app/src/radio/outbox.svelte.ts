@@ -2,7 +2,8 @@
 // CMD_SEND_TXT_MSG -> RESP_CODE_SENT (status sent) -> PUSH_CODE_SEND_CONFIRMED with the
 // expected ack (status delivered); no ack within the window -> resend with the same timestamp
 // and attempt + 1, up to the configured number of attempts, then given_up. Every step is a
-// journal entry; the outbox stores no status of its own.
+// status_change: a resend the companion accepted is one more `sent` whose text is the attempt
+// ("attempt 2/3", P1-01). The outbox stores no status of its own.
 //
 // One send at a time per device: send() queues, and a second call waits until the first has
 // reached delivered or given_up. Simple FIFO; the send-to-all queue (P0-08) builds on it.
@@ -222,16 +223,6 @@ export function createOutbox(deps: OutboxDeps): Outbox {
       const text = message.text ?? "";
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        if (attempt > 0) {
-          await store.appendEntry({
-            incidentId: message.incidentId,
-            operator: deps.operator(),
-            type: "note",
-            refersTo: message.id,
-            text: t("send.text.resend", { n: seqNo, attempt: attempt + 1, max: maxAttempts }),
-          });
-          revision += 1;
-        }
         active = { messageId: message.id, seqNo, attempt, maxAttempts, phase: "sending", expectedAck: null, deadlineMs: null };
 
         const payload = textMessagePayload(recipientKey, text, { txtType: TXT_TYPE_PLAIN, attempt, timestamp });
@@ -253,9 +244,14 @@ export function createOutbox(deps: OutboxDeps): Outbox {
           `#${seqNo} attempt ${attempt + 1}/${maxAttempts} timestamp ${timestamp} accepted: ` +
             `ack ${sent.expectedAck.toString(16)}, est ${sent.estTimeoutMs} ms${sent.isFlood ? ", flood" : ""}`,
         );
-        if (attempt === 0) {
-          await record(store, message, "sent");
-        }
+        // The first acceptance is `sent`; each resend is `sent` again with the attempt as its
+        // text, so the strip shows the latest attempt and the history every one.
+        await record(
+          store,
+          message,
+          "sent",
+          attempt === 0 ? undefined : t("send.text.attempt", { attempt: attempt + 1, max: maxAttempts }),
+        );
 
         const windowMs = ackWindow(sent.estTimeoutMs);
         active = {

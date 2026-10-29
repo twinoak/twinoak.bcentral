@@ -100,8 +100,9 @@ describe("the #n prefix and the byte limit", () => {
 
 describe("composeBatch (send to all, P0-08)", () => {
   const ANNE = "01JB8ZK3QX9V2M4N6P8R0T2W90";
+  const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
-  it("stores one mesh message_out per recipient with that recipient's own next #n, all pending", async () => {
+  it("stores one mesh message_out per recipient with that recipient's own next #n, all pending, all with one batchId", async () => {
     const store = await openTestStore();
     await compose(store, "earlier", HANS);
     await compose(store, "earlier", HANS);
@@ -116,13 +117,28 @@ describe("composeBatch (send to all, P0-08)", () => {
       [PETER, 1, "#1 Meld status"],
       [ANNE, 1, "#1 Meld status"],
     ]);
-    for (const { message, pending } of batch) {
+    const batchId = batch[0]?.message.batchId ?? "";
+    expect(batchId).toMatch(ULID);
+    for (const { message } of batch) {
       expect(message.transport).toBe("mesh");
-      expect(pending?.newStatus).toBe("pending");
+      expect(message.batchId).toBe(batchId);
       expect(await store.statusOf(message.id)).toBe("pending");
     }
+    // Nothing but the messages themselves: no pending status change (P1-01).
     const all = await store.allEntries();
+    expect(all).toHaveLength(5);
     expect(all.filter((e) => e.type === "message_out")).toHaveLength(5);
+    // The two single sends before the batch have no batchId; a second batch gets its own.
+    expect(all.filter((e) => e.batchId === undefined)).toHaveLength(2);
+    const second = await composeBatch(store, {
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      counterpartyIds: [HANS, PETER],
+      body: "igen",
+    });
+    expect(second[0]?.message.batchId).toMatch(ULID);
+    expect(second[0]?.message.batchId).not.toBe(batchId);
+    expect(second[1]?.message.batchId).toBe(second[0]?.message.batchId);
     store.close();
   });
 
@@ -166,20 +182,19 @@ describe("composeBatch (send to all, P0-08)", () => {
 });
 
 describe("composeMessage", () => {
-  it("stores the message_out with #1 and a pending status_change for mesh", async () => {
+  it("stores the message_out with #1 and nothing else; its status is pending (P1-01)", async () => {
     const store = await openTestStore();
-    const { message, pending } = await compose(store, "Meld status for Nørregade");
+    const { message } = await compose(store, "Meld status for Nørregade");
     expect(message.type).toBe("message_out");
     expect(message.transport).toBe("mesh");
     expect(message.counterpartyId).toBe(HANS);
     expect(message.seqNo).toBe(1);
+    expect(message.batchId).toBeUndefined();
     expect(message.text).toBe("#1 Meld status for Nørregade");
-    expect(pending?.type).toBe("status_change");
-    expect(pending?.refersTo).toBe(message.id);
-    expect(pending?.newStatus).toBe("pending");
     expect(await store.statusOf(message.id)).toBe("pending");
     expect(await store.lastSeqNo(HANS)).toBe(1);
-    expect(await store.allEntries()).toHaveLength(2);
+    expect(await store.allEntries()).toEqual([message]);
+    expect(await store.entriesReferringTo(message.id)).toEqual([]);
     store.close();
   });
 
@@ -247,10 +262,9 @@ describe("composeMessage", () => {
     store.close();
   });
 
-  it("a non-mesh message gets no pending entry; its derived status is pending anyway", async () => {
+  it("a non-mesh message is stored alone too; its derived status is pending", async () => {
     const store = await openTestStore();
-    const { message, pending } = await compose(store, "Pumpe på vej med Peter på cykel", HANS, "courier");
-    expect(pending).toBeNull();
+    const { message } = await compose(store, "Pumpe på vej med Peter på cykel", HANS, "courier");
     expect(message.transport).toBe("courier");
     expect(message.text).toBe("#1 Pumpe på vej med Peter på cykel");
     expect(await store.statusOf(message.id)).toBe("pending");
