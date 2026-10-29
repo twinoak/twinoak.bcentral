@@ -346,7 +346,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
   }
 
   .layout {
@@ -396,7 +396,7 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    background: #fff;
+    background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 6px;
   }
@@ -406,11 +406,12 @@
     text-align: left;
     vertical-align: top;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
   }
 
   thead th {
     background: var(--light);
+    border-bottom-color: var(--line);
   }
 
   .label {
@@ -429,43 +430,10 @@
   }
 
   tr[data-status="given_up"] td {
-    background: #fbeeec;
-  }
-
-  .chip {
-    display: inline-block;
-    padding: 0.1rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    white-space: nowrap;
-    background: var(--light);
-    color: var(--muted);
-  }
-
-  .chip[data-status="sent"] {
-    color: var(--navy);
-  }
-
-  .chip[data-status="delivered"],
-  .chip[data-status="roger"] {
-    color: var(--ok);
-  }
-
-  .chip[data-status="given_up"] {
-    color: var(--error);
+    background: var(--surface-given-up);
   }
 
   .actions {
     white-space: nowrap;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
-  }
-
-  .small {
-    padding: 0.25rem 0.6rem;
   }
 </style>

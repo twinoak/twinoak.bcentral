@@ -134,6 +134,46 @@ describe("settings", () => {
     }
   });
 
+  it("defaults the text size to normal and high contrast to off", async () => {
+    const { settings, DEFAULT_FONT_SIZE, FONT_SIZES } = await loadSettings();
+    expect(settings.fontSize).toBe("normal");
+    expect(DEFAULT_FONT_SIZE).toBe("normal");
+    expect(FONT_SIZES).toEqual(["normal", "large", "largest"]);
+    expect(settings.highContrast).toBe(false);
+  });
+
+  it("persists the text size and high contrast across a reload", async () => {
+    const first = await loadSettings();
+    first.updateSettings({ fontSize: "largest", highContrast: true });
+    expect(first.settings.fontSize).toBe("largest");
+    expect(first.settings.highContrast).toBe(true);
+
+    const second = await loadSettings();
+    expect(second.settings.fontSize).toBe("largest");
+    expect(second.settings.highContrast).toBe(true);
+
+    second.updateSettings({ fontSize: "large", highContrast: false });
+    const third = await loadSettings();
+    expect(third.settings.fontSize).toBe("large");
+    expect(third.settings.highContrast).toBe(false);
+  });
+
+  it("falls back to normal size and no high contrast when the stored values are not valid", async () => {
+    for (const bad of ["huge", 18, null, true]) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          deviceId: "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+          fontSize: bad,
+          highContrast: "yes",
+        }),
+      );
+      const { settings } = await loadSettings();
+      expect(settings.fontSize).toBe("normal");
+      expect(settings.highContrast).toBe(false);
+    }
+  });
+
   it("replaces a stored device id that is not a ULID", async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ deviceId: "not-a-ulid" }));
     const { settings } = await loadSettings();

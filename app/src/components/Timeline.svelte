@@ -8,9 +8,13 @@
   // arrive above without moving the viewport and a "N new" pill jumps back to the top.
   // Row actions: a correction of any entry, a manual status change on an outgoing message
   // (with a required reason), Retry / Send for a mesh message nobody is sending, and Reply on
-  // an incoming message (P1-02; also the R key on the focused incoming row). A reply carries
-  // "↳ answers ‹time›" under its text and the incoming row "answered ‹time›", each a link to
-  // the other row.
+  // an incoming message (P1-02). A reply carries "↳ answers ‹time›" under its text and the
+  // incoming row "answered ‹time›", each a link to the other row.
+  //
+  // Keyboard (P1-09): one row is the current row, marked with a bar at its left edge; J / K
+  // move it (and the focus) down and up, Enter opens or closes it (a batch's recipients, a
+  // message's history), R replies to it when it is incoming, Esc closes an open row form.
+  // The rows are one tab stop (roving tabindex): Tab lands on the current row, J / K walk.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import {
@@ -23,6 +27,7 @@
     rogerSource as rogerSourceOf,
     stripText,
   } from "../lib/journalText.ts";
+  import { onShortcut } from "../lib/shortcutDispatch.ts";
   import {
     countNewRows,
     findRow,
@@ -59,6 +64,9 @@
   let highlighted: string | null = $state(null);
   // Which batch rows show their recipients and which messages show their history.
   let expanded: Record<string, boolean> = $state({});
+  // The current row for the keyboard (an entry id, or a batch id), or null before J / K or
+  // a focus set one.
+  let cursor: string | null = $state(null);
 
   // Which row has its correction form or its status form open, and the texts typed in them.
   let correcting: string | null = $state(null);
@@ -71,6 +79,24 @@
   const AT_TOP_SLACK_PX = 8;
 
   const newCount = $derived(seen === null ? 0 : countNewRows(rows, seen));
+
+  // The rows Enter can open or close: a batch (its recipients) and a message with a history.
+  const toggleable = $derived.by(() => {
+    const ids = new Set<string>();
+    for (const row of rows) {
+      if (row.kind === "batch") {
+        ids.add(row.id);
+        for (const view of row.messages) {
+          if (view.history.length > 0) {
+            ids.add(view.entry.id);
+          }
+        }
+      } else if (row.kind === "message" && row.message.history.length > 0) {
+        ids.add(row.id);
+      }
+    }
+    return ids;
+  });
 
   function onscroll() {
     if (box === undefined) {
@@ -110,6 +136,93 @@
   function toggle(id: string) {
     expanded[id] = expanded[id] !== true;
   }
+
+  // --- the keyboard cursor ------------------------------------------------------------------
+
+  function rowElements(): HTMLTableRowElement[] {
+    return box === undefined
+      ? []
+      : [...box.querySelectorAll<HTMLTableRowElement>("tr[data-entry-id]")];
+  }
+
+  // The first row is the tab stop until a cursor is set.
+  function rowTabIndex(id: string): number {
+    const firstId = rows[0]?.id;
+    return (cursor ?? firstId) === id ? 0 : -1;
+  }
+
+  // The row the keys act on: the focused row when the focus is on one, else the cursor row.
+  function currentRowId(): string | null {
+    const active = document.activeElement;
+    if (box !== undefined && active instanceof HTMLElement && box.contains(active)) {
+      const row = active.closest<HTMLTableRowElement>("tr[data-entry-id]");
+      if (row !== null && active === row) {
+        return row.dataset["entryId"] ?? null;
+      }
+    }
+    return cursor;
+  }
+
+  function move(delta: number): boolean {
+    const elements = rowElements();
+    if (elements.length === 0) {
+      return false;
+    }
+    const index = elements.findIndex((row) => row.dataset["entryId"] === cursor);
+    const next = index === -1 ? 0 : Math.min(elements.length - 1, Math.max(0, index + delta));
+    const row = elements[next];
+    if (row === undefined) {
+      return false;
+    }
+    cursor = row.dataset["entryId"] ?? null;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+
+  function expandCurrent(): boolean {
+    const id = currentRowId();
+    // Enter with the focus elsewhere (a button, a link) is that element's own.
+    if (id === null || document.activeElement?.getAttribute("data-entry-id") !== id) {
+      return false;
+    }
+    if (!toggleable.has(id)) {
+      return false;
+    }
+    toggle(id);
+    return true;
+  }
+
+  function replyCurrent(): boolean {
+    const id = currentRowId();
+    const entry = id === null ? undefined : byId.get(id);
+    if (entry === undefined || entry.type !== "message_in") {
+      return false;
+    }
+    onreply(entry);
+    return true;
+  }
+
+  $effect(() => {
+    const offs = [
+      onShortcut("nextRow", () => move(1)),
+      onShortcut("previousRow", () => move(-1)),
+      onShortcut("expandRow", expandCurrent),
+      onShortcut("reply", replyCurrent),
+      onShortcut("cancel", () => {
+        if (correcting === null && changingStatus === null) {
+          return false;
+        }
+        cancelForms();
+        return true;
+      }),
+    ];
+    return () => {
+      for (const off of offs) {
+        off();
+      }
+    };
+  });
 
   function describe(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
@@ -187,18 +300,6 @@
       inflight(view.entry.id) === null
     );
   }
-
-  // R on a focused incoming row is Reply. Only the row itself: a key pressed in a button or a
-  // field inside it is that element's business, and nothing else on the page listens.
-  function onRowKeydown(entry: JournalEntry, event: KeyboardEvent) {
-    if (event.target !== event.currentTarget) {
-      return;
-    }
-    if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.altKey && !event.metaKey) {
-      event.preventDefault();
-      onreply(entry);
-    }
-  }
 </script>
 
 <!-- The time, with the clock-trust mark: a dimmed "?" for unknown, a small "✓" for manual,
@@ -251,6 +352,9 @@
       data-type="correction"
       data-entry-id={correction.id}
       class:highlighted={highlighted === correction.id}
+      class:cursor={cursor === correction.id}
+      tabindex={rowTabIndex(correction.id)}
+      onfocus={() => (cursor = correction.id)}
     >
       {@render timeCell(correction)}
       <td>{correction.operator}</td>
@@ -273,6 +377,9 @@
     data-type="message_out"
     data-entry-id={entry.id}
     class:highlighted={highlighted === entry.id}
+    class:cursor={cursor === entry.id}
+    tabindex={rowTabIndex(entry.id)}
+    onfocus={() => (cursor = entry.id)}
   >
     {@render timeCell(entry)}
     <td>{entry.operator}</td>
@@ -374,6 +481,9 @@
         data-type={item.entry.type}
         data-entry-id={item.entry.id}
         class:highlighted={highlighted === item.entry.id}
+        class:cursor={cursor === item.entry.id}
+        tabindex={rowTabIndex(item.entry.id)}
+        onfocus={() => (cursor = item.entry.id)}
       >
         {@render timeCell(item.entry)}
         <td>{item.entry.operator}</td>
@@ -417,7 +527,14 @@
           {#if row.kind === "message"}
             {@render messageRows(row.message, false)}
           {:else if row.kind === "batch"}
-            <tr data-type="batch" data-entry-id={row.id} class:highlighted={highlighted === row.id}>
+            <tr
+              data-type="batch"
+              data-entry-id={row.id}
+              class:highlighted={highlighted === row.id}
+              class:cursor={cursor === row.id}
+              tabindex={rowTabIndex(row.id)}
+              onfocus={() => (cursor = row.id)}
+            >
               {@render timeCell(row.entry)}
               <td>{row.entry.operator}</td>
               <td>{t("journal.type.message_out")}</td>
@@ -452,13 +569,13 @@
           {:else}
             {@const entry = row.entry}
             {@const incoming = entry.type === "message_in"}
-            <!-- An incoming row can take the focus so that R replies from the keyboard. -->
             <tr
               data-type={entry.type}
               data-entry-id={entry.id}
               class:highlighted={highlighted === entry.id}
-              tabindex={incoming ? 0 : undefined}
-              onkeydown={incoming ? (event) => onRowKeydown(entry, event) : undefined}
+              class:cursor={cursor === entry.id}
+              tabindex={rowTabIndex(entry.id)}
+              onfocus={() => (cursor = entry.id)}
             >
               {@render timeCell(entry)}
               <td>{entry.operator}</td>
@@ -524,13 +641,15 @@
 
 <style>
   .timeline {
+    /* At 1280×720 and the 18 px base this is the rest of the viewport under the incident
+       bar: ten one-line rows and the header (P1-09). */
     max-height: 60vh;
     overflow-y: auto;
     /* Rows inserted above the viewport must not move what the operator is reading. */
     overflow-anchor: auto;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
   }
 
   .footer {
@@ -560,14 +679,15 @@
   td {
     text-align: left;
     vertical-align: top;
-    padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid var(--rule);
   }
 
   thead th {
     position: sticky;
     top: 0;
     background: var(--light);
+    border-bottom-color: var(--line);
   }
 
   .time {
@@ -584,7 +704,7 @@
   }
 
   .trust[data-trust="unknown"] {
-    opacity: 0.45;
+    opacity: 0.6;
   }
 
   .trust[data-trust="manual"] {
@@ -598,7 +718,7 @@
   .text {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    width: 45%;
+    width: 40%;
   }
 
   .strip {
@@ -635,12 +755,7 @@
   }
 
   tr[data-type="message_in"] {
-    background: #eef4fb;
-  }
-
-  tr[data-type="message_in"]:focus-visible {
-    outline: 2px solid var(--navy);
-    outline-offset: -2px;
+    background: var(--surface-in);
   }
 
   .reply-mark {
@@ -652,45 +767,34 @@
     background: var(--light);
   }
 
+  /* The focus ring on a row sits inside the row: the box clips anything outside. */
+  tr[data-entry-id]:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: -3px;
+  }
+
+  /* The current row for J / K / Enter / R: a bar at its left edge, kept when the focus moves
+     on (into the reply form, say). */
+  tr.cursor td:first-child {
+    box-shadow: inset 0.3rem 0 0 var(--navy);
+  }
+
   tr.highlighted {
-    outline: 2px solid var(--navy);
-    outline-offset: -2px;
+    outline: 3px solid var(--navy);
+    outline-offset: -3px;
   }
 
   tr.form td {
     background: var(--light);
   }
 
-  .chip {
-    display: inline-block;
-    padding: 0.1rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    white-space: nowrap;
-    background: var(--light);
-    color: var(--muted);
-  }
-
-  .chip[data-status="sent"] {
-    color: var(--navy);
-  }
-
-  .chip[data-status="delivered"],
-  .chip[data-status="roger"] {
-    color: var(--ok);
-  }
-
-  .chip[data-status="given_up"] {
-    color: var(--error);
-  }
-
+  /* The row buttons wrap instead of widening the table past the box. */
   .actions {
-    white-space: nowrap;
+    min-width: 10rem;
   }
 
-  .actions button + button {
-    margin-left: 0.25rem;
+  .actions button {
+    margin: 0 0.25rem 0.25rem 0;
   }
 
   .inline {
@@ -705,26 +809,8 @@
     min-width: 12rem;
   }
 
-  .secondary {
-    background: #fff;
-    color: var(--navy);
-  }
-
-  .small {
-    padding: 0.25rem 0.6rem;
-  }
-
   .pill {
     padding: 0.2rem 0.8rem;
     border-radius: 999px;
-  }
-
-  .link {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--navy);
-    text-decoration: underline;
-    font-size: inherit;
   }
 </style>

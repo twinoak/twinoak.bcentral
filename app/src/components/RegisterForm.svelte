@@ -243,22 +243,10 @@
     font-family: ui-monospace, Consolas, monospace;
   }
 
-  textarea {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-  }
-
   .actions {
     display: flex;
     align-items: center;
     gap: 1rem;
     flex-wrap: wrap;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
   }
 </style>

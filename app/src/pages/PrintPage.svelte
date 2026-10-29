@@ -326,7 +326,7 @@
   .document {
     padding: 1.5rem;
     border: 1px solid var(--line);
-    background: #fff;
+    background: var(--surface);
   }
 
   header h1 {
@@ -339,7 +339,7 @@
     border: 2px solid var(--ink);
     font-weight: 700;
     letter-spacing: 0.05em;
-    background: #f2b705;
+    background: var(--drill-bg);
   }
 
   header dl {
@@ -368,7 +368,7 @@
     text-align: left;
     vertical-align: top;
     padding: 0.3rem 0.4rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
   }
 
   thead th {

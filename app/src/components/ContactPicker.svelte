@@ -65,7 +65,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 4px;
-    background: #fff;
+    background: var(--surface);
   }
 
   h3 {
@@ -108,10 +108,5 @@
 
   .error {
     color: var(--error);
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
   }
 </style>

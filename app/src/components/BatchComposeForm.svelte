@@ -139,7 +139,7 @@
           onstored(failure.stored.map((c) => c.message));
         }
       } else {
-        error = t("send.failed", { error: describe(failure) });
+        error = t("send.composeFailed", { error: describe(failure) });
       }
     } finally {
       busy = false;
@@ -244,7 +244,7 @@
     border-radius: 6px;
     padding: 0.5rem 0.75rem 0.75rem;
     margin: 0;
-    background: #fff;
+    background: var(--surface);
   }
 
   legend {
@@ -279,13 +279,10 @@
 
   .list label {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.4rem;
+    min-height: 2.25rem;
     cursor: pointer;
-  }
-
-  .list input {
-    margin: 0;
   }
 
   .label {
@@ -300,20 +297,6 @@
 
   .field label {
     font-weight: 600;
-  }
-
-  textarea {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: #fff;
-    color: var(--ink);
-    resize: vertical;
-  }
-
-  textarea[aria-invalid="true"] {
-    border-color: var(--error);
   }
 
   .meta {
@@ -337,14 +320,5 @@
     align-items: center;
     gap: 1rem;
     flex-wrap: wrap;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
-  }
-
-  .small {
-    padding: 0.25rem 0.6rem;
   }
 </style>

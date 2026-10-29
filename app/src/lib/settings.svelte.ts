@@ -16,7 +16,16 @@ export interface Settings {
   // The least time between two transmissions of the send-to-all queue (P0-08): the mesh
   // tolerates a handful of messages a minute.
   sendGapSeconds: number;
+  // The type size (P1-09): normal is the 18 px base, large and largest scale everything up
+  // (app.css). Applied at once, kept across reloads.
+  fontSize: FontSize;
+  // High contrast (P1-09): black on white, no greys, no tinted rows (app.css).
+  highContrast: boolean;
 }
+
+export type FontSize = "normal" | "large" | "largest";
+export const FONT_SIZES: readonly FontSize[] = ["normal", "large", "largest"];
+export const DEFAULT_FONT_SIZE: FontSize = "normal";
 
 export const STORAGE_KEY = "bcentral.settings";
 export const DEFAULT_BLIND_AFTER_MINUTES = 15;
@@ -24,6 +33,10 @@ export const DEFAULT_MAX_SEND_ATTEMPTS = 3;
 export const MAX_SEND_ATTEMPTS_LIMIT = 10;
 export const DEFAULT_SEND_GAP_SECONDS = 10;
 export const SEND_GAP_SECONDS_LIMIT = 600;
+
+function isFontSize(value: unknown): value is FontSize {
+  return typeof value === "string" && (FONT_SIZES as readonly string[]).includes(value);
+}
 
 function positiveInteger(value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= max ? value : fallback;
@@ -69,6 +82,8 @@ function load(): Settings {
       DEFAULT_SEND_GAP_SECONDS,
       SEND_GAP_SECONDS_LIMIT,
     ),
+    fontSize: isFontSize(stored["fontSize"]) ? stored["fontSize"] : DEFAULT_FONT_SIZE,
+    highContrast: stored["highContrast"] === true,
   };
   if (settings.deviceId !== storedDeviceId) {
     // First run (or a damaged record): persist the freshly minted id at once, so a reload
@@ -99,6 +114,12 @@ export function updateSettings(patch: Partial<Omit<Settings, "deviceId">>): void
   }
   if (patch.sendGapSeconds !== undefined) {
     settings.sendGapSeconds = patch.sendGapSeconds;
+  }
+  if (patch.fontSize !== undefined) {
+    settings.fontSize = patch.fontSize;
+  }
+  if (patch.highContrast !== undefined) {
+    settings.highContrast = patch.highContrast;
   }
   persist(settings);
 }

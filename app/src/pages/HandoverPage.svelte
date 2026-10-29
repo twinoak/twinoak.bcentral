@@ -696,7 +696,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
   }
 
   .print-only {
@@ -710,7 +710,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
     margin-bottom: 1rem;
   }
 
@@ -756,10 +756,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-
-  .check input {
-    margin: 0;
+    min-height: 2.5rem;
   }
 
   .trust {
@@ -768,33 +765,37 @@
 
   .trust[data-trust="unknown"] {
     color: var(--error);
+    font-weight: 600;
   }
 
   .radio a {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+    min-height: 2.5rem;
     text-decoration: none;
     color: var(--ink);
   }
 
+  /* The dot has an edge of its own, so it reads as a shape beside its word in every mode. */
   .dot {
-    width: 0.6rem;
-    height: 0.6rem;
+    width: 0.7rem;
+    height: 0.7rem;
     border-radius: 50%;
-    background: var(--line);
+    border: 2px solid var(--ink);
+    background: var(--dot-idle);
   }
 
   .radio a[data-state="connecting"] .dot {
-    background: #e0b64a;
+    background: var(--dot-connecting);
   }
 
   .radio a[data-state="connected"] .dot {
-    background: #5fd38d;
+    background: var(--dot-connected);
   }
 
   .radio a[data-state="blind"] .dot {
-    background: #ef7a6d;
+    background: var(--dot-blind);
   }
 
   .radio a[data-state="blind"],
@@ -813,6 +814,7 @@
 
   .state {
     padding: 0.1rem 0.5rem;
+    border: 1px solid var(--line);
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 600;
@@ -820,6 +822,12 @@
     color: var(--error);
   }
 
+  .state::before {
+    content: "■ ";
+  }
+
+  /* Two columns on a wide screen; one under 80rem (1440 px at the 18 px base), so the
+     tables with their row buttons fit at 1280 px without a horizontal scroll (P1-09). */
   .lists {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -827,7 +835,7 @@
     align-items: start;
   }
 
-  @media (max-width: 60rem) {
+  @media (max-width: 80rem) {
     .lists {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -837,7 +845,7 @@
     padding: 0.75rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
     min-width: 0;
   }
 
@@ -859,11 +867,12 @@
     text-align: left;
     vertical-align: top;
     padding: 0.35rem 0.4rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
   }
 
   thead th {
     background: var(--light);
+    border-bottom-color: var(--line);
   }
 
   .time,
@@ -880,6 +889,10 @@
   tr.never .when {
     color: var(--error);
     font-weight: 600;
+  }
+
+  tr.never .when::before {
+    content: "! ";
   }
 
   .label {
@@ -900,42 +913,24 @@
   }
 
   tr[data-status="given_up"] td {
-    background: #fbeeec;
+    background: var(--surface-given-up);
   }
 
   tr[data-type="message_in"] td {
-    background: #eef4fb;
+    background: var(--surface-in);
   }
 
   tr.form td {
     background: var(--light);
   }
 
-  .chip {
-    display: inline-block;
-    padding: 0.1rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    white-space: nowrap;
-    background: var(--light);
-    color: var(--muted);
-  }
-
-  .chip[data-status="sent"] {
-    color: var(--navy);
-  }
-
-  .chip[data-status="delivered"] {
-    color: var(--ok);
-  }
-
+  /* The row buttons wrap instead of widening the table past its section. */
   .actions {
-    white-space: nowrap;
+    min-width: 10rem;
   }
 
-  .actions button + button {
-    margin-left: 0.25rem;
+  .actions button {
+    margin: 0 0.25rem 0.25rem 0;
   }
 
   .inline {
@@ -948,15 +943,6 @@
   .inline input {
     flex: 1;
     min-width: 12rem;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
-  }
-
-  .small {
-    padding: 0.25rem 0.6rem;
   }
 
   .compose {
@@ -1041,6 +1027,7 @@
 
     .chip {
       padding: 0;
+      border: none;
       background: none;
       color: inherit;
       font-weight: 400;

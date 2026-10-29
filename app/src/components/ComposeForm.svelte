@@ -8,10 +8,11 @@
   // form takes the recipient and transport from it, focuses the text, scrolls itself into
   // view and shows "Replying to: …" with a ✕ that drops the link. The message is then stored
   // with refersTo = the incoming entry's id. Keys inside the form: Esc drops the link,
-  // Ctrl+Enter sends.
+  // Ctrl+Enter sends. The N shortcut (P1-09) puts the cursor in the text from anywhere.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
+  import { onShortcut } from "../lib/shortcutDispatch.ts";
   import type { JournalEntry, RegisterEntry, Transport } from "../store/types.ts";
   import { composeMessage, lastSeqNo } from "../store/index.ts";
   import { MAX_MESSAGE_BYTES, previewText, replySnippet } from "../store/outgoing.ts";
@@ -75,6 +76,19 @@
       !busy,
   );
 
+  function focusText() {
+    form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    textField?.focus();
+  }
+
+  // N: the cursor goes to the message text, from anywhere on the screen.
+  $effect(() =>
+    onShortcut("newMessage", () => {
+      focusText();
+      return true;
+    }),
+  );
+
   // Answer an incoming message: its sender becomes the recipient, its transport the transport
   // (a courier note is answered by courier unless the operator changes it), the text field
   // gets the cursor and the form comes into view. The incoming entry's register entry has to
@@ -91,8 +105,7 @@
     replying = entry;
     error = null;
     await tick();
-    form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    textField?.focus();
+    focusText();
   }
 
   function dropReply() {
@@ -118,7 +131,7 @@
       await loadLast(counterpartyId);
       onsent(message);
     } catch (failure) {
-      error = t("send.failed", {
+      error = t("send.composeFailed", {
         error: failure instanceof Error ? failure.message : String(failure),
       });
     } finally {
@@ -132,7 +145,8 @@
   }
 
   // Esc drops the reply link (and nothing else: the fields keep what they have); Ctrl+Enter
-  // sends. Both only while the focus is inside this form.
+  // sends. Both only while the focus is inside this form. preventDefault tells the window
+  // listener (lib/shortcutDispatch.ts) the key was taken.
   function onkeydown(event: KeyboardEvent) {
     if (event.key === "Escape" && replying !== null) {
       event.preventDefault();
@@ -147,8 +161,7 @@
 </script>
 
 <!-- The keys are the form's, not one field's: Esc drops the reply link and Ctrl+Enter sends
-     wherever in the form the focus is (the text, the recipient, the ✕). Nothing outside the
-     form listens. -->
+     wherever in the form the focus is (the text, the recipient, the ✕). -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <form class="compose" bind:this={form} onsubmit={submit} {onkeydown}>
   {#if !hasOperatorName()}
@@ -255,20 +268,6 @@
     font-weight: 600;
   }
 
-  textarea {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: #fff;
-    color: var(--ink);
-    resize: vertical;
-  }
-
-  textarea[aria-invalid="true"] {
-    border-color: var(--error);
-  }
-
   .meta {
     display: flex;
     justify-content: space-between;
@@ -296,8 +295,8 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.3rem 0.6rem;
-    border-left: 3px solid var(--navy);
-    background: #eef4fb;
+    border-left: 4px solid var(--navy);
+    background: var(--surface-in);
     border-radius: 4px;
   }
 
@@ -310,6 +309,7 @@
   }
 
   .drop {
+    min-width: 2.5rem;
     padding: 0 0.4rem;
     border: none;
     background: none;

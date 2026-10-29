@@ -2,9 +2,12 @@
   // Entries the operator types in by hand (P0-07): a note, or a message that came in from the
   // field on a non-mesh transport (phone, courier, verbal). Outgoing messages on any transport
   // go through the compose form; status changes and corrections are row actions in the
-  // timeline.
+  // timeline. Keys (P1-09): A from anywhere puts the cursor in the text with "Note" chosen;
+  // Ctrl+Enter inside the form adds the entry.
+  import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
+  import { onShortcut } from "../lib/shortcutDispatch.ts";
   import { addMessageIn, addNote } from "../store/index.ts";
   import { NON_MESH_TRANSPORTS } from "../store/manual.ts";
   import type { RegisterEntry, Transport } from "../store/types.ts";
@@ -26,12 +29,30 @@
   let busy = $state(false);
   let error: string | null = $state(null);
 
+  let form: HTMLFormElement | undefined = $state(undefined);
+  let textField: HTMLTextAreaElement | undefined = $state(undefined);
+
   const canAdd = $derived(
     hasOperatorName() && !busy && text.trim() !== "" && (kind === "note" || counterpartyId !== ""),
   );
 
-  async function submit(event: SubmitEvent) {
-    event.preventDefault();
+  // A: a note, the cursor in its text, from anywhere on the screen.
+  export async function focusNote(): Promise<void> {
+    kind = "note";
+    error = null;
+    await tick();
+    form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    textField?.focus();
+  }
+
+  $effect(() =>
+    onShortcut("addNote", () => {
+      void focusNote();
+      return true;
+    }),
+  );
+
+  async function add() {
     if (!canAdd) {
       return;
     }
@@ -53,9 +74,24 @@
       busy = false;
     }
   }
+
+  async function submit(event: SubmitEvent) {
+    event.preventDefault();
+    await add();
+  }
+
+  // Ctrl+Enter adds, wherever in the form the focus is; preventDefault tells the window
+  // listener the key was taken.
+  function onkeydown(event: KeyboardEvent) {
+    if (event.key === "Enter" && event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      void add();
+    }
+  }
 </script>
 
-<form class="manual" onsubmit={submit}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<form class="manual" bind:this={form} onsubmit={submit} {onkeydown}>
   <div class="row">
     <div class="field">
       <label for="manual-kind">{t("journal.add.kind")}</label>
@@ -92,11 +128,12 @@
 
   <div class="field">
     <label for="manual-text">{t("journal.add.text")}</label>
-    <textarea id="manual-text" rows="2" bind:value={text}></textarea>
+    <textarea id="manual-text" rows="2" bind:this={textField} bind:value={text}></textarea>
   </div>
 
   <div class="actions">
     <button type="submit" disabled={!canAdd}>{t("journal.add.save")}</button>
+    <small>{t("journal.add.shortcut")}</small>
     {#if error}
       <span class="error" role="alert">{error}</span>
     {/if}
@@ -128,14 +165,8 @@
     font-weight: 600;
   }
 
-  textarea {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: #fff;
-    color: var(--ink);
-    resize: vertical;
+  small {
+    color: var(--muted);
   }
 
   .error {

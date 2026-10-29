@@ -17,7 +17,8 @@
     justify-content: center;
     gap: 1rem;
     padding: 0.5rem 1rem;
-    background: #e0b64a;
+    background: var(--warn-bg);
     color: var(--ink);
+    border-bottom: 2px solid var(--ink);
   }
 </style>

@@ -1,21 +1,73 @@
+/* The colour tokens (P1-09). Every colour the screens use is one of these, so the contrast
+   check (scripts/check-contrast.mjs, run in `npm run test`) covers the whole app: text on its
+   surfaces at 7:1, UI chrome at 3:1, in both modes. The high-contrast block below drops the
+   greys to black and white; the brand navy, the error red and the ok green stay (they pass
+   on white) so the status words keep their colour as a second cue beside the text. */
 :root {
   --navy: #1f3a5f;
+  --on-navy: #ffffff;
   --light: #f4f6f8;
+  --surface: #ffffff;
+  --surface-in: #eef4fb;
+  --surface-given-up: #fbeeec;
   --ink: #1b1f24;
-  --muted: #5b6672;
-  --line: #cfd6dd;
-  --error: #a3261c;
-  --ok: #1d6b3a;
+  --muted: #475059;
+  --line: #737d87;
+  --rule: #cfd6dd;
+  --error: #8f2017;
+  --ok: #15592f;
+  --focus: #1f3a5f;
+  --focus-on-navy: #ffd166;
+  --warn-bg: #e0b64a;
+  --alert-bg: #f6b0a5;
+  --drill-bg: #f2b705;
+  --drill-line: #6b4f00;
+  --dot-idle: #cfd6dd;
+  --dot-connecting: #e0b64a;
+  --dot-connected: #5fd38d;
+  --dot-blind: #ef7a6d;
   font-family:
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
-  font-size: 16px;
+  /* Readable from a metre away on a borrowed laptop: 18 px base, 1.4 line height. The text
+     size setting (Settings → Text size, lib/appearance.ts) scales everything from here. */
+  font-size: 18px;
   line-height: 1.4;
   color: var(--ink);
   background: var(--light);
+}
+
+:root[data-font-size="large"] {
+  font-size: 21px;
+}
+
+:root[data-font-size="largest"] {
+  font-size: 24px;
+}
+
+/* High contrast (Settings → High contrast): black on white, no tinted rows, no grey text;
+   borders turn black so every field and panel keeps an edge. */
+:root[data-contrast="high"] {
+  --light: #ffffff;
+  --surface: #ffffff;
+  --surface-in: #ffffff;
+  --surface-given-up: #ffffff;
+  --ink: #000000;
+  --muted: #000000;
+  --line: #000000;
+  --rule: #000000;
+  --focus: #000000;
+  --warn-bg: #ffffff;
+  --alert-bg: #ffffff;
+  --drill-bg: #ffffff;
+  --drill-line: #000000;
+  --dot-idle: #ffffff;
+  --dot-connecting: #ffffff;
+  --dot-connected: #000000;
+  --dot-blind: #ffffff;
 }
 
 * {
@@ -46,19 +98,34 @@ a {
   color: var(--navy);
 }
 
+/* Focus rings on everything focusable: a 3 px ring in the focus colour, outside the element,
+   so it reads on every surface (the top bar overrides the colour). */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 input,
 select,
+textarea,
 button {
   font: inherit;
 }
 
+/* Hit targets of at least 40 px: 2.5rem is 45 px at the 18 px base. */
 input,
-select {
+select,
+textarea {
+  min-height: 2.5rem;
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
+}
+
+textarea {
+  resize: vertical;
 }
 
 input:read-only {
@@ -66,18 +133,146 @@ input:read-only {
   color: var(--muted);
 }
 
-button {
-  padding: 0.5rem 1rem;
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: var(--error);
+  border-width: 2px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.4rem;
+  height: 1.4rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--navy);
+}
+
+input[type="file"] {
+  padding: 0.3rem 0.5rem;
+}
+
+button,
+.button {
+  display: inline-block;
+  min-height: 2.5rem;
+  padding: 0.4rem 1rem;
   border: 1px solid var(--navy);
   border-radius: 4px;
   background: var(--navy);
-  color: #fff;
+  color: var(--on-navy);
+  text-decoration: none;
   cursor: pointer;
 }
 
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+button.secondary,
+.button.secondary {
+  background: var(--surface);
+  color: var(--navy);
+}
+
+/* The small row buttons: still 40 px tall (2.25rem at 18 px), less padding. */
+button.small {
+  min-height: 2.25rem;
+  padding: 0.25rem 0.6rem;
+}
+
+/* A link that is a button: inline in text, no box. Exempt from the hit-target size as
+   inline text is; the row around it carries the size. */
+button.link {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--navy);
+  text-decoration: underline;
+  font-size: inherit;
+}
+
+/* Status chips: the status word, with a glyph in front so the states tell apart by shape as
+   well as by colour and word. */
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--light);
+  color: var(--muted);
+  border: 1px solid transparent;
+}
+
+:root[data-contrast="high"] .chip {
+  border-color: var(--ink);
+}
+
+.chip::before {
+  content: "·";
+  margin-right: 0.3em;
+}
+
+.chip[data-status="sent"] {
+  color: var(--navy);
+}
+
+.chip[data-status="sent"]::before {
+  content: "→";
+}
+
+.chip[data-status="delivered"],
+.chip[data-status="roger"] {
+  color: var(--ok);
+}
+
+.chip[data-status="delivered"]::before {
+  content: "✓";
+}
+
+.chip[data-status="roger"]::before {
+  content: "✓✓";
+}
+
+.chip[data-status="given_up"] {
+  color: var(--error);
+}
+
+.chip[data-status="given_up"]::before {
+  content: "✕";
+}
+
+.chip[data-status="inflight"]::before {
+  content: "…";
+}
+
+.chip[data-status="closed"]::before {
+  content: "■";
+}
+
+.chip[data-status="reopened"]::before {
+  content: "□";
+}
+
+/* The key names on the shortcut overlay and in hints. */
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 0.35em;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.9em;
+  text-align: center;
 }
 
 /* The print view (P1-04): the journal alone on paper, with page numbers in the bottom

@@ -201,9 +201,10 @@
   }
 </script>
 
-<h1>{t("journal.title")}</h1>
-
+<!-- The page heading sits in the incident bar's first row (P1-09): at 1280×720 the timeline
+     then keeps ten rows in view at the 18 px base. -->
 <IncidentBar
+  title={t("journal.title")}
   {incidents}
   {current}
   {incidentState}
@@ -226,7 +227,7 @@
   <div class="layout">
     <div class="main">
       <section aria-labelledby="timeline-heading">
-        <h2 id="timeline-heading">{t("journal.timeline.title")}</h2>
+        <h2 id="timeline-heading" class="visually-hidden">{t("journal.timeline.title")}</h2>
         <Timeline
           bind:this={timeline}
           {rows}
@@ -278,9 +279,9 @@
 
   .layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 20rem;
-    gap: 1.5rem;
-    margin-top: 1.5rem;
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    gap: 1rem;
+    margin-top: 1rem;
     align-items: start;
   }
 

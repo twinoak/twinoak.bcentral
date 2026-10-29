@@ -253,7 +253,7 @@
     text-align: left;
     vertical-align: top;
     padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
   }
 
   .key-row {
@@ -279,10 +279,5 @@
     align-items: center;
     gap: 1rem;
     flex-wrap: wrap;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
   }
 </style>

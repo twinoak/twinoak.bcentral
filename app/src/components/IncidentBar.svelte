@@ -13,6 +13,9 @@
   import type { Incident } from "../store/types.ts";
 
   interface Props {
+    // The page heading, shown at the start of the first row (P1-09: the bar is the page's
+    // head, so the timeline gets the height).
+    title: string;
     incidents: readonly Incident[];
     current: Incident | null;
     // null while no incident is selected. (Not `state`: that name collides with the rune.)
@@ -26,6 +29,7 @@
     onprint: () => void;
   }
   let {
+    title,
     incidents,
     current,
     incidentState,
@@ -125,10 +129,11 @@
   }
 </script>
 
-<section class="bar" aria-labelledby="incident-heading">
+<section class="bar" aria-labelledby="journal-heading">
   <div class="row">
-    <h2 id="incident-heading">{t("journal.incident.label")}</h2>
-    <select aria-labelledby="incident-heading" value={current?.id ?? ""} onchange={pick}>
+    <h1 id="journal-heading">{title}</h1>
+    <label class="incident-label" for="incident-select">{t("journal.incident.label")}</label>
+    <select id="incident-select" value={current?.id ?? ""} onchange={pick}>
       <option value="">{t("journal.incident.choose")}</option>
       {#if grouped.drills.length === 0}
         {#each grouped.real as incident (incident.id)}
@@ -232,10 +237,10 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 1rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface);
   }
 
   .row {
@@ -245,9 +250,13 @@
     flex-wrap: wrap;
   }
 
-  h2 {
-    font-size: 1.1rem;
-    margin: 0;
+  h1 {
+    font-size: 1.3rem;
+    margin: 0 0.75rem 0 0;
+  }
+
+  .incident-label {
+    font-weight: 600;
   }
 
   .spacer {
@@ -261,6 +270,7 @@
 
   .state {
     padding: 0.1rem 0.5rem;
+    border: 1px solid var(--line);
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 600;
@@ -272,13 +282,18 @@
     color: var(--error);
   }
 
+  .state[data-state="closed"]::before {
+    content: "■ ";
+  }
+
   .drill {
     padding: 0.1rem 0.5rem;
+    border: 2px solid var(--drill-line);
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 700;
     letter-spacing: 0.05em;
-    background: #f2b705;
+    background: var(--drill-bg);
     color: var(--ink);
   }
 
@@ -286,11 +301,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+    min-height: 2.5rem;
     white-space: nowrap;
-  }
-
-  .check input {
-    margin: 0;
   }
 
   .closed {
@@ -311,10 +323,5 @@
 
   p {
     margin: 0;
-  }
-
-  .secondary {
-    background: #fff;
-    color: var(--navy);
   }
 </style>
