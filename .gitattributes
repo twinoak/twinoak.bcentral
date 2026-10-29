@@ -1,0 +1,5 @@
+# Line endings: LF in the repo, whatever the editor on Windows does.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.ico binary

@@ -69,16 +69,11 @@ try {
     }
 
     Write-Host "=== $($task.BaseName) ==="
-    $prompt = @"
-Carry out the task below exactly as tasks/RUNBOOK.md says. Read the runbook first.
-This is an unattended run: every dependency listed in the task is already merged on main.
-
---- RUNBOOK ---
-$(Get-Content $runbook -Raw)
-
---- TASK ---
-$(Get-Content $task.FullName -Raw)
-"@
+    # The prompt names the files instead of inlining them: a prompt with the whole runbook and
+    # task file in it exceeded the command-line length on Windows and arrived cut off
+    # mid-runbook in the first runs (every P0-06..09 report notes it).
+    $taskRel = "tasks\phase-$Phase\$($task.Name)"
+    $prompt = "Carry out the task in $taskRel exactly as tasks/RUNBOOK.md says. Read tasks/RUNBOOK.md first, then the task file, in full. This is an unattended run: every dependency listed in the task is already merged on main."
 
     $claudeArgs = @("-p", $prompt, "--permission-mode", "acceptEdits", "--allowedTools") + $AllowedTools
     if ($Model) { $claudeArgs += @("--model", $Model) }
