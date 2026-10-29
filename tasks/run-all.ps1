@@ -4,15 +4,23 @@
 
 .EXAMPLE
   .\tasks\run-all.ps1 -Phase 0
-  .\tasks\run-all.ps1 -Phase 0 -From P0-05     # resume from a task
+  .\tasks\run-all.ps1 -Phase 0 -From P0-06            # resume from a task
+  .\tasks\run-all.ps1 -Phase 0 -Only P0-04            # one task
+  .\tasks\run-all.ps1 -Phase 0 -SkipDependencyCheck   # dependencies committed under other names
 
-Stops at the first task whose session exits non-zero. Reports are written by the session
+Per task: checks that every id in the task file's "Depends on" line has a commit on main whose
+subject starts with that id (or mentions task/<id>), starts one session with the runbook and
+the task file as its prompt, and when the session exits 0 and left a report, merges the task
+branch into main with --no-ff. Stops at the first failure. Reports are written by the session
 itself to tasks/phase-N/reports/<task id>.md per the runbook.
 #>
 param(
   [Parameter(Mandatory = $true)][int]$Phase,
   [string]$From = "",
-  [string]$Model = ""
+  [string]$Only = "",
+  [string]$Model = "",
+  [switch]$SkipDependencyCheck,
+  [string[]]$AllowedTools = @("Bash(npm:*)", "Bash(npx:*)", "Bash(node:*)", "Bash(git:*)")
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,45 +29,75 @@ $phaseDir = Join-Path $repo "tasks\phase-$Phase"
 $runbook = Join-Path $repo "tasks\RUNBOOK.md"
 if (-not (Test-Path $phaseDir)) { throw "No such phase folder: $phaseDir" }
 
+function Get-TaskId([System.IO.FileInfo]$file) { ($file.BaseName -split "-")[0..1] -join "-" }
+
+function Get-Dependencies([string]$taskFile) {
+  $line = Select-String -Path $taskFile -Pattern '^\*\*Depends on:\*\*' | Select-Object -First 1
+  if (-not $line) { return @() }
+  return [regex]::Matches($line.Line, "P\d+-\d+") | ForEach-Object { $_.Value } | Select-Object -Unique
+}
+
+function Test-OnMain([string]$id) {
+  $subjects = git -C $repo log main --format=%s
+  foreach ($s in $subjects) {
+    if ($s -match "^$id\b" -or $s -match "task/$id\b") { return $true }
+  }
+  return $false
+}
+
 $tasks = Get-ChildItem -Path $phaseDir -Filter "P$Phase-*.md" | Sort-Object Name
+if ($Only) { $tasks = $tasks | Where-Object { (Get-TaskId $_) -eq $Only } }
 if ($From) { $tasks = $tasks | Where-Object { $_.BaseName -ge $From } }
+if (-not $tasks) { throw "No task files selected." }
 
-foreach ($task in $tasks) {
-  $id = ($task.BaseName -split "-")[0..1] -join "-"
-  $report = Join-Path $phaseDir "reports\$id.md"
-  if (Test-Path $report) { Write-Host "skip $id (report exists)"; continue }
+Push-Location $repo
+try {
+  $branch = git branch --show-current
+  if ($branch -ne "main") { throw "Start from main (currently on '$branch')." }
+  if (git status --porcelain) { throw "Working tree is not clean; commit or stash first." }
 
-  Write-Host "=== $($task.BaseName) ==="
-  # Read as UTF-8 explicitly: PS 5.1 defaults to ANSI for BOM-less files and mangles em dashes.
-  $prompt = @"
+  foreach ($task in $tasks) {
+    $id = Get-TaskId $task
+    $report = Join-Path $phaseDir "reports\$id.md"
+
+    if (Test-OnMain $id) { Write-Host "skip $id (already on main)"; continue }
+
+    if (-not $SkipDependencyCheck) {
+      foreach ($dep in (Get-Dependencies $task.FullName)) {
+        if (-not (Test-OnMain $dep)) { throw "$id depends on $dep, which has no commit on main. Stopping." }
+      }
+    }
+
+    Write-Host "=== $($task.BaseName) ==="
+    $prompt = @"
 Carry out the task below exactly as tasks/RUNBOOK.md says. Read the runbook first.
+This is an unattended run: every dependency listed in the task is already merged on main.
 
 --- RUNBOOK ---
-$(Get-Content $runbook -Raw -Encoding UTF8)
+$(Get-Content $runbook -Raw)
 
 --- TASK ---
-$(Get-Content $task.FullName -Raw -Encoding UTF8)
+$(Get-Content $task.FullName -Raw)
 "@
 
-  # The prompt goes in on stdin, not as an argument: PS 5.1 passes native-exe arguments
-  # without escaping embedded double quotes, so the prompt was cut at the first `"` in the
-  # runbook and the task section never reached the session. Stdin also sidesteps the
-  # Windows command-line length limit.
-  $claudeArgs = @("-p", "--permission-mode", "acceptEdits")
-  if ($Model) { $claudeArgs += @("--model", $Model) }
+    $claudeArgs = @("-p", $prompt, "--permission-mode", "acceptEdits", "--allowedTools") + $AllowedTools
+    if ($Model) { $claudeArgs += @("--model", $Model) }
 
-  Push-Location $repo
-  $prevOut = [Console]::OutputEncoding; $prevOutputEncoding = $OutputEncoding
-  try {
-    # Pipe to a native exe is encoded with $OutputEncoding (ASCII by default in PS 5.1).
-    $utf8 = New-Object System.Text.UTF8Encoding($false)
-    [Console]::OutputEncoding = $utf8; $OutputEncoding = $utf8
-    $prompt | & claude @claudeArgs
+    & claude @claudeArgs
     if ($LASTEXITCODE -ne 0) { throw "Task $id exited with $LASTEXITCODE; stopping." }
     if (-not (Test-Path $report)) { throw "Task $id finished without a report; stopping." }
-  } finally {
-    [Console]::OutputEncoding = $prevOut; $OutputEncoding = $prevOutputEncoding
-    Pop-Location
+    if ((Get-Content $report -Raw) -match '\*\*Status: stopped') { throw "Task $id stopped itself (see its report); stopping." }
+
+    $taskBranch = git branch --list "task/$id-*" --format "%(refname:short)" | Select-Object -First 1
+    if (-not $taskBranch) { throw "Task $id left no task/$id-* branch; stopping." }
+
+    git checkout main
+    if ($LASTEXITCODE -ne 0) { throw "git checkout main failed." }
+    git merge --no-ff $taskBranch -m "Merge $taskBranch"
+    if ($LASTEXITCODE -ne 0) { throw "Merge of $taskBranch failed; resolve by hand." }
+    Write-Host "merged $taskBranch into main"
   }
+  Write-Host "Phase ${Phase}: all selected tasks ran."
+} finally {
+  Pop-Location
 }
-Write-Host "Phase ${Phase}: all tasks ran."
