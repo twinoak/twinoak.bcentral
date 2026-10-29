@@ -8,8 +8,8 @@
   .\tasks\run-all.ps1 -Phase 0 -Only P0-04            # one task
   .\tasks\run-all.ps1 -Phase 0 -SkipDependencyCheck   # dependencies committed under other names
 
-Per task: checks that every id in the task file's "Depends on" line has a commit on main whose
-subject starts with that id (or mentions task/<id>), starts one session with the runbook and
+Per task: checks that every id in the task file's "Depends on" line appears as a word in some
+commit subject on main (e.g. "P0-05 send to one" or "Merge task/P0-05-send-one"), starts one session with the runbook and
 the task file as its prompt, and when the session exits 0 and left a report, merges the task
 branch into main with --no-ff. Stops at the first failure. Reports are written by the session
 itself to tasks/phase-N/reports/<task id>.md per the runbook.
@@ -40,7 +40,7 @@ function Get-Dependencies([string]$taskFile) {
 function Test-OnMain([string]$id) {
   $subjects = git -C $repo log main --format=%s
   foreach ($s in $subjects) {
-    if ($s -match "^$id\b" -or $s -match "task/$id\b") { return $true }
+    if ($s -match "(^|[\s,;:/])$id(?![0-9])") { return $true }
   }
   return $false
 }
