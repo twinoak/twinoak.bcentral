@@ -31,7 +31,10 @@ Short, because they are read before every task.
 
 ## Repo
 
-- Branch per task, commit messages start with the task id.
+- Branch per task. Only the implementation commit starts with the task id (`P1-01 status as
+  metadata`), and its merge is `Merge task/P1-01-…`; `run-all.ps1` reads those two shapes as
+  "done". A commit that writes or edits task files, roadmap or follow-ups says `tasks: …`
+  and never starts with an id.
 - `contract/` is changed only when a task says so, and the change is named in the report.
 - Reports and follow-ups are part of the repo; they are not cleaned up.
 - No files outside `app/`, `tasks/`, `spec/` and `docs/` in phase 0, except P0-09's

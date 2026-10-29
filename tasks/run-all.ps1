@@ -7,6 +7,7 @@
   .\tasks\run-all.ps1 -Phase 0 -From P0-06            # resume from a task
   .\tasks\run-all.ps1 -Phase 0 -Only P0-04            # one task
   .\tasks\run-all.ps1 -Phase 0 -SkipDependencyCheck   # dependencies committed under other names
+  .\tasks\run-all.ps1 -Phase 1 -Only P1-01 -Force     # run although a commit subject already starts with P1-01
 
 Per task: checks that every id in the task file's "Depends on" line appears as a word in some
 commit subject on main (e.g. "P0-05 send to one" or "Merge task/P0-05-send-one"), starts one session with the runbook and
@@ -20,6 +21,7 @@ param(
   [string]$Only = "",
   [string]$Model = "",
   [switch]$SkipDependencyCheck,
+  [switch]$Force,
   [string[]]$AllowedTools = @("Bash(npm:*)", "Bash(npx:*)", "Bash(node:*)", "Bash(git:*)")
 )
 
@@ -37,10 +39,15 @@ function Get-Dependencies([string]$taskFile) {
   return [regex]::Matches($line.Line, "P\d+-\d+") | ForEach-Object { $_.Value } | Select-Object -Unique
 }
 
+# A task is on main when a commit subject starts with its id ("P0-05 send to one", or a
+# comma-joined list "P0-04 radio layer, P0-05 send to one") or is the merge of its branch
+# ("Merge task/P0-05-send-one"). Commits that only write or edit a task file must not start
+# with the id (tasks/CONVENTIONS.md): "tasks: P1-01 written" is not an implementation.
 function Test-OnMain([string]$id) {
   $subjects = git -C $repo log main --format=%s
   foreach ($s in $subjects) {
-    if ($s -match "(^|[\s,;:/])$id(?![0-9])") { return $true }
+    if ($s -match "^(P\d+-\d+[^,]*,\s*)*$id(?![0-9])") { return $true }
+    if ($s -match "^Merge task/$id-") { return $true }
   }
   return $false
 }
@@ -60,7 +67,7 @@ try {
     $id = Get-TaskId $task
     $report = Join-Path $phaseDir "reports\$id.md"
 
-    if (Test-OnMain $id) { Write-Host "skip $id (already on main)"; continue }
+    if ((Test-OnMain $id) -and -not $Force) { Write-Host "skip $id (already on main; -Force to run anyway)"; continue }
 
     if (-not $SkipDependencyCheck) {
       foreach ($dep in (Get-Dependencies $task.FullName)) {
