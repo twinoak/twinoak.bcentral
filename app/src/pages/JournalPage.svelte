@@ -1,172 +1,278 @@
 <script lang="ts">
-  // Placeholder until P0-07: the export, and a plain list of the current incident's entries
-  // so what the radio receives (P0-06) can be seen landing. The incident is picked on the
-  // Send screen; the real journal screen with its own incident bar comes in P0-07.
+  // The journal screen (P0-07): the screen the staff live on. Incident bar on top; the
+  // incident's timeline with the compose form and the manual-entry form under it; open items
+  // and "last heard from" at the side. Everything shown is derived from the incident's
+  // entries on every reload (store/journalView.ts); a reload runs on an incident change, on
+  // every entry the inbox or the outbox writes, and after every write from this screen.
   import { t, language } from "../i18n/index.svelte.ts";
-  import { currentIncidentId } from "../lib/currentIncident.svelte.ts";
+  import { currentIncidentId, setCurrentIncidentId } from "../lib/currentIncident.svelte.ts";
   import { inbox, outbox } from "../radio/index.ts";
-  import { entriesForIncident, exportJournal, listRegister } from "../store/index.ts";
-  import type { JournalEntry, RegisterEntry } from "../store/types.ts";
+  import {
+    addCorrection,
+    addIncident,
+    closeIncident,
+    entriesForIncident,
+    exportJournal,
+    lastHeardByCounterparty,
+    listIncidents,
+    listRegister,
+    recordManualStatus,
+    reopenIncident,
+  } from "../store/index.ts";
+  import { incidentStateOf } from "../store/incidents.ts";
+  import {
+    buildTimeline,
+    entriesById,
+    openItems,
+    sortedByLastHeard,
+  } from "../store/journalView.ts";
+  import { sortedByLabel } from "../store/register.ts";
+  import { statusOf } from "../store/status.ts";
+  import type { Incident, JournalEntry, RegisterEntry, Status } from "../store/types.ts";
+  import ComposeForm from "../components/ComposeForm.svelte";
+  import IncidentBar from "../components/IncidentBar.svelte";
+  import LastHeardPanel from "../components/LastHeardPanel.svelte";
+  import ManualEntryForm from "../components/ManualEntryForm.svelte";
+  import OpenItemsPanel from "../components/OpenItemsPanel.svelte";
+  import Timeline from "../components/Timeline.svelte";
 
-  let busy = $state(false);
-  let message: string | null = $state(null);
-  let failed = $state(false);
+  let incidents: Incident[] = $state([]);
   let register: RegisterEntry[] = $state([]);
   let entries: JournalEntry[] = $state([]);
+  let heard: Map<string, string> = $state(new Map());
   let loadError: string | null = $state(null);
+  let actionError: string | null = $state(null);
+  // Bumped after every write from this screen, so the effect below reloads.
+  let ownRevision = $state(0);
+  let timeline: Timeline | undefined = $state(undefined);
 
   const incidentId = $derived(currentIncidentId());
+  const current = $derived(incidents.find((incident) => incident.id === incidentId) ?? null);
+  const incidentState = $derived(current === null ? null : incidentStateOf(entries, current.id));
+  const sortedRegister = $derived(sortedByLabel(register, language()));
   const labels = $derived(new Map(register.map((entry) => [entry.id, entry.label])));
-  const newestFirst = $derived([...entries].sort((a, b) => b.deviceSeq - a.deviceSeq));
+  const rows = $derived(buildTimeline(entries));
+  const byId = $derived(entriesById(entries));
+  const open = $derived(openItems(entries));
+  const heardRows = $derived(sortedByLastHeard(register, heard));
+  const active = $derived(outbox.active());
+  const queued = $derived(outbox.queued());
 
   function describe(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
   }
 
   async function reload(id: string | null) {
-    if (id === null) {
-      entries = [];
-      return;
-    }
     try {
+      incidents = await listIncidents();
       register = await listRegister();
-      const loaded = await entriesForIncident(id);
-      if (currentIncidentId() === id) {
-        entries = loaded;
+      heard = await lastHeardByCounterparty();
+      if (id === null) {
+        entries = [];
+      } else {
+        const loaded = await entriesForIncident(id);
+        if (currentIncidentId() === id) {
+          entries = loaded;
+        }
       }
+      loadError = null;
     } catch (failure) {
       loadError = t("journal.loadFailed", { error: describe(failure) });
     }
   }
 
-  // Reload on an incident change and after every entry the inbox or the outbox writes.
   $effect(() => {
     inbox.revision();
     outbox.revision();
+    void ownRevision;
     void reload(incidentId);
   });
 
-  async function onExport() {
-    busy = true;
-    failed = false;
-    message = null;
+  async function changed() {
+    ownRevision += 1;
+    await reload(currentIncidentId());
+  }
+
+  // --- incident bar ----------------------------------------------------------------------
+
+  function pickIncident(id: string | null) {
+    actionError = null;
+    setCurrentIncidentId(id);
+  }
+
+  async function createIncident(name: string) {
+    const incident = await addIncident(name);
+    setCurrentIncidentId(incident.id);
+    await changed();
+  }
+
+  async function close(reason: string) {
+    if (current === null) {
+      return;
+    }
+    await closeIncident(current, reason);
+    await changed();
+  }
+
+  async function reopen(reason: string) {
+    if (current === null) {
+      return;
+    }
+    await reopenIncident(current, reason);
+    await changed();
+  }
+
+  // --- outgoing messages (P0-05's path) --------------------------------------------------
+
+  async function transmit(message: JournalEntry) {
     try {
-      const filename = await exportJournal();
-      message = t("journal.exported", { filename });
-    } catch (error) {
-      failed = true;
-      message = t("journal.exportFailed", { error: describe(error) });
-    } finally {
-      busy = false;
+      await outbox.send(message.id);
+    } catch (failure) {
+      actionError = t("send.failed", { error: describe(failure) });
+    }
+    await changed();
+  }
+
+  async function onsent(message: JournalEntry) {
+    actionError = null;
+    await changed();
+    if (message.transport === "mesh") {
+      void transmit(message);
     }
   }
 
-  function formatTime(timestamp: string): string {
-    return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "short" });
+  function inflight(messageId: string): string | null {
+    if (active?.messageId === messageId) {
+      return t(`send.inflight.${active.phase}`, {
+        attempt: active.attempt + 1,
+        max: active.maxAttempts,
+      });
+    }
+    if (queued.includes(messageId)) {
+      return t("send.inflight.queued");
+    }
+    return null;
   }
 
-  // What the entry says, in one cell: the text, or for a status change the new status and
-  // its text (a reason, a round trip, the id of the incoming message that was the roger).
-  function detail(entry: JournalEntry): string {
-    if (entry.type === "status_change") {
-      const status = t(`journal.status.${entry.newStatus ?? "pending"}`);
-      return entry.text === undefined ? status : `${status} · ${entry.text}`;
+  function canRetry(message: JournalEntry): boolean {
+    if (message.transport !== "mesh" || inflight(message.id) !== null) {
+      return false;
     }
-    return entry.text ?? "";
+    const status = statusOf(entries, message.id);
+    return status === "given_up" || status === "pending";
+  }
+
+  // --- row actions -------------------------------------------------------------------------
+
+  async function manual(message: JournalEntry, status: Status, reason: string) {
+    await recordManualStatus(message, status, reason);
+    await changed();
+  }
+
+  async function correct(entry: JournalEntry, text: string) {
+    await addCorrection(entry, text);
+    await changed();
+  }
+
+  function showEntry(id: string) {
+    void timeline?.scrollToEntry(id);
   }
 </script>
 
 <h1>{t("journal.title")}</h1>
-<p>{t("journal.placeholder")}</p>
 
-<div class="actions">
-  <button type="button" onclick={onExport} disabled={busy}>{t("journal.export")}</button>
-  {#if message}
-    <span class:error={failed} role="status">{message}</span>
-  {/if}
-</div>
+<IncidentBar
+  {incidents}
+  {current}
+  {incidentState}
+  onpick={pickIncident}
+  oncreate={createIncident}
+  onclose={close}
+  onreopen={reopen}
+  onexport={exportJournal}
+/>
 
-<section aria-labelledby="entries-heading">
-  <h2 id="entries-heading">{t("journal.entries.title")}</h2>
-  {#if loadError}
-    <p class="error" role="alert">{loadError}</p>
-  {/if}
-  {#if incidentId === null}
-    <p class="muted">{t("journal.entries.noIncident")}</p>
-  {:else if newestFirst.length === 0}
-    <p class="muted">{t("journal.entries.empty")}</p>
-  {:else}
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">{t("journal.entries.time")}</th>
-          <th scope="col">{t("journal.entries.type")}</th>
-          <th scope="col">{t("journal.entries.counterparty")}</th>
-          <th scope="col">{t("journal.entries.text")}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each newestFirst as entry (entry.id)}
-          <tr data-type={entry.type}>
-            <td>{formatTime(entry.timestamp)}</td>
-            <td>{t(`journal.type.${entry.type}`)}</td>
-            <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
-            <td class="text">{detail(entry)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
-</section>
+{#if loadError}
+  <p class="error" role="alert">{loadError}</p>
+{/if}
+{#if actionError}
+  <p class="error" role="alert">{actionError}</p>
+{/if}
+
+{#if current !== null}
+  <div class="layout">
+    <div class="main">
+      <section aria-labelledby="timeline-heading">
+        <h2 id="timeline-heading">{t("journal.timeline.title")}</h2>
+        <Timeline
+          bind:this={timeline}
+          {rows}
+          {labels}
+          {byId}
+          {inflight}
+          {canRetry}
+          onretry={transmit}
+          onmanual={manual}
+          oncorrect={correct}
+        />
+      </section>
+
+      <section aria-labelledby="compose-heading">
+        <h2 id="compose-heading">{t("journal.compose.title")}</h2>
+        {#key current.id}
+          <ComposeForm incidentId={current.id} register={sortedRegister} {onsent} />
+        {/key}
+      </section>
+
+      <section aria-labelledby="manual-heading">
+        <h2 id="manual-heading">{t("journal.add.title")}</h2>
+        {#key current.id}
+          <ManualEntryForm incidentId={current.id} register={sortedRegister} onadded={changed} />
+        {/key}
+      </section>
+    </div>
+
+    <aside class="side">
+      <OpenItemsPanel groups={open} {labels} onselect={showEntry} />
+      <LastHeardPanel rows={heardRows} />
+    </aside>
+  </div>
+{/if}
 
 <style>
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
   .error {
     color: var(--error);
   }
 
-  .muted {
-    color: var(--muted);
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    align-items: start;
   }
 
-  section {
-    margin-top: 1.5rem;
+  @media (max-width: 60rem) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-width: 0;
+  }
+
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   h2 {
     font-size: 1.1rem;
     margin: 0 0 0.5rem;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .label {
-    font-weight: 600;
-  }
-
-  .text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  tr[data-type="message_in"] {
-    background: var(--highlight, #eef4fb);
   }
 </style>

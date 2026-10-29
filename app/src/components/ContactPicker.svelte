@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from "../i18n/index.svelte.ts";
-  import { contactSource, contactSourceIsPlaceholder } from "../radio/index.ts";
+  import { contactSource } from "../radio/index.ts";
   import type { Contact } from "../radio/contactSource.ts";
 
   interface Props {
@@ -28,9 +28,6 @@
 
 <section class="picker" aria-labelledby="picker-heading">
   <h3 id="picker-heading">{t("register.picker.title")}</h3>
-  {#if contactSourceIsPlaceholder}
-    <p class="muted">{t("register.picker.placeholder")}</p>
-  {/if}
 
   {#if error}
     <p class="error" role="alert">{error}</p>

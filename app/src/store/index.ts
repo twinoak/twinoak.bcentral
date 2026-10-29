@@ -14,6 +14,14 @@ import {
   type ComposeInput,
   type Composed,
 } from "./outgoing.ts";
+import { closeIncident as closeWithStore, reopenIncident as reopenWithStore } from "./incidents.ts";
+import {
+  appendCorrection,
+  appendMessageIn,
+  appendNote,
+  type ManualMessageInInput,
+} from "./manual.ts";
+import { lastHeardFrom } from "./journalView.ts";
 import type { Incident, JournalEntry, NewRegisterEntry, RegisterEntry, Status } from "./types.ts";
 
 export const DATABASE_NAME = "bcentral";
@@ -60,7 +68,7 @@ export async function saveRegisterEntry(entry: RegisterEntry): Promise<SaveResul
   });
 }
 
-// --- incidents (the slice P0-05 needs; P0-07 owns the incident bar) --------------------
+// --- incidents (P0-05 list/create; P0-07 close/reopen, the incident bar) ----------------
 
 export async function listIncidents(): Promise<Incident[]> {
   const store = await journalStore();
@@ -72,6 +80,40 @@ export async function addIncident(name: string): Promise<Incident> {
   return await store.createIncident({ name: name.trim(), createdBy: settings.operatorName.trim() });
 }
 
+export async function closeIncident(incident: Incident, text: string): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await closeWithStore(store, incident, { operator: settings.operatorName.trim(), text });
+}
+
+export async function reopenIncident(incident: Incident, text: string): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await reopenWithStore(store, incident, { operator: settings.operatorName.trim(), text });
+}
+
+// --- manual entries (P0-07) -------------------------------------------------------------
+
+export async function addNote(incidentId: string, text: string): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await appendNote(store, { incidentId, operator: settings.operatorName.trim(), text });
+}
+
+export async function addCorrection(target: JournalEntry, text: string): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await appendCorrection(store, target, { operator: settings.operatorName.trim(), text });
+}
+
+export async function addMessageIn(input: Omit<ManualMessageInInput, "operator">): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await appendMessageIn(store, { ...input, operator: settings.operatorName.trim() });
+}
+
+// When every register entry was last heard from, over the whole journal: a radio's silence
+// does not reset when a new incident is opened.
+export async function lastHeardByCounterparty(): Promise<Map<string, string>> {
+  const store = await journalStore();
+  return lastHeardFrom(await store.allEntries());
+}
+
 // --- outgoing messages (P0-05) ----------------------------------------------------------
 
 // Reserves #n, stores the message_out (and, for mesh, its pending status). Sending is the
@@ -81,8 +123,8 @@ export async function composeMessage(input: Omit<ComposeInput, "operator">): Pro
   return await composeWithStore(store, { ...input, operator: settings.operatorName.trim() });
 }
 
-// The operator's own status change on a non-mesh message.
-export async function recordManualStatus(message: JournalEntry, newStatus: Status, text?: string): Promise<JournalEntry> {
+// The operator's own status change on a message, with the reason (required).
+export async function recordManualStatus(message: JournalEntry, newStatus: Status, text: string): Promise<JournalEntry> {
   const store = await journalStore();
   return await recordWithStore(store, message, newStatus, { operator: settings.operatorName.trim(), text });
 }

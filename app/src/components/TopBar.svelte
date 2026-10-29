@@ -37,10 +37,6 @@
 
   <LanguageSelect id="topbar-language" />
 
-  <a class="nav" href={hashFor("send")} aria-current={route() === "send" ? "page" : undefined}>
-    {t("nav.send")}
-  </a>
-
   <a
     class="nav"
     href={hashFor("journal")}

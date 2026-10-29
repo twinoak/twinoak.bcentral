@@ -4,7 +4,6 @@
   import JournalPage from "./pages/JournalPage.svelte";
   import RadioPage from "./pages/RadioPage.svelte";
   import RegisterPage from "./pages/RegisterPage.svelte";
-  import SendPage from "./pages/SendPage.svelte";
   import SettingsPage from "./pages/SettingsPage.svelte";
   import { language } from "./i18n/index.svelte.ts";
   import { route } from "./lib/router.svelte.ts";
@@ -20,7 +19,8 @@
 
 <TopBar />
 
-<main>
+<!-- The journal screen has side panels and needs the width; the other screens are forms. -->
+<main class:wide={shown === "journal"}>
   {#if shown === "settings"}
     <SettingsPage />
   {:else if shown === "journal"}
@@ -29,8 +29,6 @@
     <RegisterPage />
   {:else if shown === "radio"}
     <RadioPage />
-  {:else if shown === "send"}
-    <SendPage />
   {:else}
     <HomePage />
   {/if}

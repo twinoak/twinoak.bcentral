@@ -137,6 +137,16 @@ export async function appendStatusChange(
 // the note). roger is final, so nothing may be set after it.
 export const MANUAL_STATUSES: readonly Status[] = ["sent", "delivered", "roger", "given_up"];
 
+// On a mesh message, sent and delivered come from the radio only. The operator may still
+// give up by hand (a message stuck at sent after a reload mid-flight has no other way out)
+// and record a roger that reached the staff another way (a phone call). P0-07 reconciliation
+// of the P0-05 rule that refused every manual status on mesh.
+export const MESH_MANUAL_STATUSES: readonly Status[] = ["roger", "given_up"];
+
+export function manualStatusesFor(transport: Transport): readonly Status[] {
+  return transport === "mesh" ? MESH_MANUAL_STATUSES : MANUAL_STATUSES;
+}
+
 export class ManualStatusError extends Error {
   constructor(message: string) {
     super(message);
@@ -144,25 +154,27 @@ export class ManualStatusError extends Error {
   }
 }
 
+// A manual status change always carries the operator's reason in text (P0-07: "with a
+// required reason text"); the journal has to say why a human moved the status.
 export async function recordManualStatus(
   store: JournalStore,
   message: JournalEntry,
   newStatus: Status,
-  options: { operator: string; text?: string },
+  options: { operator: string; text: string },
 ): Promise<JournalEntry> {
   if (message.type !== "message_out") {
     throw new ManualStatusError(`entry ${message.id} is a ${message.type}, not a message_out`);
   }
-  if (message.transport === "mesh") {
-    throw new ManualStatusError("a mesh message's status comes from the radio, not from a button");
+  if (message.transport === undefined || !manualStatusesFor(message.transport).includes(newStatus)) {
+    throw new ManualStatusError(`${newStatus} is not a status the operator sets by hand on a ${message.transport} message`);
   }
-  if (!MANUAL_STATUSES.includes(newStatus)) {
-    throw new ManualStatusError(`${newStatus} is not a status the operator sets by hand`);
+  const text = options.text.trim();
+  if (text === "") {
+    throw new ManualStatusError("a manual status change needs a reason");
   }
   const current = await store.statusOf(message.id);
   if (current === "roger") {
     throw new ManualStatusError("roger is final");
   }
-  const text = options.text?.trim();
-  return await appendStatusChange(store, message, newStatus, text === "" ? undefined : text, options.operator);
+  return await appendStatusChange(store, message, newStatus, text, options.operator);
 }
