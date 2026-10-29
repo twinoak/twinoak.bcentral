@@ -4,6 +4,7 @@
   import { route, hashFor } from "../lib/router.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
   import { radio } from "../radio/index.ts";
+  import { versionLabel } from "../lib/version.ts";
   import LanguageSelect from "./LanguageSelect.svelte";
 
   const radioState = $derived(radio.state());
@@ -11,7 +12,9 @@
 </script>
 
 <header class="topbar">
-  <a class="brand" href={hashFor("home")}>{t("app.name")}</a>
+  <a class="brand" href={hashFor("home")} title={t("topbar.about", { version: versionLabel() })}>
+    {t("app.name")}
+  </a>
 
   <span class="operator" class:missing={!hasOperatorName()}>
     {#if hasOperatorName()}

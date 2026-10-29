@@ -7,7 +7,14 @@
     updateSettings,
   } from "../lib/settings.svelte.ts";
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
+  import { builtAt, versionLabel } from "../lib/version.ts";
+  import { updater } from "../lib/updates.svelte.ts";
   import LanguageSelect from "../components/LanguageSelect.svelte";
+
+  // Build time and "last checked" as the operator reads them, in the UI language.
+  function formatInstant(iso: string): string {
+    return new Date(iso).toLocaleString(language(), { dateStyle: "medium", timeStyle: "short" });
+  }
 
   // The PC's clock, shown so the operator can judge it before confirming it. Ticks once a
   // second while the page is open.
@@ -201,6 +208,43 @@
   <small class="trust" role="status">{t(`settings.clockTrust.${clockTrust()}`)}</small>
 </section>
 
+<!-- The running code is the installed one; a new build waits for the reload button here or
+     in the banner above the page (lib/updates.svelte.ts). -->
+<section class="field about" aria-labelledby="about-heading">
+  <h2 id="about-heading">{t("settings.about")}</h2>
+  <dl>
+    <dt>{t("settings.installedVersion")}</dt>
+    <dd>{versionLabel()}</dd>
+    <dt>{t("settings.builtAt")}</dt>
+    <dd>{formatInstant(builtAt)}</dd>
+    <dt>{t("settings.lastChecked")}</dt>
+    <dd>
+      {#if updater.lastCheckedAt() !== null}
+        {formatInstant(updater.lastCheckedAt() ?? "")}
+      {:else}
+        {t("settings.lastCheckedNever")}
+      {/if}
+    </dd>
+  </dl>
+  {#if updater.registered()}
+    <div class="actions">
+      <button type="button" disabled={updater.checking()} onclick={() => updater.checkNow()}>
+        {updater.checking() ? t("settings.checking") : t("settings.checkNow")}
+      </button>
+      {#if updater.updateAvailable()}
+        <span role="status">{t("update.available")}</span>
+        <button type="button" onclick={() => updater.reload()}>{t("update.reload")}</button>
+      {:else if updater.lastCheckError() !== null}
+        <small class="error" role="status">
+          {t("settings.checkFailed", { error: updater.lastCheckError() ?? "" })}
+        </small>
+      {/if}
+    </div>
+  {:else}
+    <small>{t("settings.updatesUnavailable")}</small>
+  {/if}
+</section>
+
 <style>
   .field {
     display: flex;
@@ -232,14 +276,31 @@
     color: var(--ok);
   }
 
-  .clock {
+  .clock,
+  .about {
     margin-top: 2rem;
     padding-top: 1rem;
     border-top: 1px solid var(--line);
   }
 
-  .clock h2 {
+  .clock h2,
+  .about h2 {
     font-size: 1.1rem;
+    margin: 0;
+  }
+
+  .about dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1rem;
+    margin: 0.5rem 0;
+  }
+
+  .about dt {
+    font-weight: 600;
+  }
+
+  .about dd {
     margin: 0;
   }
 
