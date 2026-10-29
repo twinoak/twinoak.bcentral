@@ -42,20 +42,34 @@ below applied first.
       session does when the dependency is only in the working tree — four sessions proceeded,
       four stopped. Now explicit: in an unattended run the dependency is on `main` because the
       script merged it; a session never builds against an unmerged working tree.
-- [ ] fix-next: `register.picker.placeholder` key and `contactSourceIsPlaceholder` flag are dead
+- [x] fix-next: `register.picker.placeholder` key and `contactSourceIsPlaceholder` flag are dead
       since P0-04 delivered the real `ContactSource` (P0-04 report). Remove in P0-07.
-- [ ] fix-next: `pages/SendPage.svelte` is a stand-in; P0-05 asked P0-07 to absorb the compose
+      (fixed in P1-03: already gone — P0-07 `fee5041` removed both; neither string is in
+      `app/src` today, nothing to do.)
+- [x] fix-next: `pages/SendPage.svelte` is a stand-in; P0-05 asked P0-07 to absorb the compose
       form and the incident row into the journal screen and delete the page.
-- [ ] fix-next: `recordManualStatus` refuses `mesh` messages, but P0-07 needs a manual
+      (fixed in P1-03: already gone — P0-07 `fee5041` deleted the page; `ComposeForm` sits in
+      `JournalPage` and nothing references `SendPage`.)
+- [x] fix-next: `recordManualStatus` refuses `mesh` messages, but P0-07 needs a manual
       `given_up` with a reason on a mesh message stuck at `sent` after a reload (P0-05 and
       P0-07 reports). Reconcile in P0-07: allow manual `given_up` and `roger` on mesh with a
       required reason; keep `sent`/`delivered` radio-only.
-- [ ] fix-next: a recipient whose `given_up` comes from "no radio connected" would give up 25
+      (fixed in P1-03: already done by P0-07 `fee5041` — `MESH_MANUAL_STATUSES` = roger,
+      given_up; the reason is required and stored as the status change's `text`; the Timeline
+      offers exactly those two on a mesh row. P1-03 added the missing test for the refused
+      empty-reason case on mesh, `outgoing.test.ts`.)
+- [x] fix-next: a recipient whose `given_up` comes from "no radio connected" would give up 25
       times at the gap rate in send-to-all (P0-08 report). P0-08 should pause the queue while
       `radio.state` is `disconnected`.
-- [ ] note: 7 `state_referenced_locally` warnings in `components/RegisterForm.svelte` — the form
+      (fixed in P1-03: already done by P0-08 `9a29108` — `sendQueue` has a `paused` phase
+      while `radioState()` is `disconnected`/`connecting`, resumes on `onConnected`, the queue
+      screen says `queue.paused`; tested in `sendQueue.test.ts` with a fake transport toggled
+      disconnected → connected → disconnected → connected.)
+- [x] note: 7 `state_referenced_locally` warnings in `components/RegisterForm.svelte` — the form
       captures `entry` once on open, which is the intended behaviour for an edit form; silence
       with `$state.snapshot`/untrack or accept.
+      (fixed in P1-03: one `untrack(() => entry)` snapshot on open seeds the drafts; `npm run
+      check` is at 0 warnings.)
 - [ ] note: `docs/decisions.md` candidates from the reports, to add when P0-02..05 are merged:
       `ajv` + `ajv-formats` for schema validation at write time; the ported radio code is `.ts`
       (not `.js` + `.d.ts`); the companion log is a string log (`onLog`) kept for the later
