@@ -100,6 +100,8 @@ function messageOut(options: {
   body: string;
   at: string;
   batchId?: string;
+  refersTo?: string;
+  transport?: JournalEntry["transport"];
 }): JournalEntry {
   seq += 1;
   return {
@@ -111,10 +113,11 @@ function messageOut(options: {
     clockTrust: "manual",
     operator: "Thomas",
     type: "message_out",
-    transport: "mesh",
+    transport: options.transport ?? "mesh",
     counterpartyId: options.counterpartyId,
     seqNo: options.seqNo,
     batchId: options.batchId,
+    refersTo: options.refersTo,
     text: `#${options.seqNo} ${options.body}`,
   };
 }
@@ -268,14 +271,17 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     expect(entry(W.note).text).toBe("Ringede til forsyningen, kø, ingen svar");
   });
 
-  it("incoming rows carry nothing", () => {
+  it("incoming rows carry nothing: no corrections, no answers yet", () => {
     for (const incoming of [W.rogerIn, W.freeTextIn]) {
       const row = rowFor(rows, incoming);
       expect(row.kind).toBe("entry");
       if (row.kind === "entry") {
         expect(row.corrections).toEqual([]);
+        expect(row.answeredBy).toEqual([]);
       }
     }
+    expect(messageRow(rows, W.order1).answers).toBeNull();
+    expect(messageRow(rows, W.courier2).answers).toBeNull();
   });
 
   it("an old journal with pending status changes renders identically to one without them", () => {
@@ -318,6 +324,121 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     expect(findRow(buildTimeline([...walkthrough.entries, correction]), correction.id)?.id).toBe(
       W.courier2,
     );
+  });
+});
+
+describe("reply from the row (P1-02): the link both ways", () => {
+  // The walkthrough's free-text reply, answered from its row: #3 to Hans with refersTo = it.
+  const reply = messageOut({
+    counterpartyId: HANS,
+    seqNo: 3,
+    body: "Pumpe på vej til nr 4",
+    at: "2026-10-28T19:07:00Z",
+    refersTo: W.freeTextIn,
+  });
+
+  it("the reply row says which incoming message it answers; the incoming row says it is answered", () => {
+    const rows = buildTimeline([...walkthrough.entries, reply]);
+    expect(rows.map((row) => row.id)).toEqual([
+      W.incidentClosed,
+      W.courier2,
+      reply.id,
+      W.note,
+      W.freeTextIn,
+      W.rogerIn,
+      W.order1,
+    ]);
+    const view = messageRow(rows, reply.id);
+    expect(view.answers?.id).toBe(W.freeTextIn);
+    expect(view.answers?.text).toBe("vedr. #1 alle ok, kælder i nr 4 har vand");
+    // The reply is an ordinary message otherwise: pending, no history, its own open item.
+    expect(view.status).toBe("pending");
+    expect(view.history).toEqual([]);
+    const incoming = rowFor(rows, W.freeTextIn);
+    if (incoming.kind !== "entry") {
+      throw new Error("expected an entry row");
+    }
+    expect(incoming.answeredBy.map((e) => e.id)).toEqual([reply.id]);
+    // Both ends are found by findRow, so each mark can scroll to the other.
+    expect(findRow(rows, W.freeTextIn)?.id).toBe(W.freeTextIn);
+    expect(findRow(rows, reply.id)?.id).toBe(reply.id);
+    // The other incoming row and the other messages are unaffected.
+    const r1 = rowFor(rows, W.rogerIn);
+    expect(r1.kind === "entry" && r1.answeredBy).toEqual([]);
+    expect(messageRow(rows, W.order1).answers).toBeNull();
+  });
+
+  it("two answers to one incoming message are both listed, oldest first", () => {
+    const second = messageOut({
+      counterpartyId: HANS,
+      seqNo: 4,
+      body: "Peter er der om 10 min",
+      at: "2026-10-28T19:12:00Z",
+      refersTo: W.freeTextIn,
+      transport: "courier",
+    });
+    const rows = buildTimeline([second, ...walkthrough.entries, reply]);
+    const incoming = rowFor(rows, W.freeTextIn);
+    expect(incoming.kind === "entry" && incoming.answeredBy.map((e) => e.id)).toEqual([
+      reply.id,
+      second.id,
+    ]);
+    expect(messageRow(rows, second.id).answers?.id).toBe(W.freeTextIn);
+  });
+
+  it("a refersTo that is not a message_in in the list is no link", () => {
+    // Refers to a note: not an answer. Refers to an entry outside the list: nothing to show.
+    const toNote = messageOut({
+      counterpartyId: HANS,
+      seqNo: 5,
+      body: "x",
+      at: at(1),
+      refersTo: W.note,
+    });
+    const toNowhere = messageOut({
+      counterpartyId: HANS,
+      seqNo: 6,
+      body: "y",
+      at: at(2),
+      refersTo: "01JB8ZK3QX9V2M4N6P8R0T2X00",
+    });
+    const rows = buildTimeline([...walkthrough.entries, toNote, toNowhere]);
+    expect(messageRow(rows, toNote.id).answers).toBeNull();
+    expect(messageRow(rows, toNowhere.id).answers).toBeNull();
+    const noteRow = rowFor(rows, W.note);
+    expect(noteRow.kind === "entry" && noteRow.answeredBy).toEqual([]);
+    // The note's correction is still its correction; nothing else moved.
+    expect(noteRow.kind === "entry" && noteRow.corrections.map((c) => c.id)).toEqual([
+      W.noteCorrection,
+    ]);
+  });
+
+  it("a reply inside a batch is still a batch recipient; its view carries the link", () => {
+    const BATCH = "01JB8ZK3QX9V2M4N6P8R0T2X11";
+    const inBatch = messageOut({
+      counterpartyId: HANS,
+      seqNo: 3,
+      body: "Meld status",
+      at: at(1),
+      batchId: BATCH,
+      refersTo: W.freeTextIn,
+    });
+    const other = messageOut({
+      counterpartyId: "01JB8ZK3QX9V2M4N6P8R0T2W70",
+      seqNo: 1,
+      body: "Meld status",
+      at: at(1, 1),
+      batchId: BATCH,
+    });
+    const rows = buildTimeline([...walkthrough.entries, inBatch, other]);
+    const batch = rowFor(rows, BATCH);
+    if (batch.kind !== "batch") {
+      throw new Error("expected a batch row");
+    }
+    expect(batch.messages.map((view) => view.answers?.id ?? null)).toEqual([W.freeTextIn, null]);
+    const incoming = rowFor(rows, W.freeTextIn);
+    expect(incoming.kind === "entry" && incoming.answeredBy.map((e) => e.id)).toEqual([inBatch.id]);
+    expect(findRow(rows, inBatch.id)?.id).toBe(BATCH);
   });
 });
 
@@ -478,6 +599,7 @@ describe("send-to-all as one row (P1-01)", () => {
         strip: [],
         history: [],
         corrections: [],
+        answers: null,
       }));
     expect(slowestStatus(views(["roger", "roger"]))).toBe("roger");
     expect(slowestStatus(views(["roger", "delivered"]))).toBe("delivered");

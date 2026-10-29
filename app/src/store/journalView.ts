@@ -11,6 +11,9 @@
 // expanded. The messages of one send-to-all (one batchId) fold into one row with counters.
 // A correction stays visible under the entry it corrects; a status_change that refers to the
 // incident (closed / reopened) is a row, because it is an event of the incident itself.
+// A message_out whose refersTo is a message_in answers it (Reply from the row, P1-02): the
+// message row says which incoming message it answers, the incoming row which messages answer
+// it; both are read off refersTo every time, nothing is stored on either entry.
 
 import { seqNoPrefix } from "./outgoing.ts";
 import { isLater, statusOf } from "./status.ts";
@@ -120,6 +123,9 @@ export interface MessageView {
   history: HistoryItem[];
   // Corrections of the message itself, oldest first.
   corrections: JournalEntry[];
+  // The message_in this message answers (its refersTo), when that entry is in the list and is
+  // a message_in; null otherwise.
+  answers: JournalEntry | null;
 }
 
 export interface BatchCounters {
@@ -145,6 +151,9 @@ export type TimelineRow =
       // not in the list.
       entry: JournalEntry;
       corrections: JournalEntry[];
+      // The message_out entries that answer this entry (their refersTo is this entry's id),
+      // oldest first. Only a message_in is ever answered.
+      answeredBy: JournalEntry[];
     }
   | { kind: "message"; id: string; entry: JournalEntry; message: MessageView }
   | {
@@ -230,6 +239,8 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
   // What refers to what, each list oldest first.
   const transitions = new Map<string, JournalEntry[]>();
   const corrections = new Map<string, JournalEntry[]>();
+  // message_in id -> the message_out entries answering it.
+  const replies = new Map<string, JournalEntry[]>();
   const plain: JournalEntry[] = [];
   const messages: JournalEntry[] = [];
 
@@ -244,6 +255,9 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
     switch (entry.type) {
       case "message_out":
         messages.push(entry);
+        if (target?.type === "message_in") {
+          file(replies, target.id, entry);
+        }
         break;
       case "correction":
         if (target !== undefined) {
@@ -280,12 +294,14 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
       entry,
       corrections: corrections.get(entry.id) ?? [],
     }));
+    const target = message.refersTo === undefined ? undefined : byId.get(message.refersTo);
     return {
       entry: message,
       status: statusOf(entries, message.id),
       strip: statusStrip(history.map((item) => item.entry)),
       history,
       corrections: corrections.get(message.id) ?? [],
+      answers: target?.type === "message_in" ? target : null,
     };
   }
 
@@ -294,6 +310,7 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
     id: entry.id,
     entry,
     corrections: corrections.get(entry.id) ?? [],
+    answeredBy: replies.get(entry.id) ?? [],
   }));
 
   // Messages sharing a batchId become one row; the batch is positioned by its first message.

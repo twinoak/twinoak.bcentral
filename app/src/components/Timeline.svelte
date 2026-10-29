@@ -7,7 +7,10 @@
   // correct. The view stays at the top unless the operator scrolled down; then new rows
   // arrive above without moving the viewport and a "N new" pill jumps back to the top.
   // Row actions: a correction of any entry, a manual status change on an outgoing message
-  // (with a required reason), and Retry / Send for a mesh message nobody is sending.
+  // (with a required reason), Retry / Send for a mesh message nobody is sending, and Reply on
+  // an incoming message (P1-02; also the R key on the focused incoming row). A reply carries
+  // "↳ answers ‹time›" under its text and the incoming row "answered ‹time›", each a link to
+  // the other row.
   import { tick } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import {
@@ -34,8 +37,11 @@
     onretry: (message: JournalEntry) => void;
     onmanual: (message: JournalEntry, status: Status, reason: string) => Promise<void>;
     oncorrect: (entry: JournalEntry, text: string) => Promise<void>;
+    // Reply to an incoming message: the parent hands it to the compose form.
+    onreply: (entry: JournalEntry) => void;
   }
-  let { rows, labels, byId, inflight, canRetry, onretry, onmanual, oncorrect }: Props = $props();
+  let { rows, labels, byId, inflight, canRetry, onretry, onmanual, oncorrect, onreply }: Props =
+    $props();
 
   let box: HTMLDivElement | undefined = $state(undefined);
   // True while the view is at the top; a scroll down turns it off, a scroll back up on.
@@ -230,6 +236,18 @@
       inflight(view.entry.id) === null
     );
   }
+
+  // R on a focused incoming row is Reply. Only the row itself: a key pressed in a button or a
+  // field inside it is that element's business, and nothing else on the page listens.
+  function onRowKeydown(entry: JournalEntry, event: KeyboardEvent) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      onreply(entry);
+    }
+  }
 </script>
 
 <!-- The time, with the clock-trust mark: a dimmed "?" for unknown, a small "✓" for manual,
@@ -316,6 +334,19 @@
     <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
     <td class="text" class:indented={nested}>
       {entry.text ?? ""}
+      {#if view.answers !== null}
+        {@const answers = view.answers}
+        <div class="reply-mark">
+          <button
+            type="button"
+            class="link"
+            title={answers.text ?? ""}
+            onclick={() => scrollToEntry(answers.id)}
+          >
+            {t("journal.reply.answers", { time: formatShortTime(answers.timestamp) })}
+          </button>
+        </div>
+      {/if}
       <div class="strip">
         {#each view.strip as item, index (index)}
           {#if index > 0}<span class="dot">·</span>{/if}
@@ -469,10 +500,14 @@
             {/if}
           {:else}
             {@const entry = row.entry}
+            {@const incoming = entry.type === "message_in"}
+            <!-- An incoming row can take the focus so that R replies from the keyboard. -->
             <tr
               data-type={entry.type}
               data-entry-id={entry.id}
               class:highlighted={highlighted === entry.id}
+              tabindex={incoming ? 0 : undefined}
+              onkeydown={incoming ? (event) => onRowKeydown(entry, event) : undefined}
             >
               {@render timeCell(entry)}
               <td>{entry.operator}</td>
@@ -490,9 +525,31 @@
                 {:else}
                   {entry.text ?? ""}
                 {/if}
+                {#if row.answeredBy.length > 0}
+                  <div class="strip">
+                    {#each row.answeredBy as reply, index (reply.id)}
+                      {#if index > 0}<span class="dot">·</span>{/if}
+                      <button
+                        type="button"
+                        class="link"
+                        title={reply.text ?? ""}
+                        onclick={() => scrollToEntry(reply.id)}
+                      >
+                        {t("journal.reply.answered", { time: formatShortTime(reply.timestamp) })}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
               </td>
               <td></td>
-              <td class="actions">{@render correctButton(entry)}</td>
+              <td class="actions">
+                {#if incoming}
+                  <button type="button" class="small" onclick={() => onreply(entry)}>
+                    {t("journal.action.reply")}
+                  </button>
+                {/if}
+                {@render correctButton(entry)}
+              </td>
             </tr>
             {@render correctionForm(entry)}
             {@render correctionRows(row.corrections)}
@@ -628,6 +685,16 @@
 
   tr[data-type="message_in"] {
     background: #eef4fb;
+  }
+
+  tr[data-type="message_in"]:focus-visible {
+    outline: 2px solid var(--navy);
+    outline-offset: -2px;
+  }
+
+  .reply-mark {
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
   }
 
   tr[data-type="batch"] td {

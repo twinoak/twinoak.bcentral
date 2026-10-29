@@ -45,6 +45,7 @@
   // Bumped after every write from this screen, so the effect below reloads.
   let ownRevision = $state(0);
   let timeline: Timeline | undefined = $state(undefined);
+  let compose: ComposeForm | undefined = $state(undefined);
 
   const incidentId = $derived(currentIncidentId());
   const current = $derived(incidents.find((incident) => incident.id === incidentId) ?? null);
@@ -181,6 +182,13 @@
   function showEntry(id: string) {
     void timeline?.scrollToEntry(id);
   }
+
+  // Reply from the row (P1-02): the compose form takes the incoming message's sender and
+  // transport and links the answer to it.
+  function reply(entry: JournalEntry) {
+    actionError = null;
+    void compose?.replyTo(entry);
+  }
 </script>
 
 <h1>{t("journal.title")}</h1>
@@ -218,6 +226,7 @@
           onretry={transmit}
           onmanual={manual}
           oncorrect={correct}
+          onreply={reply}
         />
       </section>
 
@@ -225,7 +234,12 @@
         <section aria-labelledby="compose-heading">
           <h2 id="compose-heading">{t("journal.compose.title")}</h2>
           {#key current.id}
-            <ComposeForm incidentId={current.id} register={sortedRegister} {onsent} />
+            <ComposeForm
+              bind:this={compose}
+              incidentId={current.id}
+              register={sortedRegister}
+              {onsent}
+            />
           {/key}
         </section>
 

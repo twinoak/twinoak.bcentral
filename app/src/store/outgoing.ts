@@ -99,16 +99,51 @@ export interface ComposeInput {
   body: string;
   // Set by composeBatch on every message of one send-to-all; a single send has none.
   batchId?: string;
+  // The id of the message_in this message answers (Reply from the row, P1-02); the message
+  // is stored with that id as its refersTo. Omitted when the message answers nothing.
+  refersTo?: string;
 }
 
 export interface Composed {
   message: JournalEntry;
 }
 
+// A reply's target has to be a stored message_in: the schema allows any entry id in refersTo,
+// but the app only ever writes a message_out's refersTo for an answer to an incoming message.
+export class ReplyTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReplyTargetError";
+  }
+}
+
+// What the compose form says it is replying to: the first `max` characters of the incoming
+// text, with an ellipsis when it was cut. Counted in code points, so a cut never splits a
+// character.
+export const REPLY_SNIPPET_LENGTH = 60;
+
+export function replySnippet(text: string, max: number = REPLY_SNIPPET_LENGTH): string {
+  const characters = [...text];
+  if (characters.length <= max) {
+    return text;
+  }
+  return `${characters.slice(0, max).join("")}…`;
+}
+
 // Reserves the recipient's next #n and stores the message_out in one transaction, and nothing
 // else: its status is pending until the radio or the operator records a status_change. A body
-// over the limit throws MessageTooLongError and leaves the counter where it was.
+// over the limit throws MessageTooLongError and leaves the counter where it was. A reply
+// (refersTo) is checked against the store first: its target must be a message_in.
 export async function composeMessage(store: JournalStore, input: ComposeInput): Promise<Composed> {
+  if (input.refersTo !== undefined) {
+    const target = await store.getEntry(input.refersTo);
+    if (target === undefined) {
+      throw new ReplyTargetError(`entry ${input.refersTo} is not in the journal`);
+    }
+    if (target.type !== "message_in") {
+      throw new ReplyTargetError(`entry ${input.refersTo} is a ${target.type}, not a message_in`);
+    }
+  }
   const message = await store.appendMessageOut(
     {
       incidentId: input.incidentId,
@@ -116,6 +151,7 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
       transport: input.transport,
       counterpartyId: input.counterpartyId,
       batchId: input.batchId,
+      refersTo: input.refersTo,
     },
     (seqNo) => composeText(seqNo, input.body),
   );
