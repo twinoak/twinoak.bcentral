@@ -889,6 +889,43 @@ export async function companionGetContacts(
   return contacts;
 }
 
+// What one CMD_SYNC_NEXT_MESSAGE hands back (P0-06): a direct message from a contact, a
+// channel message (not parsed beyond its code; channels are out of BCentral's model), or
+// nothing left in the companion's queue.
+export type NextMessage =
+  | { kind: "contact"; message: ContactMessage; frame: Uint8Array }
+  | { kind: "channel"; frame: Uint8Array }
+  | { kind: "empty" };
+
+// Pulls the next received message out of the companion's queue. The companion keeps a
+// message until it has been synced, so the caller loops until `empty`.
+export async function companionNextMessage(
+  link: CompanionLink,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<NextMessage> {
+  const frame = await link.companionCommand(
+    syncNextMessagePayload(),
+    [
+      RESP_CODE_CONTACT_MSG_RECV,
+      RESP_CODE_CONTACT_MSG_RECV_V3,
+      RESP_CODE_CHANNEL_MSG_RECV,
+      RESP_CODE_CHANNEL_MSG_RECV_V3,
+      RESP_CODE_NO_MORE_MESSAGES,
+    ],
+    timeoutMs,
+  );
+  switch (frame[0]) {
+    case RESP_CODE_CONTACT_MSG_RECV:
+    case RESP_CODE_CONTACT_MSG_RECV_V3:
+      return { kind: "contact", message: parseContactMessage(frame), frame };
+    case RESP_CODE_CHANNEL_MSG_RECV:
+    case RESP_CODE_CHANNEL_MSG_RECV_V3:
+      return { kind: "channel", frame };
+    default:
+      return { kind: "empty" };
+  }
+}
+
 export function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

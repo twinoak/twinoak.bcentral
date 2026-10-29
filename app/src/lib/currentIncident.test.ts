@@ -45,4 +45,21 @@ describe("current incident", () => {
     const { currentIncidentId } = await load();
     expect(currentIncidentId()).toBeNull();
   });
+
+  it("onCurrentIncidentChange runs on every change until stopped", async () => {
+    const { onCurrentIncidentChange, setCurrentIncidentId } = await load();
+    const seen: (string | null)[] = [];
+    const stop = onCurrentIncidentChange((id) => seen.push(id));
+    expect(seen).toEqual([]);
+
+    setCurrentIncidentId(INCIDENT);
+    expect(seen).toEqual([INCIDENT]);
+
+    setCurrentIncidentId(null);
+    expect(seen).toEqual([INCIDENT, null]);
+
+    stop();
+    setCurrentIncidentId(INCIDENT);
+    expect(seen).toEqual([INCIDENT, null]);
+  });
 });

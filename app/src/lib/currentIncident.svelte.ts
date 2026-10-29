@@ -14,6 +14,9 @@ function load(): string | null {
 
 let current: string | null = $state(load());
 
+type IncidentListener = (id: string | null) => void;
+const listeners = new Set<IncidentListener>();
+
 export function currentIncidentId(): string | null {
   return current;
 }
@@ -25,4 +28,18 @@ export function setCurrentIncidentId(id: string | null): void {
   } else {
     writeStorage(CURRENT_INCIDENT_KEY, id);
   }
+  for (const listener of [...listeners]) {
+    listener(id);
+  }
+}
+
+// Called after every setCurrentIncidentId. The inbox drains the companion on it (P0-06):
+// messages that arrived while no incident was selected are pulled in once one is. Plain
+// listeners rather than an effect, so it works the same outside a component and in tests.
+// Returns the unsubscribe.
+export function onCurrentIncidentChange(listener: IncidentListener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }

@@ -8,7 +8,7 @@ import type { JournalEntry, Status } from "./types.ts";
 // "…Z" and "…+00:00" spellings of the same moment are equal and fall through to deviceSeq.
 // Two entries from different devices can tie on both; the ULID id, unique and time-ordered,
 // then decides, so the answer does not depend on the order entries were read in.
-function isLater(candidate: JournalEntry, current: JournalEntry): boolean {
+export function isLater(candidate: JournalEntry, current: JournalEntry): boolean {
   const byTime = Date.parse(candidate.timestamp) - Date.parse(current.timestamp);
   if (byTime !== 0) {
     return byTime > 0;
