@@ -1,12 +1,27 @@
 <script lang="ts">
-  import { t } from "../i18n/index.svelte.ts";
-  import { settings, updateSettings } from "../lib/settings.svelte.ts";
+  import { t, language } from "../i18n/index.svelte.ts";
+  import { MAX_SEND_ATTEMPTS_LIMIT, settings, updateSettings } from "../lib/settings.svelte.ts";
+  import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
   import LanguageSelect from "../components/LanguageSelect.svelte";
+
+  // The PC's clock, shown so the operator can judge it before confirming it. Ticks once a
+  // second while the page is open.
+  function formatClock(date: Date): string {
+    return date.toLocaleString(language(), { dateStyle: "medium", timeStyle: "medium" });
+  }
+  let clockNow = $state(formatClock(new Date()));
+  $effect(() => {
+    const timer = setInterval(() => {
+      clockNow = formatClock(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  });
 
   // Drafts: edited here, written to settings on save.
   let operatorName = $state(settings.operatorName);
   let hubUrl = $state(settings.hubUrl);
   let blindAfterMinutes: number | undefined = $state(settings.blindAfterMinutes);
+  let maxSendAttempts: number | undefined = $state(settings.maxSendAttempts);
   let saved = $state(false);
 
   const operatorNameError = $derived(
@@ -20,18 +35,28 @@
       ? t("settings.blindAfterInvalid")
       : null,
   );
-  const canSave = $derived(!operatorNameError && !hubUrlError && !blindAfterError);
+  const maxSendAttemptsError = $derived(
+    maxSendAttempts === undefined ||
+      !Number.isInteger(maxSendAttempts) ||
+      maxSendAttempts < 1 ||
+      maxSendAttempts > MAX_SEND_ATTEMPTS_LIMIT
+      ? t("settings.maxSendAttemptsInvalid")
+      : null,
+  );
+  const canSave = $derived(!operatorNameError && !hubUrlError && !blindAfterError && !maxSendAttemptsError);
 
   function save(event: SubmitEvent) {
     event.preventDefault();
     const minutes = blindAfterMinutes;
-    if (!canSave || minutes === undefined) {
+    const attempts = maxSendAttempts;
+    if (!canSave || minutes === undefined || attempts === undefined) {
       return;
     }
     updateSettings({
       operatorName: operatorName.trim(),
       hubUrl: hubUrl.trim(),
       blindAfterMinutes: minutes,
+      maxSendAttempts: attempts,
     });
     saved = true;
   }
@@ -95,6 +120,23 @@
   </div>
 
   <div class="field">
+    <label for="max-send-attempts">{t("settings.maxSendAttempts")}</label>
+    <input
+      id="max-send-attempts"
+      type="number"
+      min="1"
+      max={MAX_SEND_ATTEMPTS_LIMIT}
+      step="1"
+      bind:value={maxSendAttempts}
+      aria-invalid={maxSendAttemptsError !== null}
+    />
+    <small>{t("settings.maxSendAttemptsHelp")}</small>
+    {#if maxSendAttemptsError}
+      <small class="error">{maxSendAttemptsError}</small>
+    {/if}
+  </div>
+
+  <div class="field">
     <label for="settings-language">{t("language.label")}</label>
     <LanguageSelect id="settings-language" />
   </div>
@@ -106,6 +148,23 @@
     {/if}
   </div>
 </form>
+
+<!-- Session state, not a saved setting: applies at once and lasts until the app is closed. -->
+<section class="field clock" aria-labelledby="clock-heading">
+  <h2 id="clock-heading">{t("settings.clock")}</h2>
+  <small>{t("settings.clockNow", { time: clockNow })}</small>
+  <label class="check">
+    <input
+      type="checkbox"
+      checked={clockTrust() !== "unknown"}
+      disabled={clockTrust() === "ntp"}
+      onchange={(event) => setClockConfirmed(event.currentTarget.checked)}
+    />
+    {t("settings.clockConfirm")}
+  </label>
+  <small>{t("settings.clockHelp")}</small>
+  <small class="trust" role="status">{t(`settings.clockTrust.${clockTrust()}`)}</small>
+</section>
 
 <style>
   .field {
@@ -136,5 +195,27 @@
 
   .saved {
     color: var(--ok);
+  }
+
+  .clock {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .clock h2 {
+    font-size: 1.1rem;
+    margin: 0;
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
+  .trust {
+    color: var(--ink);
   }
 </style>
