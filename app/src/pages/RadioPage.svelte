@@ -2,7 +2,8 @@
   import { t, language } from "../i18n/index.svelte.ts";
   import { settings } from "../lib/settings.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
-  import { radio, transportSupport } from "../radio/index.ts";
+  import { capability, radio } from "../radio/index.ts";
+  import { CLOCK_DRIFT_LIMIT_S, disconnectReasonText } from "../radio/radioStore.svelte.ts";
   import { ADV_TYPE_NONE, ADV_TYPE_SENSOR, type TransportKind } from "../radio/serial.ts";
 
   let busy = $state(false);
@@ -13,9 +14,15 @@
   const device = $derived(radio.deviceInfo());
   const contacts = $derived(radio.contacts());
   const elapsed = $derived(radio.elapsedMs());
+  // Why there is no radio, the reconnect loop's position and the companion's clock against
+  // the PC's (P1-07).
+  const reason = $derived(radioState === "disconnected" ? radio.disconnectReason() : null);
+  const reconnecting = $derived(radio.reconnecting());
+  const countdownMs = $derived(radio.reconnectCountdownMs());
+  const clockDrift = $derived(radio.clockDriftSeconds());
+  const driftTooLarge = $derived(clockDrift !== null && Math.abs(clockDrift) > CLOCK_DRIFT_LIMIT_S);
   // Newest line on top (P1-01): the store keeps the log oldest first.
   const log = $derived([...radio.log()].reverse());
-  const anySupport = transportSupport.usb || transportSupport.ble;
 
   function describe(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
@@ -40,6 +47,11 @@
     } finally {
       busy = false;
     }
+  }
+
+  function reconnect() {
+    error = null;
+    radio.reconnectNow();
   }
 
   async function refresh() {
@@ -74,32 +86,70 @@
 <h1>{t("radio.title")}</h1>
 <p class="intro">{t("radio.intro")}</p>
 
-{#if !anySupport}
-  <p class="error" role="alert">{t("radio.unsupported")}</p>
-{/if}
-
 <p class="status" data-state={radioState}>
   <strong>{t(`radio.status.${radioState}`)}</strong>
+  {#if reason !== null}
+    · {disconnectReasonText(reason)}
+  {/if}
   {#if elapsed !== null && radioState !== "connecting"}
     · {t("radio.heard", { elapsed: formatElapsed(elapsed) })}
   {/if}
 </p>
+{#if reconnecting !== null}
+  <p class="muted" role="status">
+    {#if countdownMs !== null}
+      {t("radio.reconnecting", {
+        attempt: reconnecting.attempt,
+        seconds: Math.ceil(countdownMs / 1000),
+      })}
+    {:else}
+      {t("radio.reconnectingNow", { attempt: reconnecting.attempt })}
+    {/if}
+  </p>
+{/if}
 <p class="muted">{t("radio.blindHelp", { minutes: settings.blindAfterMinutes })}</p>
 
-<div class="actions">
-  {#if radioState === "disconnected"}
-    <button type="button" disabled={busy || !transportSupport.usb} onclick={() => connect("usb")}>
-      {t("radio.connectUsb")}
-    </button>
-    <button type="button" disabled={busy || !transportSupport.ble} onclick={() => connect("ble")}>
-      {t("radio.connectBle")}
-    </button>
-  {:else}
-    <button type="button" class="secondary" disabled={busy} onclick={disconnect}>
-      {t("radio.disconnect")}
-    </button>
-  {/if}
-</div>
+{#if clockDrift !== null && driftTooLarge}
+  <p class="warning" role="alert">
+    {t(clockDrift > 0 ? "radio.clockDrift.ahead" : "radio.clockDrift.behind", {
+      elapsed: formatElapsed(Math.abs(clockDrift) * 1000),
+    })}
+  </p>
+{/if}
+
+<!-- One sentence when the browser has neither API; otherwise only the transport the browser
+     lacks is replaced by its reason (P1-07). -->
+{#if capability === "none"}
+  <p class="error" role="alert">{t("radio.unsupported")}</p>
+{:else}
+  <div class="actions">
+    {#if radioState === "disconnected"}
+      {#if capability !== "ble"}
+        <button type="button" disabled={busy} onclick={() => connect("usb")}>
+          {t("radio.connectUsb")}
+        </button>
+      {:else}
+        <span class="muted">{t("radio.noSerial")}</span>
+      {/if}
+      {#if capability !== "usb"}
+        <button type="button" disabled={busy} onclick={() => connect("ble")}>
+          {t("radio.connectBle")}
+        </button>
+      {:else}
+        <span class="muted">{t("radio.noBluetooth")}</span>
+      {/if}
+      {#if radio.canReconnect()}
+        <button type="button" class="secondary" disabled={busy} onclick={reconnect}>
+          {t("radio.reconnect")}
+        </button>
+      {/if}
+    {:else}
+      <button type="button" class="secondary" disabled={busy} onclick={disconnect}>
+        {t("radio.disconnect")}
+      </button>
+    {/if}
+  </div>
+{/if}
 
 {#if error}
   <p class="error" role="alert">{error}</p>
@@ -194,6 +244,13 @@
 
   .status[data-state="connected"] strong {
     color: var(--ok);
+  }
+
+  .warning {
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    background: #e0b64a;
+    color: var(--ink);
   }
 
   .actions {

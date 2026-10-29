@@ -579,8 +579,15 @@ export type TransportKind = "usb" | "ble";
 // What CompanionLink needs from a transport: whole payloads in and out. receiveFrame()
 // resolves with the next payload, or null once the transport is closed (by disconnect() or
 // by the device going away); it never times out by itself.
+//
+// A transport is bound to one browser object (the SerialPort, the BluetoothDevice) from its
+// first successful chooser or from construction, and keeps it across disconnect(): a second
+// connect() reopens the same device without a chooser, which is how the radio store
+// reconnects on its own (P1-07).
 export interface FrameTransport {
   readonly kind: TransportKind;
+  // The SerialPort or BluetoothDevice behind the link; null until the chooser has picked one.
+  readonly device: EventTarget | null;
   onLog: (line: string) => void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -932,32 +939,52 @@ export function describeError(error: unknown): string {
 
 // --- Web Serial transport -----------------------------------------------------------------
 
-// A MeshCore companion on a USB serial port. connect() shows the browser's port chooser.
+export interface MeshCoreSerialOptions {
+  // The browser's Web Serial; navigator.serial when not given (tests pass a fake).
+  serial?: Serial;
+  // A port granted earlier (navigator.serial.getPorts(), or the target of a `connect`
+  // event): connect() opens it without the chooser.
+  port?: SerialPort;
+}
+
+// A MeshCore companion on a USB serial port. connect() shows the browser's port chooser the
+// first time, unless the port was given; after that it reopens the same port.
 export class MeshCoreSerial implements FrameTransport {
   readonly kind: TransportKind = "usb";
   onLog: (line: string) => void = () => undefined;
-  private port: SerialPort | null = null;
+  private readonly serial: Serial | undefined;
+  private port: SerialPort | null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private buffer: Uint8Array = new Uint8Array(0);
-  private readonly frames: Uint8Array[] = [];
+  private frames: Uint8Array[] = [];
 
-  static isSupported(): boolean {
-    return typeof navigator !== "undefined" && navigator.serial !== undefined;
+  constructor(options: MeshCoreSerialOptions = {}) {
+    this.serial =
+      options.serial ?? (typeof navigator === "undefined" ? undefined : navigator.serial);
+    this.port = options.port ?? null;
+  }
+
+  get device(): SerialPort | null {
+    return this.port;
   }
 
   async connect(): Promise<void> {
-    const serial = typeof navigator === "undefined" ? undefined : navigator.serial;
-    if (serial === undefined) {
-      throw new Error("Web Serial is not available in this browser");
+    let port = this.port;
+    if (port === null) {
+      if (this.serial === undefined) {
+        throw new Error("Web Serial is not available in this browser");
+      }
+      port = await this.serial.requestPort();
+      this.port = port;
     }
-    const port = await serial.requestPort();
     await port.open({ baudRate: SERIAL_BAUD_RATE });
     if (port.readable === null || port.writable === null) {
       await port.close();
       throw new Error("the serial port opened without streams");
     }
-    this.port = port;
+    this.buffer = new Uint8Array(0);
+    this.frames = [];
     this.reader = port.readable.getReader();
     this.writer = port.writable.getWriter();
     const info = port.getInfo();
@@ -969,9 +996,9 @@ export class MeshCoreSerial implements FrameTransport {
     );
   }
 
+  // Closes the port but keeps it: the next connect() reopens it without a chooser.
   async disconnect(): Promise<void> {
     const { port, reader, writer } = this;
-    this.port = null;
     this.reader = null;
     this.writer = null;
     if (reader !== null) {
@@ -993,7 +1020,8 @@ export class MeshCoreSerial implements FrameTransport {
         // Same as above.
       }
     }
-    if (port !== null) {
+    // Only a port that was open is closed; a kept port whose open() failed is left alone.
+    if (port !== null && (reader !== null || writer !== null)) {
       try {
         await port.close();
         this.onLog("serial: port closed");

@@ -4,7 +4,8 @@
   import { settings, hasOperatorName } from "../lib/settings.svelte.ts";
   import { route, hashFor } from "../lib/router.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
-  import { radio } from "../radio/index.ts";
+  import { capability, radio } from "../radio/index.ts";
+  import { disconnectReasonText } from "../radio/radioStore.svelte.ts";
   import { versionLabel } from "../lib/version.ts";
   import { persistence } from "../lib/persistence.svelte.ts";
   import { mirror } from "../store/index.ts";
@@ -12,6 +13,8 @@
 
   const radioState = $derived(radio.state());
   const elapsed = $derived(radio.elapsedMs());
+  // Why there is no radio (P1-07): shown only while disconnected.
+  const reason = $derived(radioState === "disconnected" ? radio.disconnectReason() : null);
   const mirrorState = $derived(mirror.state());
   // The storage warning's remedy is a journal folder; once one is set the line has done its
   // job and goes.
@@ -62,9 +65,15 @@
     aria-current={route() === "radio" ? "page" : undefined}
   >
     <span class="dot" aria-hidden="true"></span>
+    <!-- A browser without Web Serial and Web Bluetooth gets the one sentence instead (P1-07). -->
     <span role="status">
-      {t(`radio.status.${radioState}`)}{#if elapsed !== null && radioState !== "connecting"}
-        · {t("radio.heard", { elapsed: formatElapsed(elapsed) })}{/if}
+      {#if capability === "none"}
+        {t("topbar.noRadioApi")}
+      {:else}
+        {t(`radio.status.${radioState}`)}{#if reason !== null}
+          · {disconnectReasonText(reason)}{/if}{#if elapsed !== null && radioState !== "connecting"}
+          · {t("radio.heard", { elapsed: formatElapsed(elapsed) })}{/if}
+      {/if}
     </span>
   </a>
 

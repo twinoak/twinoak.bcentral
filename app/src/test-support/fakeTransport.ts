@@ -7,15 +7,20 @@ import type { FrameTransport, TransportKind } from "../radio/serial.ts";
 
 export class FakeTransport implements FrameTransport {
   readonly kind: TransportKind;
+  // Null by default: the store then has nothing to reconnect to. A test that wants the
+  // reconnect loop gives the transport a device (any EventTarget).
+  device: EventTarget | null = null;
   onLog: (line: string) => void = () => undefined;
   readonly sent: Uint8Array[] = [];
   connectCalls = 0;
   disconnectCalls = 0;
   // Throw from connect() when set.
   connectError: Error | null = null;
+  // Throw from connect() this many more times (a companion that is still rebooting).
+  connectFailures = 0;
   // Frames to deliver in answer to a payload, in order; null answers nothing.
   autoReply: ((payload: Uint8Array) => Uint8Array[]) | null = null;
-  private readonly queue: Uint8Array[] = [];
+  private queue: Uint8Array[] = [];
   private waiter: Deferred<void> | null = null;
   private closed = false;
 
@@ -32,6 +37,11 @@ export class FakeTransport implements FrameTransport {
     if (this.connectError !== null) {
       throw this.connectError;
     }
+    if (this.connectFailures > 0) {
+      this.connectFailures--;
+      throw new Error(`cannot open (${this.connectFailures} more failures to come)`);
+    }
+    this.queue = [];
     this.closed = false;
   }
 
