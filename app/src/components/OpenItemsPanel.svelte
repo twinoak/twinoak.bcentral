@@ -2,8 +2,10 @@
   // Open items (P0-07): per register entry, every outgoing message not yet roger, with the
   // given-up ones flagged. Newest first (P1-01): the groups in the order of their newest
   // item, as openItems() hands them over, and the items within a group newest first.
-  // Clicking one scrolls the timeline to it.
+  // A card with the count in its title (P2-03); each group a row list in 14 / 16 px, each row
+  // a button that scrolls the timeline to the message.
   import { t, language } from "../i18n/index.svelte.ts";
+  import { chipClass, statusChip } from "../lib/journalRows.ts";
   import type { OpenItem } from "../store/journalView.ts";
 
   interface Props {
@@ -20,109 +22,56 @@
       items,
     })),
   );
+  const count = $derived(sortedGroups.reduce((n, group) => n + group.items.length, 0));
 
   function formatTime(timestamp: string): string {
     return new Date(timestamp).toLocaleTimeString(language(), { timeStyle: "short" });
   }
 </script>
 
-<section class="panel" aria-labelledby="open-heading">
-  <h2 id="open-heading">{t("journal.open.title")}</h2>
+<section class="card" aria-labelledby="open-heading" data-open-items>
+  <h2 id="open-heading" class="card-title">
+    {t("journal.open.title")}
+    <span class="count">{count}</span>
+  </h2>
   {#if sortedGroups.length === 0}
-    <p class="muted">{t("journal.open.empty")}</p>
+    <p class="msg">{t("journal.open.empty")}</p>
   {:else}
     {#each sortedGroups as group (group.counterpartyId)}
       <h3>{group.label}</h3>
-      <ul>
+      <ol class="rows rows-3">
         {#each group.items as item (item.message.id)}
+          {@const look = statusChip(item.status)}
           <li>
-            <button
-              type="button"
-              class="item"
-              class:givenUp={item.givenUp}
-              onclick={() => onselect(item.message.id)}
-            >
-              <span class="time">{formatTime(item.message.timestamp)}</span>
-              <span class="text">{item.message.text ?? ""}</span>
-              <span class="chip" data-status={item.status}
-                >{t(`journal.status.${item.status}`)}</span
-              >
+            <button type="button" class="row-button" onclick={() => onselect(item.message.id)}>
+              <span class="row-time">{formatTime(item.message.timestamp)}</span>
+              <span class="row-body text">{item.message.text ?? ""}</span>
+              <span class="row-strip chip {chipClass(look.tint)}">
+                <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{t(
+                  `journal.status.${item.status}`,
+                )}
+              </span>
             </button>
           </li>
         {/each}
-      </ul>
+      </ol>
     {/each}
   {/if}
 </section>
 
 <style>
-  .panel {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface);
-  }
-
-  h2 {
-    font-size: 1.1rem;
-    margin: 0 0 0.5rem;
-  }
-
+  /* Layout only. */
   h3 {
-    font-size: 0.95rem;
-    margin: 0.75rem 0 0.25rem;
-  }
-
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  li + li {
-    margin-top: 0.25rem;
-  }
-
-  .muted {
-    color: var(--muted);
-    margin: 0;
-  }
-
-  .item {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.3rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: var(--light);
-    color: var(--ink);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .item.givenUp {
-    border: 2px solid var(--error);
-  }
-
-  .time {
-    color: var(--muted);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+    margin: var(--s-3) 0 var(--s-1);
   }
 
   .text {
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* The chip itself is app.css's; on the tinted item it sits on the surface colour. */
-  .chip {
-    padding: 0.05rem 0.4rem;
-    font-size: 0.8rem;
-    background: var(--surface);
+  .msg {
+    margin: 0;
   }
 </style>

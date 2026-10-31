@@ -1,25 +1,32 @@
 <script lang="ts">
-  // The incident's journal as a stack of message slips (P0-07, reshaped in P1-01): one row
-  // per entry, newest on top. An outgoing message carries its status strip ("sent 14:31 ·
-  // delivered 14:32 · roger 14:35") under its text; its transitions are not rows but a
-  // history the operator opens on the row. The messages of one send-to-all are one row with
-  // counters that opens into one row per recipient. Corrections show under the entry they
-  // correct. The view stays at the top unless the operator scrolled down; then new rows
-  // arrive above without moving the viewport and a "N new" pill jumps back to the top.
-  // Row actions: a correction of any entry, a manual status change on an outgoing message
-  // (with a required reason), Retry / Send for a mesh message nobody is sending, and Reply on
-  // an incoming message (P1-02). A reply carries "↳ answers ‹time›" under its text and the
-  // incoming row "answered ‹time›", each a link to the other row.
+  // The incident's journal as a list of message slips (P0-07, reshaped in P1-01, on the row
+  // list in P2-03): one row per entry, newest on top, laid on the columns time | who | body |
+  // strip. An outgoing message carries its status strip at the right — chips with a dot per
+  // state, "sent 14:31 · delivered 14:32 · roger 14:35" — and its transitions are not rows
+  // but a history the operator opens on the row (a 14 px list under it). Incoming and
+  // outgoing are told apart by the glyph before the counterparty (→ out, ← in) and by the
+  // counterparty itself. The messages of one send-to-all are one row with counter chips
+  // that opens into one row per recipient. A correction is a 14 px line under the entry it
+  // corrects. The view stays at the top unless the operator scrolled down; then new rows
+  // arrive above without moving the viewport and a "N new" chip, stuck to the top of the
+  // box, jumps back up.
   //
-  // Keyboard (P1-09): one row is the current row, marked with a bar at its left edge; J / K
-  // move it (and the focus) down and up, Enter opens or closes it (a batch's recipients, a
-  // message's history), R replies to it when it is incoming, Esc closes an open row form.
-  // The rows are one tab stop (roving tabindex): Tab lands on the current row, J / K walk.
+  // Row actions — Reply on an incoming message (P1-02), Retry / Send for a mesh message
+  // nobody is sending, Mark (a manual status with a required reason), History, Correct —
+  // are quiet buttons on a line under the row, shown while the pointer or the focus is on
+  // the row and always on an expanded row. A reply carries "↳ answers ‹time›" after its
+  // text and the incoming row "answered ‹time›", each a link to the other row.
+  //
+  // Keyboard (P1-09): one row is the current row (accent-weak); J / K move it (and the
+  // focus) down and up, Enter opens or closes it (a batch's recipients, a message's history),
+  // R replies to it when it is incoming, Esc closes an open row form. The rows are one tab
+  // stop (roving tabindex): Tab lands on the current row, J / K walk. The look is
+  // components.css's `.rows`; this file lays nothing out of its own.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
+  import { chipClass, counterChips, DIRECTION_GLYPH, stripChip } from "../lib/journalRows.ts";
   import {
     batchText,
-    countersText,
     formatDateTime,
     formatShortTime,
     formatTime,
@@ -36,6 +43,7 @@
   } from "../store/journalView.ts";
   import { manualStatusesFor } from "../store/outgoing.ts";
   import type { JournalEntry, Status } from "../store/types.ts";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     rows: readonly TimelineRow[];
@@ -61,11 +69,10 @@
   let stickToTop = $state(true);
   // The row ids on the timeline when the operator scrolled down; rows not in it are new.
   let seen: ReadonlySet<string> | null = $state.raw(null);
-  let highlighted: string | null = $state(null);
   // Which batch rows show their recipients and which messages show their history.
   let expanded: Record<string, boolean> = $state({});
-  // The current row for the keyboard (an entry id, or a batch id), or null before J / K or
-  // a focus set one.
+  // The current row for the keyboard (an entry id, or a batch id), or null before J / K, a
+  // focus or a jump from a side card set one.
   let cursor: string | null = $state(null);
 
   // Which row has its correction form or its status form open, and the texts typed in them.
@@ -119,18 +126,23 @@
     }
   }
 
+  // A jump from a side card or a reply mark: the row that shows the entry becomes the
+  // current row (opened when it is a batch) and the entry is scrolled into the middle.
   export async function scrollToEntry(id: string): Promise<void> {
     const row = findRow(rows, id);
-    if (row?.kind === "batch") {
-      expanded[row.id] = true;
-    }
-    await tick();
-    const target = box?.querySelector<HTMLElement>(`[data-entry-id="${id}"]`);
-    if (target === undefined || target === null) {
+    if (row === undefined) {
       return;
     }
-    target.scrollIntoView({ block: "center" });
-    highlighted = id;
+    if (row.kind === "batch") {
+      expanded[row.id] = true;
+    }
+    cursor = row.id;
+    await tick();
+    const target = box?.querySelector<HTMLElement>(`[data-entry-id="${id}"]`);
+    target?.scrollIntoView({ block: "center" });
+    box
+      ?.querySelector<HTMLElement>(`li[data-entry-id="${row.id}"]`)
+      ?.focus({ preventScroll: true });
   }
 
   function toggle(id: string) {
@@ -139,10 +151,8 @@
 
   // --- the keyboard cursor ------------------------------------------------------------------
 
-  function rowElements(): HTMLTableRowElement[] {
-    return box === undefined
-      ? []
-      : [...box.querySelectorAll<HTMLTableRowElement>("tr[data-entry-id]")];
+  function rowElements(): HTMLLIElement[] {
+    return box === undefined ? [] : [...box.querySelectorAll<HTMLLIElement>("li[data-entry-id]")];
   }
 
   // The first row is the tab stop until a cursor is set.
@@ -155,7 +165,7 @@
   function currentRowId(): string | null {
     const active = document.activeElement;
     if (box !== undefined && active instanceof HTMLElement && box.contains(active)) {
-      const row = active.closest<HTMLTableRowElement>("tr[data-entry-id]");
+      const row = active.closest<HTMLLIElement>("li[data-entry-id]");
       if (row !== null && active === row) {
         return row.dataset["entryId"] ?? null;
       }
@@ -238,6 +248,16 @@
     return rogerSourceOf(entry, byId);
   }
 
+  // The time cell's tooltip: the full date and time, and who recorded the entry (the
+  // operator has no column of its own on a slip; the print view keeps one).
+  function recordedBy(entry: JournalEntry): string {
+    return `${formatDateTime(entry.timestamp)} · ${entry.operator}`;
+  }
+
+  function label(entry: JournalEntry): string {
+    return labels.get(entry.counterpartyId ?? "") ?? "";
+  }
+
   function startCorrection(entry: JournalEntry) {
     error = null;
     changingStatus = null;
@@ -302,515 +322,336 @@
   }
 </script>
 
-<!-- The time, with the clock-trust mark: a dimmed "?" for unknown, a small "✓" for manual,
-     nothing for ntp; the sentence from the settings as its tooltip. The top bar says once
-     that the session's clock is unconfirmed, so the mark here can be quiet. -->
+<!-- The time, with the clock-trust mark: a "?" for unknown, a "✓" for manual, nothing for
+     ntp; the sentence from the settings as its tooltip. -->
 {#snippet timeCell(entry: JournalEntry)}
-  <td class="time" title={formatDateTime(entry.timestamp)}>
+  <span class="row-time" title={recordedBy(entry)}>
     {formatTime(entry.timestamp)}{#if entry.clockTrust !== "ntp"}<abbr
-        class="trust"
+        class="row-trust"
         data-trust={entry.clockTrust}
         title={t(`settings.clockTrust.${entry.clockTrust}`)}
         >{t(`journal.trust.${entry.clockTrust}`)}</abbr
       >{/if}
-  </td>
+  </span>
+{/snippet}
+
+<!-- The counterparty with the direction glyph in front; the transport after it when it is
+     not the radio. -->
+{#snippet whoCell(entry: JournalEntry, direction: "out" | "in", name: string)}
+  <span class="row-who">
+    <span class="row-dir" aria-hidden="true">{DIRECTION_GLYPH[direction]}</span><span
+      class="visually-hidden"
+      >{t(`journal.type.message_${direction}`)}
+    </span>{name}
+    {#if entry.transport !== undefined && entry.transport !== "mesh"}
+      <span class="row-meta">· {t(`send.transport.${entry.transport}`)}</span>
+    {/if}
+  </span>
 {/snippet}
 
 {#snippet correctButton(entry: JournalEntry)}
-  <button type="button" class="secondary small" onclick={() => startCorrection(entry)}>
+  <button type="button" class="btn btn-quiet" onclick={() => startCorrection(entry)}>
     {t("journal.action.correct")}
   </button>
 {/snippet}
 
 {#snippet correctionForm(entry: JournalEntry)}
   {#if correcting === entry.id}
-    <tr class="form">
-      <td colspan="7">
-        <form class="inline" onsubmit={(event) => saveCorrection(entry, event)}>
-          <input
-            type="text"
-            placeholder={t("journal.correction.text")}
-            aria-label={t("journal.correction.text")}
-            bind:value={correctionText}
-          />
-          <button type="submit" class="small" disabled={busy || correctionText.trim() === ""}>
-            {t("journal.action.save")}
-          </button>
-          <button type="button" class="secondary small" onclick={cancelForms}
-            >{t("journal.action.cancel")}</button
-          >
-        </form>
-      </td>
-    </tr>
+    <form class="row-form" onsubmit={(event) => saveCorrection(entry, event)}>
+      <div class="field">
+        <input
+          type="text"
+          placeholder={t("journal.correction.text")}
+          aria-label={t("journal.correction.text")}
+          bind:value={correctionText}
+        />
+      </div>
+      <button type="submit" class="btn btn-primary" disabled={busy || correctionText.trim() === ""}>
+        {t("journal.action.save")}
+      </button>
+      <button type="button" class="btn" onclick={cancelForms}>{t("journal.action.cancel")}</button>
+      {#if error}
+        <span class="field-error" role="alert"><Icon name="warning" />{error}</span>
+      {/if}
+    </form>
   {/if}
 {/snippet}
 
-{#snippet correctionRows(corrections: readonly JournalEntry[])}
+<!-- A correction under the entry it corrects: a 14 px neutral line. -->
+{#snippet correctionLines(corrections: readonly JournalEntry[])}
   {#each corrections as correction (correction.id)}
-    <tr
-      class="child"
-      data-type="correction"
-      data-entry-id={correction.id}
-      class:highlighted={highlighted === correction.id}
-      class:cursor={cursor === correction.id}
-      tabindex={rowTabIndex(correction.id)}
-      onfocus={() => (cursor = correction.id)}
-    >
-      {@render timeCell(correction)}
-      <td>{correction.operator}</td>
-      <td>{t("journal.type.correction")}</td>
-      <td></td>
-      <td class="text indented" colspan="2">{correction.text ?? ""}</td>
-      <td class="actions">{@render correctButton(correction)}</td>
-    </tr>
-    {@render correctionForm(correction)}
+    <p class="msg row-note" data-entry-id={correction.id} title={recordedBy(correction)}>
+      <span class="row-meta"
+        >{t("journal.type.correction")} {formatShortTime(correction.timestamp)}</span
+      >
+      {correction.text ?? ""}
+    </p>
   {/each}
 {/snippet}
 
-<!-- An outgoing message: its row with the strip, then (when open) its history, its
-     corrections and the forms. `nested` marks a recipient row inside a batch. -->
-{#snippet messageRows(view: MessageView, nested: boolean)}
+<!-- An outgoing message: the row with its strip, its actions, its forms, its history when
+     open and its corrections. `nested` marks a recipient row inside a batch. -->
+{#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
   {@const inflightText = inflight(entry.id)}
-  <tr
-    class:child={nested}
+  {@const open = expanded[entry.id] === true}
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <li
     data-type="message_out"
     data-entry-id={entry.id}
-    class:highlighted={highlighted === entry.id}
-    class:cursor={cursor === entry.id}
+    data-nested={nested ? "true" : undefined}
+    data-expanded={open ? "true" : undefined}
+    aria-current={cursor === entry.id ? "true" : undefined}
     tabindex={rowTabIndex(entry.id)}
     onfocus={() => (cursor = entry.id)}
   >
     {@render timeCell(entry)}
-    <td>{entry.operator}</td>
-    <td>
-      {t("journal.type.message_out")}
-      {#if entry.transport !== undefined && entry.transport !== "mesh"}
-        <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
-      {/if}
-    </td>
-    <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
-    <td class="text" class:indented={nested}>
+    {@render whoCell(entry, "out", label(entry))}
+    <span class="row-body">
       {entry.text ?? ""}
       {#if view.answers !== null}
         {@const answers = view.answers}
-        <div class="reply-mark">
-          <button
-            type="button"
-            class="link"
-            title={answers.text ?? ""}
-            onclick={() => scrollToEntry(answers.id)}
-          >
-            {t("journal.reply.answers", { time: formatShortTime(answers.timestamp) })}
-          </button>
-        </div>
+        <button
+          type="button"
+          class="btn-link"
+          title={answers.text ?? ""}
+          onclick={() => scrollToEntry(answers.id)}
+        >
+          {t("journal.reply.answers", { time: formatShortTime(answers.timestamp) })}
+        </button>
       {/if}
-      <div class="strip">
-        {#each view.strip as item, index (index)}
-          {#if index > 0}<span class="dot">·</span>{/if}
-          <span data-kind={item.kind} title={item.at === null ? undefined : formatDateTime(item.at)}
-            >{stripText(item, inflightText)}</span
-          >
-        {/each}
-      </div>
-    </td>
-    <td>
-      <span class="chip" data-status={view.status}>{t(`journal.status.${view.status}`)}</span>
-    </td>
-    <td class="actions">
+    </span>
+    <span class="row-strip strip">
+      {#each view.strip as item, index (index)}
+        {@const look = stripChip(item.kind)}
+        <span
+          class="chip {chipClass(look.tint)}"
+          data-kind={item.kind}
+          title={item.at === null ? undefined : formatDateTime(item.at)}
+        >
+          <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{stripText(
+            item,
+            inflightText,
+          )}
+        </span>
+      {/each}
+    </span>
+    <span class="row-actions">
       {#if canRetry(entry)}
-        <button type="button" class="secondary small" onclick={() => onretry(entry)}>
-          {view.status === "given_up" ? t("send.retry") : t("send.sendNow")}
+        <button type="button" class="btn btn-quiet" onclick={() => onretry(entry)}>
+          <Icon name="retry" />{view.status === "given_up" ? t("send.retry") : t("send.sendNow")}
         </button>
       {/if}
       {#if canChangeStatus(view)}
-        <button type="button" class="secondary small" onclick={() => startStatus(entry)}>
-          {t("journal.action.status")}
+        <button type="button" class="btn btn-quiet" onclick={() => startStatus(entry)}>
+          <Icon name="check" />{t("journal.action.status")}
         </button>
       {/if}
       {#if view.history.length > 0}
         <button
           type="button"
-          class="secondary small"
-          aria-expanded={expanded[entry.id] === true}
+          class="btn btn-quiet"
+          aria-expanded={open}
           onclick={() => toggle(entry.id)}
         >
-          {expanded[entry.id] === true
+          <Icon name="history" />{open
             ? t("journal.action.hideHistory")
             : t("journal.action.history", { count: view.history.length })}
         </button>
       {/if}
       {@render correctButton(entry)}
-    </td>
-  </tr>
+    </span>
 
-  {#if changingStatus === entry.id && entry.transport !== undefined}
-    <tr class="form">
-      <td colspan="7">
-        <div class="inline">
+    {#if changingStatus === entry.id && entry.transport !== undefined}
+      <div class="row-form">
+        <div class="field">
           <input
             type="text"
             placeholder={t("journal.manual.reason")}
             aria-label={t("journal.manual.reason")}
             bind:value={reason}
           />
-          {#each manualStatusesFor(entry.transport) as next (next)}
-            <button
-              type="button"
-              class="small"
-              disabled={busy || reason.trim() === ""}
-              onclick={() => saveStatus(entry, next)}
-            >
-              {t(`send.manual.${next}`)}
-            </button>
-          {/each}
-          <button type="button" class="secondary small" onclick={cancelForms}
-            >{t("journal.action.cancel")}</button
-          >
         </div>
-      </td>
-    </tr>
-  {/if}
-  {@render correctionForm(entry)}
+        {#each manualStatusesFor(entry.transport) as next (next)}
+          <button
+            type="button"
+            class="btn"
+            disabled={busy || reason.trim() === ""}
+            onclick={() => saveStatus(entry, next)}
+          >
+            {t(`send.manual.${next}`)}
+          </button>
+        {/each}
+        <button type="button" class="btn btn-quiet" onclick={cancelForms}
+          >{t("journal.action.cancel")}</button
+        >
+        {#if error}
+          <span class="field-error" role="alert"><Icon name="warning" />{error}</span>
+        {/if}
+      </div>
+    {/if}
+    {@render correctionForm(entry)}
 
-  {#if expanded[entry.id] === true}
-    {#each view.history as item (item.entry.id)}
-      {@const source = rogerSource(item.entry)}
-      <tr
-        class="child history"
-        data-type={item.entry.type}
-        data-entry-id={item.entry.id}
-        class:highlighted={highlighted === item.entry.id}
-        class:cursor={cursor === item.entry.id}
-        tabindex={rowTabIndex(item.entry.id)}
-        onfocus={() => (cursor = item.entry.id)}
-      >
-        {@render timeCell(item.entry)}
-        <td>{item.entry.operator}</td>
-        <td>{t(`journal.type.${item.entry.type}`)}</td>
-        <td></td>
-        <td class="text indented" colspan="2">
-          {historyDetail(item.entry)}
-          {#if source !== undefined}
-            <button type="button" class="link" onclick={() => scrollToEntry(source.id)}>
-              {formatTime(source.timestamp)}
-            </button>
-          {/if}
-        </td>
-        <td class="actions">{@render correctButton(item.entry)}</td>
-      </tr>
-      {@render correctionForm(item.entry)}
-      {@render correctionRows(item.corrections)}
-    {/each}
-  {/if}
-  {@render correctionRows(view.corrections)}
-{/snippet}
-
-<div class="timeline" bind:this={box} {onscroll}>
-  {#if rows.length === 0}
-    <p class="muted">{t("journal.entries.empty")}</p>
-  {:else}
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">{t("journal.entries.time")}</th>
-          <th scope="col">{t("journal.timeline.operator")}</th>
-          <th scope="col">{t("journal.entries.type")}</th>
-          <th scope="col">{t("journal.entries.counterparty")}</th>
-          <th scope="col">{t("journal.entries.text")}</th>
-          <th scope="col">{t("journal.timeline.status")}</th>
-          <th scope="col"><span class="visually-hidden">{t("journal.timeline.actions")}</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each rows as row (row.id)}
-          {#if row.kind === "message"}
-            {@render messageRows(row.message, false)}
-          {:else if row.kind === "batch"}
-            <tr
-              data-type="batch"
-              data-entry-id={row.id}
-              class:highlighted={highlighted === row.id}
-              class:cursor={cursor === row.id}
-              tabindex={rowTabIndex(row.id)}
-              onfocus={() => (cursor = row.id)}
-            >
-              {@render timeCell(row.entry)}
-              <td>{row.entry.operator}</td>
-              <td>{t("journal.type.message_out")}</td>
-              <td class="label">{t("journal.batch.toAll", { count: row.counters.total })}</td>
-              <td class="text">
-                {batchText(row.body, row.drill)}
-                <div class="strip">{countersText(row.counters)}</div>
-              </td>
-              <td>
-                <span class="chip" data-status={row.status}
-                  >{t(`journal.status.${row.status}`)}</span
-                >
-              </td>
-              <td class="actions">
-                <button
-                  type="button"
-                  class="secondary small"
-                  aria-expanded={expanded[row.id] === true}
-                  onclick={() => toggle(row.id)}
-                >
-                  {expanded[row.id] === true
-                    ? t("journal.batch.collapse")
-                    : t("journal.batch.expand", { count: row.counters.total })}
-                </button>
-              </td>
-            </tr>
-            {#if expanded[row.id] === true}
-              {#each row.messages as view (view.entry.id)}
-                {@render messageRows(view, true)}
-              {/each}
-            {/if}
-          {:else}
-            {@const entry = row.entry}
-            {@const incoming = entry.type === "message_in"}
-            <tr
-              data-type={entry.type}
-              data-entry-id={entry.id}
-              class:highlighted={highlighted === entry.id}
-              class:cursor={cursor === entry.id}
-              tabindex={rowTabIndex(entry.id)}
-              onfocus={() => (cursor = entry.id)}
-            >
-              {@render timeCell(entry)}
-              <td>{entry.operator}</td>
-              <td>
-                {t(`journal.type.${entry.type}`)}
-                {#if entry.transport !== undefined && entry.transport !== "mesh"}
-                  <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
-                {/if}
-              </td>
-              <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
-              <td class="text">
-                {#if entry.type === "status_change"}
-                  {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
-                    · {entry.text}{/if}
-                {:else}
-                  {entry.text ?? ""}
-                {/if}
-                {#if row.answeredBy.length > 0}
-                  <div class="strip">
-                    {#each row.answeredBy as reply, index (reply.id)}
-                      {#if index > 0}<span class="dot">·</span>{/if}
-                      <button
-                        type="button"
-                        class="link"
-                        title={reply.text ?? ""}
-                        onclick={() => scrollToEntry(reply.id)}
-                      >
-                        {t("journal.reply.answered", { time: formatShortTime(reply.timestamp) })}
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-              </td>
-              <td></td>
-              <td class="actions">
-                {#if incoming}
-                  <button type="button" class="small" onclick={() => onreply(entry)}>
-                    {t("journal.action.reply")}
+    {#if open}
+      <div class="row-detail">
+        <ul>
+          {#each view.history as item (item.entry.id)}
+            {@const source = rogerSource(item.entry)}
+            <li data-entry-id={item.entry.id}>
+              <span class="row-time" title={formatDateTime(item.entry.timestamp)}
+                >{formatTime(item.entry.timestamp)}</span
+              >
+              <span>
+                {historyDetail(item.entry)}
+                {#if source !== undefined}
+                  <button type="button" class="btn-link" onclick={() => scrollToEntry(source.id)}>
+                    {formatTime(source.timestamp)}
                   </button>
                 {/if}
-                {@render correctButton(entry)}
-              </td>
-            </tr>
-            {@render correctionForm(entry)}
-            {@render correctionRows(row.corrections)}
-          {/if}
-        {/each}
-      </tbody>
-    </table>
-  {/if}
-</div>
+              </span>
+              <span class="row-meta">{item.entry.operator}</span>
+            </li>
+            {#each item.corrections as correction (correction.id)}
+              <li data-entry-id={correction.id} title={recordedBy(correction)}>
+                <span class="row-time">{formatTime(correction.timestamp)}</span>
+                <span>{t("journal.type.correction")}: {correction.text ?? ""}</span>
+                <span class="row-meta">{correction.operator}</span>
+              </li>
+            {/each}
+          {/each}
+        </ul>
+      </div>
+    {/if}
+    {@render correctionLines(view.corrections)}
+  </li>
+{/snippet}
 
-<div class="footer">
-  {#if error}
-    <span class="error" role="alert">{error}</span>
-  {/if}
+<div class="rows-box timeline" bind:this={box} {onscroll}>
   {#if newCount > 0}
-    <button type="button" class="pill" onclick={jumpToTop}
-      >{t("journal.timeline.newRows", { n: newCount })}</button
-    >
+    <div class="rows-top">
+      <button type="button" class="chip chip-accent" onclick={jumpToTop}
+        >{t("journal.timeline.newRows", { n: newCount })}</button
+      >
+    </div>
+  {/if}
+  {#if rows.length === 0}
+    <div class="empty"><p>{t("journal.entries.empty")}</p></div>
+  {:else}
+    <ol class="rows">
+      {#each rows as row (row.id)}
+        {#if row.kind === "message"}
+          {@render messageRow(row.message, false)}
+        {:else if row.kind === "batch"}
+          {@const open = expanded[row.id] === true}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <li
+            data-type="batch"
+            data-entry-id={row.id}
+            data-expanded={open ? "true" : undefined}
+            aria-current={cursor === row.id ? "true" : undefined}
+            tabindex={rowTabIndex(row.id)}
+            onfocus={() => (cursor = row.id)}
+          >
+            {@render timeCell(row.entry)}
+            {@render whoCell(
+              row.entry,
+              "out",
+              t("journal.batch.toAll", { count: row.counters.total }),
+            )}
+            <span class="row-body">{batchText(row.body, row.drill)}</span>
+            <span class="row-strip strip">
+              {#each counterChips(row.counters) as counter (counter.key)}
+                <span class="chip {chipClass(counter.look.tint)}" data-kind={counter.key}>
+                  <span class="chip-dot" class:chip-dot-outline={counter.look.dot === "outline"}
+                  ></span>{t(`journal.batch.counter.${counter.key}`, { n: counter.n })}
+                </span>
+              {/each}
+            </span>
+            <span class="row-actions">
+              <button
+                type="button"
+                class="btn btn-quiet"
+                aria-expanded={open}
+                onclick={() => toggle(row.id)}
+              >
+                <Icon name="chevron" />{open
+                  ? t("journal.batch.collapse")
+                  : t("journal.batch.expand", { count: row.counters.total })}
+              </button>
+            </span>
+          </li>
+          {#if open}
+            {#each row.messages as view (view.entry.id)}
+              {@render messageRow(view, true)}
+            {/each}
+          {/if}
+        {:else}
+          {@const entry = row.entry}
+          {@const incoming = entry.type === "message_in"}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <li
+            data-type={entry.type}
+            data-entry-id={entry.id}
+            aria-current={cursor === entry.id ? "true" : undefined}
+            tabindex={rowTabIndex(entry.id)}
+            onfocus={() => (cursor = entry.id)}
+          >
+            {@render timeCell(entry)}
+            {#if incoming}
+              {@render whoCell(entry, "in", label(entry))}
+            {:else}
+              <span class="row-who">{entry.operator}</span>
+            {/if}
+            <span class="row-body">
+              {#if entry.type === "status_change"}
+                {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
+                  · {entry.text}{/if}
+              {:else}
+                {entry.text ?? ""}
+              {/if}
+            </span>
+            <span class="row-strip strip">
+              {#if entry.type === "status_change"}
+                <span class="chip" data-kind={entry.newStatus}
+                  ><span class="chip-dot"></span>{t(
+                    `journal.status.${entry.newStatus ?? "pending"}`,
+                  )}</span
+                >
+              {/if}
+              {#each row.answeredBy as reply (reply.id)}
+                <span class="chip">
+                  <button
+                    type="button"
+                    class="btn-link"
+                    title={reply.text ?? ""}
+                    onclick={() => scrollToEntry(reply.id)}
+                  >
+                    {t("journal.reply.answered", { time: formatShortTime(reply.timestamp) })}
+                  </button>
+                </span>
+              {/each}
+            </span>
+            <span class="row-actions">
+              {#if incoming}
+                <button type="button" class="btn btn-quiet" onclick={() => onreply(entry)}>
+                  <Icon name="reply" />{t("journal.action.reply")}
+                </button>
+              {/if}
+              {@render correctButton(entry)}
+            </span>
+            {@render correctionForm(entry)}
+            {@render correctionLines(row.corrections)}
+          </li>
+        {/if}
+      {/each}
+    </ol>
   {/if}
 </div>
 
 <style>
+  /* Layout only: the box fills what the column leaves it (JournalPage.svelte sizes the
+     column) and scrolls inside. */
   .timeline {
-    /* At 1280×720 and the 18 px base this is the rest of the viewport under the incident
-       bar: ten one-line rows and the header (P1-09). */
-    max-height: 60vh;
-    overflow-y: auto;
-    /* Rows inserted above the viewport must not move what the operator is reading. */
-    overflow-anchor: auto;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface);
-  }
-
-  .footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 1rem;
-    min-height: 2rem;
-    margin-top: 0.25rem;
-  }
-
-  .muted {
-    color: var(--muted);
-    padding: 0.75rem;
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.35rem 0.5rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  thead th {
-    position: sticky;
-    top: 0;
-    background: var(--light);
-    border-bottom-color: var(--line);
-  }
-
-  .time {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .trust {
-    margin-left: 0.15rem;
-    font-size: 0.8em;
-    color: var(--muted);
-    text-decoration: none;
-    cursor: help;
-  }
-
-  .trust[data-trust="unknown"] {
-    opacity: 0.6;
-  }
-
-  .trust[data-trust="manual"] {
-    color: var(--ok);
-  }
-
-  .label {
-    font-weight: 600;
-  }
-
-  .text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    width: 40%;
-  }
-
-  .strip {
-    margin-top: 0.15rem;
-    font-size: 0.85rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .strip .dot {
-    margin: 0 0.3rem;
-  }
-
-  .strip [data-kind="delivered"],
-  .strip [data-kind="roger"] {
-    color: var(--ok);
-  }
-
-  .strip [data-kind="given_up"] {
-    color: var(--error);
-  }
-
-  .indented {
-    padding-left: 1.5rem;
-  }
-
-  tr.child td {
-    border-bottom-style: dashed;
-    font-size: 0.9rem;
-  }
-
-  tr.history td {
-    color: var(--muted);
-  }
-
-  tr[data-type="message_in"] {
-    background: var(--surface-in);
-  }
-
-  .reply-mark {
-    margin-top: 0.15rem;
-    font-size: 0.85rem;
-  }
-
-  tr[data-type="batch"] td {
-    background: var(--light);
-  }
-
-  /* The focus ring on a row sits inside the row: the box clips anything outside. */
-  tr[data-entry-id]:focus-visible {
-    outline: 3px solid var(--focus);
-    outline-offset: -3px;
-  }
-
-  /* The current row for J / K / Enter / R: a bar at its left edge, kept when the focus moves
-     on (into the reply form, say). */
-  tr.cursor td:first-child {
-    box-shadow: inset 0.3rem 0 0 var(--navy);
-  }
-
-  tr.highlighted {
-    outline: 3px solid var(--navy);
-    outline-offset: -3px;
-  }
-
-  tr.form td {
-    background: var(--light);
-  }
-
-  /* The row buttons wrap instead of widening the table past the box. */
-  .actions {
-    min-width: 10rem;
-  }
-
-  .actions button {
-    margin: 0 0.25rem 0.25rem 0;
-  }
-
-  .inline {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .inline input {
-    flex: 1;
-    min-width: 12rem;
-  }
-
-  .pill {
-    padding: 0.2rem 0.8rem;
-    border-radius: 999px;
+    flex: 1 1 auto;
   }
 </style>

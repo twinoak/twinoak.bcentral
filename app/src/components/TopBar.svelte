@@ -42,7 +42,7 @@
 
     <div class="shell-end">
       <!-- The operator: the name, and the handover page on click (the next operator's first
-         screen); without a name, the settings, where the name is set. -->
+         screen); without a name, the journal, where the setup card asks for it (P2-03). -->
       <button
         type="button"
         class="chip"
@@ -50,7 +50,7 @@
         title={hasOperatorName()
           ? t("topbar.operator", { name: settings.operatorName })
           : t("topbar.noOperator")}
-        onclick={() => navigate(hasOperatorName() ? "handover" : "settings")}
+        onclick={() => navigate(hasOperatorName() ? "handover" : "journal")}
       >
         <span class="chip-label">
           {hasOperatorName() ? settings.operatorName : t("topbar.noOperator")}
