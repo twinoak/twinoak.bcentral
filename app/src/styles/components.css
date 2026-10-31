@@ -987,6 +987,75 @@ button.chip:hover {
   margin: 0;
 }
 
+/* --- Document (the print pages, P2-05): the journal and the register as paper, previewed on
+   screen under a no-print toolbar. On screen a white sheet with the card's edge; on paper
+   (the print block at the end of this file) no edge, no padding, 12 pt (base.css). The lines
+   are a `.table` with the document's own cells: the time on one line, the text taking half
+   the width, a nested line (a batch's recipient, a correction) indented and 14 px under a
+   dashed rule, a batch's line on surface-2. The quiet words — a message's strip, a batch's
+   counters, a transport word, the register's count line — are `.doc-meta`, 14 px ink-2: the
+   paper grey. */
+.doc {
+  padding: var(--s-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.doc-head h1 {
+  margin-bottom: var(--s-2);
+}
+
+.doc-head .dl {
+  margin: 0 0 var(--s-4);
+}
+
+.doc-head .msg {
+  margin: 0 0 var(--s-3);
+}
+
+.doc h2 {
+  margin: var(--s-5) 0 var(--s-2);
+}
+
+.doc-meta {
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+/* A document has no hover: its lines are read, not picked. */
+.doc .table tbody tr:hover {
+  background: transparent;
+}
+
+.doc-time {
+  white-space: nowrap;
+}
+
+.doc-text {
+  width: 50%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.doc-status {
+  white-space: nowrap;
+}
+
+.doc-indent {
+  padding-left: var(--s-6);
+}
+
+.doc tr[data-nested="true"] td {
+  border-bottom-style: dashed;
+  font-size: var(--fs-14);
+}
+
+.doc tr[data-type="batch"] td {
+  background: var(--surface-2);
+  font-weight: 500;
+}
+
 /* --- Shell (docs/design.md §The shell, P2-02): the one 56 px top bar — surface with a rule
    under it, the wordmark, the incident chip, the status chips, the navigation (text links,
    the 2 px accent underline of `.tab[aria-current="page"]` on the current one), the operator
@@ -1052,4 +1121,80 @@ button.chip:hover {
 :root[data-drill="true"] .shell {
   background: var(--drill-bg);
   color: var(--drill);
+}
+
+/* --- On paper (docs/design.md §Screens → Print, P2-05): black on white at 12 pt (base.css
+   sets the root), status words instead of chips — a chip is its word, a strip its words with
+   the dots gone, a tinted message its sentence — and nothing floats, scrolls or tints. The
+   document loses its sheet and the cards their edges; the drill line keeps a black edge so a
+   drill's paper is told from a real one in black and white. Lines do not break across pages. */
+@media print {
+  .doc,
+  .card,
+  .rows-box,
+  .table-box {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .rows-box,
+  .table-box {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .table th {
+    position: static;
+    background: transparent;
+    color: var(--ink);
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .doc tr[data-type="batch"] td {
+    background: transparent;
+    font-weight: 600;
+  }
+
+  .doc tr,
+  .rows > * {
+    break-inside: avoid;
+  }
+
+  .chip,
+  .msg-ok,
+  .msg-warn,
+  .msg-danger,
+  .msg-drill {
+    padding: 0;
+    background: transparent;
+    color: var(--ink);
+    box-shadow: none;
+  }
+
+  .chip-dot,
+  .chip .icon {
+    display: none;
+  }
+
+  .doc-drill {
+    padding: var(--s-1) var(--s-2);
+    border: 1px solid var(--ink);
+    font-weight: 600;
+  }
+
+  .rows > :hover,
+  .rows > [data-expanded="true"],
+  .rows > [data-nested="true"],
+  .rows > [aria-current="true"] {
+    background: transparent;
+  }
+
+  .toast,
+  .popover,
+  .popover-dialog,
+  .rows-top {
+    display: none;
+  }
 }

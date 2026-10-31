@@ -1,8 +1,7 @@
 // Colour literals outside the token sheet (docs/design.md §Forbidden, P2-01): a `#hex`, an
 // `rgb(` / `rgba(` or an `hsl(` / `hsla(` in a .svelte file or in any CSS but
 // styles/tokens.css. Pure: text in, the literals with their line numbers out; the test
-// (colourLiterals.test.ts) walks src/ and counts. Off (`todo`) until P2-05 turns it on at
-// zero; P2-02 to P2-04 report the count as they bring it down.
+// (colourLiterals.test.ts) walks src/ and counts, and fails on any since P2-05.
 
 export interface ColourLiteral {
   line: number;

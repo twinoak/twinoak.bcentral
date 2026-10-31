@@ -7,9 +7,10 @@
 // street, the register is a toolbar over a table with the form in a side card, the radio is
 // a state card, a contacts table and a monospaced log list with Clear, the settings are one
 // column of cards each with its own Save or an at-once switch, every table is `.table` with
-// its numbers right-aligned, and the transition sheet keeps only the print pages' rules.
+// its numbers right-aligned, and the transition sheet is gone (P2-05 took the print pages,
+// its last users, onto the components).
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -187,11 +188,11 @@ describe("the other screens (P2-04)", () => {
     }
   });
 
-  it("the transition sheet keeps only the print pages' rules and the alias block three names", () => {
-    const transition = read("styles/transition.css").replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(transition).not.toMatch(/^main\b/m);
-    expect(transition).not.toMatch(/\.secondary|\.small\b|\.button\b|data-status/);
+  it("the transition sheet is gone (P2-05) and the alias block with it", () => {
+    expect(existsSync(join(srcDir, "styles/transition.css"))).toBe(false);
+    expect(read("app.css")).not.toContain("transition.css");
     const tokens = read("styles/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(tokens).not.toMatch(/--muted:|--line:|--error:/);
     expect(tokens).not.toMatch(/--light:|--surface-in:|--surface-given-up:|--dot-/);
     const base = read("styles/base.css");
     expect(base).toMatch(/^main \{\s*max-width: 90rem;/m);
