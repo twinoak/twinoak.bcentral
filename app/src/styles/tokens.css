@@ -1,0 +1,119 @@
+/* The tokens (docs/design.md §Tokens, P2-01). The one file where a colour literal may be
+   written: the literal check (src/lib/colourLiterals.test.ts) fails on a hex, rgb() or hsl()
+   anywhere else, and the contrast check (scripts/check-contrast.mjs, first in `npm run test`)
+   reads the two blocks below and holds every pair in scripts/contrast.mjs to 7:1 for text and
+   3:1 for UI chrome in both modes. A value that fails is adjusted here; the rule is not.
+
+   Sizes are in rem so the text-size setting (Settings → Screen, lib/appearance.ts) scales the
+   whole screen: the px in the comments are at the normal 16 px root. */
+:root {
+  /* Colour. A pair (`--ok` on `--ok-bg`) is a status, not a decoration: the tinted
+     background goes on chips, badges and inline messages only, never on a band or a card. */
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --ink: #16191d;
+  --ink-2: #3f4753;
+  --rule: #dde1e6;
+  /* The document's #bac1ca is 1.8:1 on white; input borders are chrome and need 3:1 on
+     every grey surface, so the value is darker than written. */
+  --rule-2: #7f8791;
+  --accent: #1e3a5f;
+  --accent-weak: #e8eef6;
+  --on-accent: #ffffff;
+  --ok: #15592f;
+  --ok-bg: #e6f2ea;
+  --warn: #6b4a00;
+  --warn-bg: #fbf1d6;
+  --danger: #8f2017;
+  --danger-bg: #fbebe8;
+  --drill: #4a2a78;
+  --drill-bg: #efe8f8;
+  --focus: #1e3a5f;
+  /* Depth: only a popover and the toast float. Cards have a border and no shadow. */
+  --shadow: 0 4px 16px rgba(22, 25, 29, 0.12);
+
+  /* Type. Inter is bundled (styles/base.css); the stack after it is for the first paint. */
+  --font: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  --fs-13: 0.8125rem; /* meta, table captions */
+  --fs-14: 0.875rem; /* labels, chips, help */
+  --fs-16: 1rem; /* body, rows */
+  --fs-18: 1.125rem; /* row text in the journal */
+  --fs-20: 1.25rem; /* section titles */
+  --fs-24: 1.5rem; /* page titles */
+
+  /* Space: the 4 px grid. */
+  --s-1: 0.25rem; /* 4 */
+  --s-2: 0.5rem; /* 8 */
+  --s-3: 0.75rem; /* 12 */
+  --s-4: 1rem; /* 16 */
+  --s-5: 1.5rem; /* 24 */
+  --s-6: 2rem; /* 32 */
+  --s-7: 3rem; /* 48 */
+
+  /* Shape. Nothing rounder. */
+  --r-1: 4px; /* controls, chips */
+  --r-2: 8px; /* cards, popovers */
+
+  /* The root type: 16 px normal, with the two larger sizes below; line height 1.45. The
+     contrast check reads these two lines. */
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+:root[data-font-size="large"] {
+  font-size: 18px;
+}
+
+:root[data-font-size="largest"] {
+  font-size: 21px;
+}
+
+/* High contrast (Settings → High contrast, kept from P1-09): the greys collapse to black and
+   white, the accent and the four status hues stay (each passes on white), the tinted
+   backgrounds go white so a chip is its coloured word with an edge (components.css draws
+   the edge), and nothing floats. */
+:root[data-contrast="high"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --ink: #000000;
+  --ink-2: #000000;
+  --rule: #000000;
+  --rule-2: #000000;
+  --accent-weak: #ffffff;
+  --ok-bg: #ffffff;
+  --warn-bg: #ffffff;
+  --danger-bg: #ffffff;
+  --drill-bg: #ffffff;
+  --focus: #000000;
+  --shadow: none;
+}
+
+/* Transition aliases: the P1-09 names the screens still reference, each an alias of a token
+   above. P2-02 to P2-05 move every screen onto the names above and delete these lines as
+   their last reference goes; nothing new uses them. The one value of its own is the focus
+   ring on the navy top bar, which P2-02 removes with the bar. */
+:root {
+  --navy: var(--accent);
+  --on-navy: var(--on-accent);
+  --light: var(--bg);
+  --muted: var(--ink-2);
+  --line: var(--rule-2);
+  --error: var(--danger);
+  --surface-in: var(--accent-weak);
+  --surface-given-up: var(--danger-bg);
+  --alert-bg: var(--danger-bg);
+  --drill-line: var(--drill);
+  --dot-idle: var(--rule-2);
+  --dot-connecting: var(--warn);
+  --dot-connected: var(--ok);
+  --dot-blind: var(--danger);
+  --focus-on-navy: #ffd166;
+}
+
+:root[data-contrast="high"] {
+  --dot-idle: var(--surface);
+  --dot-connecting: var(--surface);
+  --dot-blind: var(--surface);
+}

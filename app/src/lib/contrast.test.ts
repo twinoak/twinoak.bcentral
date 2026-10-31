@@ -1,5 +1,6 @@
-// The contrast check that `npm run test` runs over app.css (scripts/check-contrast.mjs),
-// exercised here: the maths, the token reading, and the real stylesheet in both modes.
+// The contrast check that `npm run test` runs over styles/tokens.css
+// (scripts/check-contrast.mjs), exercised here: the maths, the token reading, and the real
+// token sheet in both modes.
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -19,7 +20,7 @@ import {
   topLevelCss,
 } from "../../scripts/contrast.mjs";
 
-const appCss = readFileSync(new URL("../app.css", import.meta.url), "utf8");
+const tokensCss = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
 
 describe("WCAG contrast maths", () => {
   it("black on white is 21:1, white on white 1:1, in either order", () => {
@@ -35,10 +36,10 @@ describe("WCAG contrast maths", () => {
     expect(luminance("#808080")).toBeCloseTo(0.2159, 3);
   });
 
-  it("the thresholds are the task's: 7:1 for text, 3:1 for chrome, 18 px, 1.4", () => {
+  it("the thresholds are the document's: 7:1 for text, 3:1 for chrome, 16 px, 1.4", () => {
     expect(TEXT_MIN).toBe(7);
     expect(CHROME_MIN).toBe(3);
-    expect(MIN_FONT_SIZE_PX).toBe(18);
+    expect(MIN_FONT_SIZE_PX).toBe(16);
     expect(MIN_LINE_HEIGHT).toBe(1.4);
   });
 });
@@ -46,15 +47,16 @@ describe("WCAG contrast maths", () => {
 describe("reading the tokens", () => {
   const css = `
     /* a comment with :root { --x: #000 } inside */
-    :root { --a: #ffffff; --b: var(--a); --c: #123; font-size: 18px; line-height: 1.4; }
+    :root { --a: #ffffff; --b: var(--a); --c: #123; font-size: 16px; line-height: 1.45; }
     :root[data-contrast="high"] { --a: #000000; }
-    @media print { :root { font-size: 11pt; --a: #ff0000; } }
+    @media print { :root { font-size: 12pt; --a: #ff0000; } }
     .other { --a: #00ff00; }
+    :root { --d: var(--c); }
   `;
 
   it("drops comments and at-rule blocks, keeps top-level rules", () => {
     const top = topLevelCss(css);
-    expect(top).not.toContain("11pt");
+    expect(top).not.toContain("12pt");
     expect(top).not.toContain("comment");
     expect(top).toContain(".other");
   });
@@ -62,9 +64,14 @@ describe("reading the tokens", () => {
   it("the high-contrast block overrides the normal one, token by token", () => {
     const { normal, high } = readTokens(css);
     expect(normal["--a"]).toBe("#ffffff");
-    expect(normal["font-size"]).toBe("18px");
+    expect(normal["font-size"]).toBe("16px");
     expect(high["--a"]).toBe("#000000");
     expect(high["--c"]).toBe("#123");
+  });
+
+  it("a second :root block adds to the first (the transition aliases)", () => {
+    const { normal } = readTokens(css);
+    expect(resolveColour(normal, "--d")).toBe("#123");
   });
 
   it("resolves var() references and refuses a missing or circular token", () => {
@@ -85,26 +92,40 @@ describe("reading the tokens", () => {
   });
 });
 
-describe("app.css", () => {
+describe("styles/tokens.css", () => {
   it("declares both modes", () => {
-    expect(appCss).toContain(HIGH_CONTRAST_SELECTOR);
+    expect(tokensCss).toContain(HIGH_CONTRAST_SELECTOR);
   });
 
   // Acceptance: 7:1 for text and 3:1 for UI chrome in normal and high-contrast mode.
-  it("passes every pair in normal and in high-contrast mode, at 18 px and 1.4", () => {
-    const { modes, type, failures } = checkCss(appCss);
+  it("passes every pair in normal and in high-contrast mode, at 16 px and 1.45", () => {
+    const { modes, type, failures } = checkCss(tokensCss);
     expect(failures).toEqual([]);
     expect(modes.normal).toHaveLength(PAIRS.length);
     expect(modes.high).toHaveLength(PAIRS.length);
     expect(modes.normal.every((r) => r.ok)).toBe(true);
     expect(modes.high.every((r) => r.ok)).toBe(true);
+    expect(type.fontSizePx).toBe(16);
+    expect(type.lineHeight).toBe(1.45);
     expect(type.fontSizeOk).toBe(true);
     expect(type.lineHeightOk).toBe(true);
   });
 
-  it("a muted grey lightened back to the old value would fail", () => {
-    const tampered = appCss.replace("--muted: #475059;", "--muted: #5b6672;");
+  it("every colour pair of the document is in the pair list, as text, in both directions of use", () => {
+    for (const status of ["--ok", "--warn", "--danger", "--drill"]) {
+      expect(PAIRS).toContainEqual(
+        expect.objectContaining({ fg: status, bg: `${status}-bg`, kind: "text" }),
+      );
+      expect(PAIRS).toContainEqual(expect.objectContaining({ fg: status, bg: "--surface" }));
+    }
+    expect(PAIRS).toContainEqual(expect.objectContaining({ fg: "--on-accent", bg: "--accent" }));
+    expect(PAIRS).toContainEqual(expect.objectContaining({ fg: "--rule-2", kind: "chrome" }));
+    expect(PAIRS).toContainEqual(expect.objectContaining({ fg: "--focus", kind: "chrome" }));
+  });
+
+  it("the document's input border grey would fail at 3:1", () => {
+    const tampered = tokensCss.replace("--rule-2: #7f8791;", "--rule-2: #bac1ca;");
     const { failures } = checkCss(tampered);
-    expect(failures.some((f) => f.startsWith("normal: --muted"))).toBe(true);
+    expect(failures.some((f) => f.startsWith("normal: --rule-2"))).toBe(true);
   });
 });

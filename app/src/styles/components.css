@@ -1,0 +1,576 @@
+/* The components (docs/design.md §Components, P2-01): one class set every screen uses. No
+   component defines a colour or a size of its own; a component's <style> block may only lay
+   out. Every value here is a token (tokens.css). The style guide (#/styleguide) shows every
+   class below in every variant and state.
+
+   Sizes are rem so the text-size setting scales them; the px in the comments are at 16 px. */
+
+/* --- Icon (lib/icons.ts, components/Icon.svelte): 20 px, 1.75 px stroke, currentColor. */
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  vertical-align: -0.3em;
+}
+
+/* --- Button: 36 px, radius r-1, 500 weight. Variants: primary (accent fill), default
+   (surface, rule-2 border), quiet (no border, accent text — row actions), danger (danger text
+   and border). Icon-only buttons are 36 × 36 with an aria-label. Disabled: half opacity,
+   no colour change. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 2.25rem;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn:not(:disabled):hover {
+  background: var(--surface-2);
+}
+
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--accent) 88%, var(--ink));
+}
+
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn-quiet:not(:disabled):hover {
+  background: var(--accent-weak);
+}
+
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:not(:disabled):hover {
+  background: var(--danger-bg);
+}
+
+.btn-icon {
+  width: 2.25rem;
+  padding: 0;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* --- Field: a label above (14 px 500 ink-2), the control (36 px, rule-2 border, r-1), help
+   below (14 px ink-2), an error below (14 px danger with a glyph — an <Icon name="warning">
+   in the markup). An invalid control carries aria-invalid="true". */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.field > label,
+.field-label {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.field input:not([type="checkbox"]):not([type="radio"]),
+.field select,
+.field textarea,
+.field-input {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.field textarea {
+  min-height: 4.5rem;
+  padding: var(--s-2) var(--s-3);
+  resize: vertical;
+}
+
+.field input[type="file"] {
+  padding: var(--s-1) var(--s-3);
+}
+
+.field input:read-only:not([type="checkbox"]):not([type="radio"]) {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  opacity: 0.5;
+}
+
+.field [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.field-help {
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-1);
+  font-size: var(--fs-14);
+  color: var(--danger);
+}
+
+.field-error .icon {
+  margin-top: -0.05em;
+}
+
+/* A checkbox or radio with its label on one 36 px line. */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 2.25rem;
+  cursor: pointer;
+}
+
+.check input {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* --- Chip: 24 px, 14 px text, r-1, a 6 px dot (`.chip-dot`, `.chip-dot-outline`) or a
+   14 px glyph (`.glyph`, or an .icon) on the left. One variant per status pair; neutral is grey; accent
+   is the active chip. Chips are for status and counters, never for navigation. A chip that
+   is a button opens its popover. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.5rem;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.chip-ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.chip-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.chip-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.chip-drill {
+  background: var(--drill-bg);
+  color: var(--drill);
+}
+
+.chip-accent {
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+:root[data-contrast="high"] .chip {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.chip .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.chip .glyph {
+  font-size: var(--fs-14);
+  line-height: 1;
+}
+
+.chip-dot {
+  flex: none;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.chip-dot-outline {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+/* --- Status strip (journal rows): an inline run of chips separated by ·, 14 px, a dot per
+   state. In a strip the chips drop their background: the dot and the word carry the state,
+   so a dense list stays quiet. Filled dot: roger; outline dot: delivered. */
+.strip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s-2);
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+.strip .chip {
+  height: auto;
+  padding: 0;
+  background: transparent;
+}
+
+.strip > .chip + .chip::before {
+  content: "·";
+  margin-right: var(--s-2);
+  color: var(--ink-2);
+}
+
+:root[data-contrast="high"] .strip .chip {
+  box-shadow: none;
+}
+
+/* --- Card: surface, rule border, r-2, padding s-5, no shadow. One purpose per card. The
+   title is 20 px 600 with s-4 below; a count or an action sits at its right end. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  padding: var(--s-5);
+  min-width: 0;
+}
+
+.card-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-20);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.card-title .count {
+  font-size: var(--fs-16);
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* --- Tabs: text tabs for forms of the same kind in one card; 2 px accent underline on the
+   active one (aria-selected="true"), no pills. */
+.tabs {
+  display: flex;
+  gap: var(--s-5);
+  margin: 0 0 var(--s-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  margin-bottom: -1px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-2);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab[aria-selected="true"],
+.tab[aria-current="page"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* --- Table: header on surface-2 in 13 px 500 ink-2, rows separated by rule, numbers right
+   and tabular (`.num`), hover surface-2, selected (aria-selected="true") accent-weak. The
+   header sticks when the table scrolls inside a `.table-scroll` box. No zebra stripes. */
+.table-scroll {
+  overflow: auto;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.table tr[aria-selected="true"] {
+  background: var(--accent-weak);
+}
+
+:root[data-contrast="high"] .table tr[aria-selected="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* --- Row list (journal, open items, handover lists): every child of `.rows` is a row, a
+   grid of time | who | body | strip; time 14 px ink-2 tabular, who 500, body 18 px, strip
+   at the right. The current row (aria-current="true", the keyboard cursor) or a selected
+   row (aria-selected="true") is accent-weak; an expanded row's history (`.row-detail`)
+   sits on surface-2 under it. */
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rows > * {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  gap: var(--s-1) var(--s-4);
+  align-items: baseline;
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.rows > :hover {
+  background: var(--surface-2);
+}
+
+.rows > [aria-selected="true"],
+.rows > [aria-current="true"] {
+  background: var(--accent-weak);
+}
+
+:root[data-contrast="high"] .rows > [aria-selected="true"],
+:root[data-contrast="high"] .rows > [aria-current="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.row-time {
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row-who {
+  font-weight: 500;
+}
+
+.row-body {
+  font-size: var(--fs-18);
+  overflow-wrap: anywhere;
+}
+
+.row-strip {
+  justify-self: end;
+}
+
+.row-detail {
+  grid-column: 1 / -1;
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--fs-14);
+}
+
+/* --- Popover: surface, r-2, the floating shadow, max 360 px; a title line, a sentence, one
+   action. Opened from a status chip; Esc closes. */
+.popover {
+  position: absolute;
+  z-index: 20;
+  width: max-content;
+  max-width: 22.5rem;
+  padding: var(--s-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.popover-title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
+.popover p {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+.popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+/* --- Toast: bottom left, one at a time, neutral surface with the floating shadow; for
+   confirmations only, never for errors. */
+.toast {
+  position: fixed;
+  left: var(--s-5);
+  bottom: var(--s-5);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 22.5rem;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+/* --- Inline message: a 14 px line with a glyph (an .icon in the markup), next to the thing
+   it is about, never at the top of the page. The status variants carry their pair. */
+.msg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+.msg .icon {
+  margin-top: -0.05em;
+}
+
+.msg-ok,
+.msg-warn,
+.msg-danger,
+.msg-drill {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-1);
+}
+
+.msg-ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.msg-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.msg-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.msg-drill {
+  background: var(--drill-bg);
+  color: var(--drill);
+}
+
+:root[data-contrast="high"] .msg-ok,
+:root[data-contrast="high"] .msg-warn,
+:root[data-contrast="high"] .msg-danger,
+:root[data-contrast="high"] .msg-drill {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* --- Empty state: one sentence in ink-2 and one button, centred in the space the content
+   would fill. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  min-height: 10rem;
+  padding: var(--s-6) var(--s-4);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.empty p {
+  max-width: 36rem;
+  margin: 0;
+}

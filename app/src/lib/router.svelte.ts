@@ -1,7 +1,8 @@
 // Hash routing by hand: nine screens, no library. "#/settings", "#/journal", "#/queue",
 // "#/register", "#/register/print" (the register's print view, P1-06), "#/radio",
-// "#/print" (the journal's print view, P1-04) and "#/handover" (the shift handover, P1-08)
-// are routes; anything else is home. "#/send" (P0-05's stand-in screen, absorbed into the
+// "#/print" (the journal's print view, P1-04), "#/handover" (the shift handover, P1-08) and
+// "#/styleguide" (the design language's style guide, P2-01; not in the navigation) are
+// routes; anything else is home. "#/send" (P0-05's stand-in screen, absorbed into the
 // journal screen in P0-07) opens the journal, so an old bookmark still lands right. Later
 // tasks add their screen to `Route`, `parseHash` and `hashFor`.
 
@@ -14,7 +15,8 @@ export type Route =
   | "printRegister"
   | "radio"
   | "print"
-  | "handover";
+  | "handover"
+  | "styleguide";
 
 const PRINT_REGISTER_HASH = "#/register/print";
 
@@ -42,6 +44,9 @@ export function parseHash(hash: string): Route {
   }
   if (hash === "#/handover") {
     return "handover";
+  }
+  if (hash === "#/styleguide") {
+    return "styleguide";
   }
   return "home";
 }

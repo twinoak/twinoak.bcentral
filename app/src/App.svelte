@@ -12,6 +12,7 @@
   import RadioPage from "./pages/RadioPage.svelte";
   import RegisterPage from "./pages/RegisterPage.svelte";
   import SettingsPage from "./pages/SettingsPage.svelte";
+  import StyleGuidePage from "./pages/StyleGuidePage.svelte";
   import { language, t } from "./i18n/index.svelte.ts";
   import { applyAppearance } from "./lib/appearance.ts";
   import { navigate, route } from "./lib/router.svelte.ts";
@@ -20,8 +21,9 @@
   import { closeHelp, helpOpen, toggleHelp } from "./lib/shortcutHelp.svelte.ts";
   import { drillMode } from "./store/index.ts";
 
-  // Until an operator name is set, every route shows settings.
-  const shown = $derived(hasOperatorName() ? route() : "settings");
+  // Until an operator name is set, every route shows settings — except the style guide
+  // (P2-01), which is for the reviewer and records nothing.
+  const shown = $derived(hasOperatorName() || route() === "styleguide" ? route() : "settings");
   const drillIncident = $derived(drillMode.active() ? drillMode.incident() : null);
 
   $effect(() => {
@@ -115,13 +117,15 @@
 <UpdateBanner />
 
 <!-- The journal, queue and handover screens have side panels and need the width; the print
-     views are tables; the others are forms. -->
+     views are tables; the style guide (P2-01) shows components side by side; the others are
+     forms. -->
 <main
   class:wide={shown === "journal" ||
     shown === "queue" ||
     shown === "print" ||
     shown === "printRegister" ||
-    shown === "handover"}
+    shown === "handover" ||
+    shown === "styleguide"}
 >
   {#if shown === "settings"}
     <SettingsPage />
@@ -139,6 +143,8 @@
     <PrintRegisterPage />
   {:else if shown === "radio"}
     <RadioPage />
+  {:else if shown === "styleguide"}
+    <StyleGuidePage />
   {:else}
     <HomePage />
   {/if}
