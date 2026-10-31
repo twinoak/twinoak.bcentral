@@ -34,6 +34,14 @@ body {
   min-height: 100vh;
 }
 
+/* The page (docs/design.md §Space): at most 1440 px wide, the s-5 gutter all round; every
+   screen lays itself out inside and no screen is wider than its content needs. */
+main {
+  max-width: 90rem;
+  margin: 0 auto;
+  padding: var(--s-5);
+}
+
 /* The heading scale: page title 24, section title 20, a group inside a card 16. Never
    heavier than 600. */
 h1 {
@@ -92,6 +100,11 @@ small {
   font-size: var(--fs-14);
 }
 
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
 table {
   border-collapse: collapse;
 }
@@ -130,6 +143,11 @@ kbd {
   :root {
     background: var(--surface);
     font-size: 12pt;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
   }
 }
 

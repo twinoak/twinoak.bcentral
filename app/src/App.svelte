@@ -116,17 +116,9 @@
 <TopBar />
 
 <!-- Nothing between the bar and the page (P2-02): every band and banner is a chip in the
-     bar now. The journal, queue and handover screens have side panels and need the width;
-     the print views are tables; the style guide (P2-01) shows components side by side; the
-     others are forms. -->
-<main
-  class:wide={shown === "journal" ||
-    shown === "queue" ||
-    shown === "print" ||
-    shown === "printRegister" ||
-    shown === "handover" ||
-    shown === "styleguide"}
->
+     bar now. The page is one width (styles/base.css: at most 1440 px, the s-5 gutter); a
+     screen that needs less lays itself out narrower (P2-04). -->
+<main>
   {#if shown === "settings"}
     <SettingsPage />
   {:else if shown === "handover"}

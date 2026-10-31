@@ -1,9 +1,12 @@
 <script lang="ts">
-  // The CSV import (P1-06): pick a file, see every row and every error before anything is
-  // written, then import all of it in one go. The rules are store/registerCsv.ts's; this
-  // component only shows the preview and asks for the commit. There is no editing here: a
-  // file with an error is fixed where it came from and picked again.
+  // The CSV import (P1-06; on the components in P2-04): pick a file, see every row and every
+  // error before anything is written, then import all of it in one go. The rules are
+  // store/registerCsv.ts's; this component only shows the preview — a table in the card the
+  // register page gives it, one chip per row for add / not yet bound / error — and asks for
+  // the commit. There is no editing here: a file with an error is fixed where it came from
+  // and picked again.
   import { t } from "../i18n/index.svelte.ts";
+  import { chipClass, type ChipTint } from "../lib/journalRows.ts";
   import type { RegisterEntry } from "../store/types.ts";
   import {
     csvErrorText,
@@ -13,6 +16,7 @@
   } from "../store/registerCsv.ts";
   import { importRegisterPreview } from "../store/index.ts";
   import { DuplicatePublicKeyError } from "../store/journalStore.ts";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     // Everything in the register, for the duplicate-key check before the store is asked.
@@ -50,12 +54,22 @@
     return failure instanceof Error ? failure.message : String(failure);
   }
 
-  function rowStatus(row: CsvRow): "error" | "add" | "pending" {
+  type RowStatus = "error" | "add" | "pending";
+
+  function rowStatus(row: CsvRow): RowStatus {
     if (row.errors.length > 0) {
       return "error";
     }
     return row.publicKey === "" ? "pending" : "add";
   }
+
+  // The row's chip: ok for a row that is added, grey for one that waits for its key, danger
+  // for one with an error (the words tell them apart as well).
+  const ROW_TINT: Readonly<Record<RowStatus, ChipTint>> = {
+    add: "ok",
+    pending: "neutral",
+    error: "danger",
+  };
 
   async function onfile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -103,22 +117,22 @@
   }
 </script>
 
-<form onsubmit={commit}>
-  <h2>{t("register.import.title")}</h2>
-  <p class="help">{t("register.import.help")}</p>
+<form class="import-form" onsubmit={commit} aria-labelledby="import-form-heading">
+  <h2 id="import-form-heading" class="card-title">{t("register.import.title")}</h2>
+  <p class="msg help">{t("register.import.help")}</p>
 
-  <div class="field">
+  <div class="field file">
     <label for="register-import-file">{t("register.import.file")}</label>
     <input id="register-import-file" type="file" accept=".csv,text/csv" onchange={onfile} />
   </div>
 
   {#if readError}
-    <p class="error" role="alert">{readError}</p>
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{readError}</p>
   {/if}
 
   {#if preview !== null && counts !== null}
-    <p class="summary" role="status">
-      {t("register.import.summary", {
+    <p class="msg" role="status">
+      <Icon name="import" />{t("register.import.summary", {
         file: fileName,
         add: counts.add,
         pending: counts.pending,
@@ -127,151 +141,119 @@
     </p>
 
     {#if preview.errors.length > 0}
-      <section class="errors" aria-labelledby="import-errors-heading">
-        <h3 id="import-errors-heading">{t("register.import.errors")}</h3>
-        <ul>
-          {#each preview.errors as csvError, index (index)}
-            <li>{csvErrorText(csvError)}</li>
-          {/each}
-        </ul>
-      </section>
+      <div class="msg msg-danger" role="alert">
+        <Icon name="warning" />
+        <div>
+          <p class="errors-title">{t("register.import.errors")}</p>
+          <ul class="errors">
+            {#each preview.errors as csvError, index (index)}
+              <li>{csvErrorText(csvError)}</li>
+            {/each}
+          </ul>
+        </div>
+      </div>
     {/if}
 
     {#if preview.rows.length === 0}
       {#if preview.errors.length === 0}
-        <p class="muted">{t("register.import.noRows")}</p>
+        <p class="msg">{t("register.import.noRows")}</p>
       {/if}
     {:else}
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">{t("register.import.line")}</th>
-            <th scope="col">{t("register.field.label")}</th>
-            <th scope="col">{t("register.field.person")}</th>
-            <th scope="col">{t("register.field.street")}</th>
-            <th scope="col">{t("register.field.role")}</th>
-            <th scope="col">{t("register.field.origin")}</th>
-            <th scope="col">{t("register.field.publicKey")}</th>
-            <th scope="col">{t("register.field.notes")}</th>
-            <th scope="col">{t("register.import.status")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each preview.rows as row (row.line)}
-            {@const status = rowStatus(row)}
-            <tr data-status={status}>
-              <td class="line">{row.line}</td>
-              <td class="label">{row.label}</td>
-              <td>{row.person ?? ""}</td>
-              <td>{row.street ?? ""}</td>
-              <td>{row.role ?? ""}</td>
-              <td>{t(`register.origin.${row.origin}`)}</td>
-              <td>
-                {#if row.publicKey !== ""}
-                  <code title={row.publicKey}>{row.publicKey.slice(0, 12)}…</code>
-                {/if}
-              </td>
-              <td class="notes">{row.notes ?? ""}</td>
-              <td class="status">
-                {t(`register.import.row.${status}`)}
-                {#if status === "error"}
-                  <ul class="row-errors">
-                    {#each row.errors as csvError, index (index)}
-                      <li>{csvErrorText(csvError)}</li>
-                    {/each}
-                  </ul>
-                {/if}
-              </td>
+      <div class="table-box preview">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col" class="num">{t("register.import.line")}</th>
+              <th scope="col">{t("register.field.label")}</th>
+              <th scope="col">{t("register.field.person")}</th>
+              <th scope="col">{t("register.field.street")}</th>
+              <th scope="col">{t("register.field.role")}</th>
+              <th scope="col">{t("register.field.origin")}</th>
+              <th scope="col">{t("register.field.publicKey")}</th>
+              <th scope="col">{t("register.field.notes")}</th>
+              <th scope="col">{t("register.import.status")}</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each preview.rows as row (row.line)}
+              {@const status = rowStatus(row)}
+              <tr data-status={status}>
+                <td class="num">{row.line}</td>
+                <td class="label">{row.label}</td>
+                <td>{row.person ?? ""}</td>
+                <td>{row.street ?? ""}</td>
+                <td>{row.role ?? ""}</td>
+                <td>{t(`register.origin.short.${row.origin}`)}</td>
+                <td>
+                  {#if row.publicKey !== ""}
+                    <code title={row.publicKey}>{row.publicKey.slice(0, 12)}…</code>
+                  {/if}
+                </td>
+                <td class="notes">{row.notes ?? ""}</td>
+                <td class="status">
+                  <span class="chip {chipClass(ROW_TINT[status])}">
+                    <span class="chip-dot" class:chip-dot-outline={status === "pending"}></span>{t(
+                      `register.import.row.${status}`,
+                    )}
+                  </span>
+                  {#if status === "error"}
+                    <ul class="row-errors">
+                      {#each row.errors as csvError, index (index)}
+                        <li class="field-error"><Icon name="warning" />{csvErrorText(csvError)}</li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
   {/if}
 
-  <div class="actions">
-    <button type="submit" disabled={!canImport}>
-      {t("register.import.commit", { count: preview?.rows.length ?? 0 })}
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary" disabled={!canImport}>
+      <Icon name="import" />{t("register.import.commit", { count: preview?.rows.length ?? 0 })}
     </button>
-    <button type="button" class="secondary" onclick={oncancel}>{t("register.cancel")}</button>
-    {#if error}
-      <span class="error" role="alert">{error}</span>
-    {/if}
+    <button type="button" class="btn" onclick={oncancel}>{t("register.cancel")}</button>
   </div>
+  {#if error}
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>
+  {/if}
 </form>
 
 <style>
-  h2 {
-    font-size: 1.2rem;
-    margin: 0 0 0.5rem;
-  }
-
-  h3 {
-    font-size: 1rem;
-    margin: 0 0 0.25rem;
-  }
-
-  .help,
-  .muted {
-    color: var(--muted);
-    margin: 0 0 1rem;
-  }
-
-  .field {
+  /* Layout only. */
+  .import-form {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
-    max-width: 40rem;
+    gap: var(--s-4);
   }
 
-  label {
-    font-weight: 600;
+  .help {
+    margin: calc(-1 * var(--s-2)) 0 0;
   }
 
-  .summary {
-    font-weight: 600;
-    margin: 0 0 0.75rem;
+  .file {
+    max-width: 28rem;
+  }
+
+  .msg {
+    margin: 0;
+  }
+
+  .errors-title,
+  .errors {
+    margin: 0;
   }
 
   .errors {
-    margin: 0 0 1rem;
-    padding: 0.75rem 1rem;
-    border: 2px solid var(--error);
-    border-radius: 4px;
-    background: var(--surface);
+    padding-left: var(--s-4);
   }
 
-  .errors ul {
-    margin: 0;
-    padding-left: 1.25rem;
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 1rem;
-  }
-
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .line {
-    font-variant-numeric: tabular-nums;
-    color: var(--muted);
-  }
-
-  .label {
-    font-weight: 600;
+  .preview {
+    max-height: 60vh;
   }
 
   .notes {
@@ -282,25 +264,10 @@
     white-space: nowrap;
   }
 
-  tr[data-status="error"] .status {
-    color: var(--error);
-    white-space: normal;
-  }
-
-  tr[data-status="pending"] .status {
-    color: var(--muted);
-  }
-
   .row-errors {
-    margin: 0.25rem 0 0;
-    padding-left: 1rem;
-    font-size: 0.9em;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+    list-style: none;
+    margin: var(--s-1) 0 0;
+    padding: 0;
+    white-space: normal;
   }
 </style>

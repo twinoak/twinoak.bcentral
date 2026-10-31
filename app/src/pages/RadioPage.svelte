@@ -1,10 +1,17 @@
 <script lang="ts">
+  // The radio (P0-04, P1-07; on the design language in P2-04): a state card — the state as a
+  // chip in the title, the transport buttons, the reconnect loop's position, the clock drift
+  // as an inline message, this radio's self info as a definition list — then the contacts
+  // as a table and the log as a monospaced row list, newest first, with a Clear button.
+  // Reached from the radio chip's popover and from Settings → Radio; not in the navigation.
   import { t, language } from "../i18n/index.svelte.ts";
   import { settings } from "../lib/settings.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
+  import { chipClass } from "../lib/journalRows.ts";
   import { capability, radio } from "../radio/index.ts";
   import { CLOCK_DRIFT_LIMIT_S, disconnectReasonText } from "../radio/radioStore.svelte.ts";
   import { ADV_TYPE_NONE, ADV_TYPE_SENSOR, type TransportKind } from "../radio/serial.ts";
+  import Icon from "../components/Icon.svelte";
 
   let busy = $state(false);
   let error: string | null = $state(null);
@@ -21,6 +28,12 @@
   const countdownMs = $derived(radio.reconnectCountdownMs());
   const clockDrift = $derived(radio.clockDriftSeconds());
   const driftTooLarge = $derived(clockDrift !== null && Math.abs(clockDrift) > CLOCK_DRIFT_LIMIT_S);
+  const connected = $derived(radioState === "connected" || radioState === "blind");
+  // The state chip's tint, as the bar's chip (lib/statusChips.ts): connected grey, connecting
+  // warn, blind and disconnected danger.
+  const tint = $derived(
+    radioState === "connected" ? "neutral" : radioState === "connecting" ? "warn" : "danger",
+  );
   // Newest line on top (P1-01): the store keeps the log oldest first.
   const log = $derived([...radio.log()].reverse());
 
@@ -83,248 +96,223 @@
   }
 </script>
 
-<h1>{t("radio.title")}</h1>
-<p class="intro">{t("radio.intro")}</p>
+<!-- The page heading is for assistive technology; the state card's title names the screen. -->
+<h1 class="visually-hidden">{t("radio.title")}</h1>
 
-<p class="status" data-state={radioState}>
-  <strong>{t(`radio.status.${radioState}`)}</strong>
-  {#if reason !== null}
-    · {disconnectReasonText(reason)}
-  {/if}
-  {#if elapsed !== null && radioState !== "connecting"}
-    · {t("radio.heard", { elapsed: formatElapsed(elapsed) })}
-  {/if}
-</p>
-{#if reconnecting !== null}
-  <p class="muted" role="status">
-    {#if countdownMs !== null}
-      {t("radio.reconnecting", {
-        attempt: reconnecting.attempt,
-        seconds: Math.ceil(countdownMs / 1000),
-      })}
+<div class="column">
+  <section class="card state" aria-labelledby="radio-state-heading" data-radio-state>
+    <h2 id="radio-state-heading" class="card-title">
+      <span>{t("topbar.radio")}</span>
+      <span class="chip {chipClass(tint)}" role="status" data-state={radioState}>
+        <Icon name="radio" />{t(`radio.status.${radioState}`)}{#if reason !== null}
+          · {disconnectReasonText(reason)}{/if}
+      </span>
+    </h2>
+    <p class="msg">{t("radio.intro")}</p>
+
+    <!-- One sentence when the browser has neither API; otherwise only the transport the
+         browser lacks is replaced by its reason (P1-07). -->
+    {#if capability === "none"}
+      <p class="msg msg-danger" role="alert"><Icon name="warning" />{t("radio.unsupported")}</p>
     {:else}
-      {t("radio.reconnectingNow", { attempt: reconnecting.attempt })}
-    {/if}
-  </p>
-{/if}
-<p class="muted">{t("radio.blindHelp", { minutes: settings.blindAfterMinutes })}</p>
-
-{#if clockDrift !== null && driftTooLarge}
-  <p class="warning" role="alert">
-    {t(clockDrift > 0 ? "radio.clockDrift.ahead" : "radio.clockDrift.behind", {
-      elapsed: formatElapsed(Math.abs(clockDrift) * 1000),
-    })}
-  </p>
-{/if}
-
-<!-- One sentence when the browser has neither API; otherwise only the transport the browser
-     lacks is replaced by its reason (P1-07). -->
-{#if capability === "none"}
-  <p class="error" role="alert">{t("radio.unsupported")}</p>
-{:else}
-  <div class="actions">
-    {#if radioState === "disconnected"}
-      {#if capability !== "ble"}
-        <button type="button" disabled={busy} onclick={() => connect("usb")}>
-          {t("radio.connectUsb")}
-        </button>
-      {:else}
-        <span class="muted">{t("radio.noSerial")}</span>
-      {/if}
-      {#if capability !== "usb"}
-        <button type="button" disabled={busy} onclick={() => connect("ble")}>
-          {t("radio.connectBle")}
-        </button>
-      {:else}
-        <span class="muted">{t("radio.noBluetooth")}</span>
-      {/if}
-      {#if radio.canReconnect()}
-        <button type="button" class="secondary" disabled={busy} onclick={reconnect}>
-          {t("radio.reconnect")}
-        </button>
-      {/if}
-    {:else}
-      <button type="button" class="secondary" disabled={busy} onclick={disconnect}>
-        {t("radio.disconnect")}
-      </button>
-    {/if}
-  </div>
-{/if}
-
-{#if error}
-  <p class="error" role="alert">{error}</p>
-{/if}
-
-{#if selfInfo}
-  <section aria-labelledby="self-heading">
-    <h2 id="self-heading">{t("radio.self.title")}</h2>
-    <dl>
-      <dt>{t("radio.self.name")}</dt>
-      <dd>{selfInfo.name}</dd>
-      <dt>{t("radio.self.publicKey")}</dt>
-      <dd><code>{selfInfo.publicKey}</code></dd>
-      <dt>{t("radio.self.firmware")}</dt>
-      <dd>
-        {#if device}
-          {device.firmwareVersion || t("radio.self.unknown")} ({device.firmwareBuildDate ||
-            t("radio.self.unknown")})
+      <div class="form-actions">
+        {#if radioState === "disconnected"}
+          {#if capability !== "ble"}
+            <button
+              type="button"
+              class="btn btn-primary"
+              disabled={busy}
+              onclick={() => connect("usb")}
+            >
+              <Icon name="radio" />{t("radio.connectUsb")}
+            </button>
+          {:else}
+            <span class="msg">{t("radio.noSerial")}</span>
+          {/if}
+          {#if capability !== "usb"}
+            <button
+              type="button"
+              class="btn btn-primary"
+              disabled={busy}
+              onclick={() => connect("ble")}
+            >
+              <Icon name="radio" />{t("radio.connectBle")}
+            </button>
+          {:else}
+            <span class="msg">{t("radio.noBluetooth")}</span>
+          {/if}
+          {#if radio.canReconnect()}
+            <button type="button" class="btn" disabled={busy} onclick={reconnect}>
+              <Icon name="retry" />{t("radio.reconnect")}
+            </button>
+          {/if}
         {:else}
-          {t("radio.self.unknown")}
+          <button type="button" class="btn" disabled={busy} onclick={disconnect}>
+            <Icon name="close" />{t("radio.disconnect")}
+          </button>
         {/if}
-      </dd>
-      <dt>{t("radio.self.model")}</dt>
-      <dd>{device?.manufacturerModel || t("radio.self.unknown")}</dd>
-      <dt>{t("radio.self.radio")}</dt>
-      <dd>
-        {t("radio.self.radioParams", {
-          mhz: (selfInfo.radioFreqKhz / 1000).toFixed(3),
-          khz: (selfInfo.radioBwHz / 1000).toFixed(0),
-          sf: selfInfo.radioSf,
-          cr: selfInfo.radioCr,
-          dbm: selfInfo.txPower,
-        })}
-      </dd>
-    </dl>
-  </section>
-{/if}
+      </div>
+    {/if}
 
-{#if radioState !== "disconnected" && radioState !== "connecting"}
-  <section aria-labelledby="contacts-heading">
-    <div class="actions">
-      <h2 id="contacts-heading">{t("radio.contacts.title")}</h2>
-      <button type="button" class="secondary small" disabled={busy} onclick={refresh}>
-        {t("radio.contacts.refresh")}
-      </button>
-    </div>
-    {#if contacts.length === 0}
-      <p class="muted">{t("radio.contacts.empty")}</p>
-    {:else}
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">{t("radio.contacts.name")}</th>
-            <th scope="col">{t("radio.contacts.publicKey")}</th>
-            <th scope="col">{t("radio.contacts.lastAdvert")}</th>
-            <th scope="col">{t("radio.contacts.type")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each contacts as contact (contact.publicKey)}
-            <tr>
-              <td class="label">{contact.name}</td>
-              <td><code title={contact.publicKey}>{contact.publicKey.slice(0, 12)}…</code></td>
-              <td>{formatAdvert(contact.lastAdvert)}</td>
-              <td>{typeName(contact.type)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    {#if reconnecting !== null}
+      <p class="msg msg-warn" role="status">
+        <Icon name="retry" />
+        {#if countdownMs !== null}
+          {t("radio.reconnecting", {
+            attempt: reconnecting.attempt,
+            seconds: Math.ceil(countdownMs / 1000),
+          })}
+        {:else}
+          {t("radio.reconnectingNow", { attempt: reconnecting.attempt })}
+        {/if}
+      </p>
+    {/if}
+    {#if elapsed !== null && radioState !== "connecting"}
+      <p class="msg">{t("radio.heard", { elapsed: formatElapsed(elapsed) })}</p>
+    {/if}
+    <p class="msg">{t("radio.blindHelp", { minutes: settings.blindAfterMinutes })}</p>
+    {#if error}
+      <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>
+    {/if}
+    {#if clockDrift !== null && driftTooLarge}
+      <p class="msg msg-warn" role="alert">
+        <Icon name="clock" />{t(
+          clockDrift > 0 ? "radio.clockDrift.ahead" : "radio.clockDrift.behind",
+          { elapsed: formatElapsed(Math.abs(clockDrift) * 1000) },
+        )}
+      </p>
+    {/if}
+
+    {#if selfInfo}
+      <h3 class="self-heading">{t("radio.self.title")}</h3>
+      <dl class="dl">
+        <dt>{t("radio.self.name")}</dt>
+        <dd>{selfInfo.name}</dd>
+        <dt>{t("radio.self.publicKey")}</dt>
+        <dd><code>{selfInfo.publicKey}</code></dd>
+        <dt>{t("radio.self.firmware")}</dt>
+        <dd>
+          {#if device}
+            {device.firmwareVersion || t("radio.self.unknown")} ({device.firmwareBuildDate ||
+              t("radio.self.unknown")})
+          {:else}
+            {t("radio.self.unknown")}
+          {/if}
+        </dd>
+        <dt>{t("radio.self.model")}</dt>
+        <dd>{device?.manufacturerModel || t("radio.self.unknown")}</dd>
+        <dt>{t("radio.self.radio")}</dt>
+        <dd>
+          {t("radio.self.radioParams", {
+            mhz: (selfInfo.radioFreqKhz / 1000).toFixed(3),
+            khz: (selfInfo.radioBwHz / 1000).toFixed(0),
+            sf: selfInfo.radioSf,
+            cr: selfInfo.radioCr,
+            dbm: selfInfo.txPower,
+          })}
+        </dd>
+      </dl>
     {/if}
   </section>
-{/if}
 
-<section aria-labelledby="log-heading">
-  <h2 id="log-heading">{t("radio.log.title")}</h2>
-  {#if log.length === 0}
-    <p class="muted">{t("radio.log.empty")}</p>
-  {:else}
-    <pre class="log">{log.join("\n")}</pre>
+  {#if connected}
+    <section class="card" aria-labelledby="contacts-heading" data-radio-contacts>
+      <h2 id="contacts-heading" class="card-title">
+        <span>{t("radio.contacts.title")} <span class="count">{contacts.length}</span></span>
+        <button type="button" class="btn btn-compact" disabled={busy} onclick={refresh}>
+          <Icon name="retry" />{t("radio.contacts.refresh")}
+        </button>
+      </h2>
+      {#if contacts.length === 0}
+        <p class="msg">{t("radio.contacts.empty")}</p>
+      {:else}
+        <div class="table-box contacts">
+          <table class="table">
+            <thead>
+              <tr>
+                <th scope="col">{t("radio.contacts.name")}</th>
+                <th scope="col">{t("radio.contacts.publicKey")}</th>
+                <th scope="col">{t("radio.contacts.lastAdvert")}</th>
+                <th scope="col">{t("radio.contacts.type")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each contacts as contact (contact.publicKey)}
+                <tr>
+                  <td class="label">{contact.name}</td>
+                  <td><code title={contact.publicKey}>{contact.publicKey.slice(0, 12)}…</code></td>
+                  <td class="advert">{formatAdvert(contact.lastAdvert)}</td>
+                  <td>{typeName(contact.type)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
   {/if}
-</section>
+
+  <section class="card" aria-labelledby="log-heading" data-radio-log>
+    <h2 id="log-heading" class="card-title">
+      <span>{t("radio.log.title")} <span class="count">{log.length}</span></span>
+      <button
+        type="button"
+        class="btn btn-quiet btn-compact"
+        disabled={log.length === 0}
+        onclick={() => radio.clearLog()}
+      >
+        <Icon name="close" />{t("radio.log.clear")}
+      </button>
+    </h2>
+    {#if log.length === 0}
+      <p class="msg">{t("radio.log.empty")}</p>
+    {:else}
+      <div class="rows-box log">
+        <ol class="rows rows-log">
+          {#each log as line, index (line + index)}
+            <li>{line}</li>
+          {/each}
+        </ol>
+      </div>
+    {/if}
+  </section>
+</div>
 
 <style>
-  .intro,
-  .muted {
-    color: var(--muted);
-  }
-
-  .status[data-state="blind"] strong {
-    color: var(--error);
-  }
-
-  .status[data-state="connected"] strong {
-    color: var(--ok);
-  }
-
-  .warning {
-    padding: 0.5rem 0.75rem;
-    border: 2px solid var(--ink);
-    border-radius: 4px;
-    background: var(--warn-bg);
-    color: var(--ink);
-  }
-
-  .actions {
+  /* Layout only: one column of cards; the contacts and the log scroll in their boxes. */
+  .column {
     display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
+    flex-direction: column;
+    gap: var(--s-4);
   }
 
-  .actions h2 {
+  .state {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+
+  .state .card-title {
+    margin-bottom: 0;
+  }
+
+  .self-heading {
+    margin: var(--s-2) 0 0;
+  }
+
+  .msg {
     margin: 0;
   }
 
-  .error {
-    color: var(--error);
+  .advert {
+    white-space: nowrap;
   }
 
-  section {
-    margin-top: 1.5rem;
-  }
-
-  h2 {
-    font-size: 1.1rem;
-    margin: 0 0 0.5rem;
-  }
-
-  dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.25rem 1rem;
-    margin: 0;
-  }
-
-  dt {
-    font-weight: 600;
-  }
-
-  dd {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.4rem 0.5rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  thead th {
-    border-bottom-color: var(--line);
-  }
-
-  .label {
-    font-weight: 600;
+  .contacts {
+    max-height: 24rem;
   }
 
   .log {
     max-height: 20rem;
-    overflow: auto;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: var(--surface);
-    font-size: 0.9rem;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
   }
 </style>
