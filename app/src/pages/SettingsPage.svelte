@@ -9,6 +9,7 @@
     type FontSize,
   } from "../lib/settings.svelte.ts";
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
+  import { hashFor } from "../lib/router.svelte.ts";
   import { openHelp } from "../lib/shortcutHelp.svelte.ts";
   import { builtAt, versionLabel } from "../lib/version.ts";
   import { updater } from "../lib/updates.svelte.ts";
@@ -414,6 +415,8 @@
   {:else}
     <small>{t("settings.updatesUnavailable")}</small>
   {/if}
+  <!-- The design language's style guide (P2-01): for review, not in the navigation. -->
+  <small><a href={hashFor("styleguide")}>{t("settings.styleguide")}</a></small>
 </section>
 
 <style>

@@ -64,8 +64,9 @@ export default defineConfig(({ command, isPreview }) => ({
         ],
       },
       workbox: {
-        // Precache the whole build so the installed app opens with no network at all.
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
+        // Precache the whole build, the bundled typeface included, so the installed app
+        // opens with no network at all (P2-01: no font request leaves the page).
+        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest,woff2}"],
       },
     }),
   ],

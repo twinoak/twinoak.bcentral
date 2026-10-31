@@ -65,9 +65,9 @@ describe("appearance", () => {
     expect(root.attributes.get(CONTRAST_ATTRIBUTE)).toBe("high");
   });
 
-  it("the stylesheet keys the sizes and the mode on those attributes", async () => {
+  it("the token sheet keys the sizes and the mode on those attributes", async () => {
     const { readFileSync } = await import("node:fs");
-    const css = readFileSync(new URL("../app.css", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
     expect(css).toContain(`:root[${FONT_SIZE_ATTRIBUTE}="large"]`);
     expect(css).toContain(`:root[${FONT_SIZE_ATTRIBUTE}="largest"]`);
     expect(css).toContain(`:root[${CONTRAST_ATTRIBUTE}="high"]`);

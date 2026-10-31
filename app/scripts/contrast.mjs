@@ -1,56 +1,83 @@
-// WCAG contrast over the CSS custom properties in src/app.css (P1-09). Pure: reads a CSS
-// text, resolves the colour tokens of the normal and the high-contrast mode, and checks the
-// pairs below against the task's thresholds — 7:1 for text, 3:1 for UI chrome. The CLI
-// (check-contrast.mjs) runs it in `npm run test`; src/lib/contrast.test.ts runs it in vitest.
-// Plain JavaScript with a .d.mts beside it, so Node runs it without a loader.
+// WCAG contrast over the colour tokens in src/styles/tokens.css (P1-09, moved onto the
+// docs/design.md tokens in P2-01). Pure: reads a CSS text, resolves the tokens of the normal
+// and the high-contrast mode, and checks the pairs below against the document's thresholds —
+// 7:1 for text, 3:1 for UI chrome. The CLI (check-contrast.mjs) runs it in `npm run test`;
+// src/lib/contrast.test.ts runs it in vitest. Plain JavaScript with a .d.mts beside it, so
+// Node runs it without a loader.
 
 export const TEXT_MIN = 7;
 export const CHROME_MIN = 3;
-// The two numbers the task fixes for the base type.
-export const MIN_FONT_SIZE_PX = 18;
+// The base type the document fixes: 16 px and a line height of 1.45 (checked at 1.4, the
+// P1-09 floor the document keeps).
+export const MIN_FONT_SIZE_PX = 16;
 export const MIN_LINE_HEIGHT = 1.4;
 
 // Which token is read on which, and why. `text` pairs must reach TEXT_MIN, `chrome` pairs
-// CHROME_MIN, in both modes. A token used both as text and as a boundary is listed twice.
+// CHROME_MIN, in both modes. The grey surfaces are --bg (page), --surface (cards, bar,
+// rows), --surface-2 (table header, expanded row) and --accent-weak (selected row, active
+// chip); --rule, the row separator and card border, is decoration and is not checked.
 export const PAIRS = [
-  // Body text and the greys it is set in.
-  { fg: "--ink", bg: "--light", kind: "text", what: "body text on the page" },
-  { fg: "--ink", bg: "--surface", kind: "text", what: "body text in a panel or a table" },
-  { fg: "--ink", bg: "--surface-in", kind: "text", what: "an incoming row's text" },
-  { fg: "--ink", bg: "--surface-given-up", kind: "text", what: "a given-up row's text" },
-  { fg: "--muted", bg: "--light", kind: "text", what: "help text on the page" },
-  { fg: "--muted", bg: "--surface", kind: "text", what: "help text, strips, times in a panel" },
+  // Body text and secondary text on every grey surface.
+  { fg: "--ink", bg: "--bg", kind: "text", what: "body text on the page" },
+  { fg: "--ink", bg: "--surface", kind: "text", what: "body text in a card, the bar, a row" },
+  { fg: "--ink", bg: "--surface-2", kind: "text", what: "text in a table header, an expanded row" },
+  { fg: "--ink", bg: "--accent-weak", kind: "text", what: "text on a selected row" },
+  { fg: "--ink-2", bg: "--bg", kind: "text", what: "meta and help text on the page" },
+  { fg: "--ink-2", bg: "--surface", kind: "text", what: "labels, times, strips in a card" },
+  { fg: "--ink-2", bg: "--surface-2", kind: "text", what: "a table header, a neutral chip" },
+  { fg: "--ink-2", bg: "--accent-weak", kind: "text", what: "the time on a selected row" },
+  // The accent as text: links, quiet buttons, active nav and tabs, the wordmark.
+  { fg: "--accent", bg: "--bg", kind: "text", what: "links on the page" },
+  { fg: "--accent", bg: "--surface", kind: "text", what: "links, quiet buttons, the wordmark" },
+  { fg: "--accent", bg: "--surface-2", kind: "text", what: "a quiet button on an expanded row" },
   {
-    fg: "--muted",
-    bg: "--surface-in",
+    fg: "--accent",
+    bg: "--accent-weak",
     kind: "text",
-    what: "the transport word on an incoming row",
+    what: "an active chip, a selected row's link",
   },
-  { fg: "--muted", bg: "--surface-given-up", kind: "text", what: "the strip on a given-up row" },
-  // Links, primary text colour and the status words.
-  { fg: "--navy", bg: "--light", kind: "text", what: "links and the sent status on the page" },
-  { fg: "--navy", bg: "--surface", kind: "text", what: "links and secondary buttons in a panel" },
-  { fg: "--navy", bg: "--surface-in", kind: "text", what: "the answered link on an incoming row" },
-  { fg: "--error", bg: "--light", kind: "text", what: "error text on the page" },
-  { fg: "--error", bg: "--surface", kind: "text", what: "error text in a panel" },
-  { fg: "--error", bg: "--surface-given-up", kind: "text", what: "given up on its tinted row" },
-  { fg: "--ok", bg: "--light", kind: "text", what: "delivered / roger on the page" },
-  { fg: "--ok", bg: "--surface", kind: "text", what: "delivered / roger in a panel" },
-  // Text on the coloured surfaces: the top bar, the notices, the drill band.
-  { fg: "--on-navy", bg: "--navy", kind: "text", what: "the top bar and primary buttons" },
-  { fg: "--ink", bg: "--warn-bg", kind: "text", what: "the clock notice, the update banner" },
-  { fg: "--ink", bg: "--alert-bg", kind: "text", what: "the folder and storage notices" },
-  { fg: "--ink", bg: "--drill-bg", kind: "text", what: "the drill band" },
-  // UI chrome: field borders, panel borders, the focus ring, button boundaries.
-  { fg: "--line", bg: "--surface", kind: "chrome", what: "field and panel borders in a panel" },
-  { fg: "--line", bg: "--light", kind: "chrome", what: "field and panel borders on the page" },
-  { fg: "--focus", bg: "--surface", kind: "chrome", what: "the focus ring in a panel" },
-  { fg: "--focus", bg: "--light", kind: "chrome", what: "the focus ring on the page" },
-  { fg: "--focus", bg: "--surface-in", kind: "chrome", what: "the focus ring on an incoming row" },
-  { fg: "--focus-on-navy", bg: "--navy", kind: "chrome", what: "the focus ring in the top bar" },
-  { fg: "--navy", bg: "--surface", kind: "chrome", what: "a primary button's boundary" },
-  { fg: "--error", bg: "--surface", kind: "chrome", what: "an invalid field's border" },
-  { fg: "--drill-line", bg: "--drill-bg", kind: "chrome", what: "the drill band's lower edge" },
+  { fg: "--on-accent", bg: "--accent", kind: "text", what: "a primary button" },
+  // The status pairs: the word on its tint (chips, inline messages) and on the greys
+  // (strips, status words in text, the chip in the bar).
+  { fg: "--ok", bg: "--ok-bg", kind: "text", what: "an ok chip or message" },
+  { fg: "--ok", bg: "--surface", kind: "text", what: "delivered / roger in a strip" },
+  { fg: "--ok", bg: "--bg", kind: "text", what: "an ok word on the page" },
+  { fg: "--warn", bg: "--warn-bg", kind: "text", what: "a warn chip or message" },
+  { fg: "--warn", bg: "--surface", kind: "text", what: "waiting in a strip" },
+  { fg: "--warn", bg: "--bg", kind: "text", what: "a warn word on the page" },
+  { fg: "--danger", bg: "--danger-bg", kind: "text", what: "a danger chip or message" },
+  { fg: "--danger", bg: "--surface", kind: "text", what: "given up in a strip, a field error" },
+  { fg: "--danger", bg: "--bg", kind: "text", what: "an error on the page" },
+  { fg: "--drill", bg: "--drill-bg", kind: "text", what: "the drill chip, the drill bar" },
+  { fg: "--drill", bg: "--surface", kind: "text", what: "the drill word in a card" },
+  { fg: "--drill", bg: "--bg", kind: "text", what: "the drill word on the page" },
+  // The drill bar (P2-02) carries the shell's text and links on the drill tint.
+  { fg: "--ink", bg: "--drill-bg", kind: "text", what: "the incident name on the drill bar" },
+  { fg: "--accent", bg: "--drill-bg", kind: "text", what: "the navigation on the drill bar" },
+  // UI chrome: input and default-button borders, the focus ring, underlines and boundaries.
+  { fg: "--rule-2", bg: "--surface", kind: "chrome", what: "a field or button border in a card" },
+  { fg: "--rule-2", bg: "--bg", kind: "chrome", what: "a field or button border on the page" },
+  { fg: "--rule-2", bg: "--surface-2", kind: "chrome", what: "a field border on an expanded row" },
+  { fg: "--rule-2", bg: "--accent-weak", kind: "chrome", what: "a field border on a selected row" },
+  { fg: "--focus", bg: "--surface", kind: "chrome", what: "the focus ring in a card" },
+  { fg: "--focus", bg: "--bg", kind: "chrome", what: "the focus ring on the page" },
+  { fg: "--focus", bg: "--surface-2", kind: "chrome", what: "the focus ring on an expanded row" },
+  { fg: "--focus", bg: "--accent-weak", kind: "chrome", what: "the focus ring on a selected row" },
+  { fg: "--focus", bg: "--drill-bg", kind: "chrome", what: "the focus ring on the drill bar" },
+  {
+    fg: "--accent",
+    bg: "--surface",
+    kind: "chrome",
+    what: "a tab underline, a primary button's edge",
+  },
+  { fg: "--accent", bg: "--bg", kind: "chrome", what: "a primary button's edge on the page" },
+  {
+    fg: "--danger",
+    bg: "--surface",
+    kind: "chrome",
+    what: "an invalid field's border, a danger button",
+  },
+  { fg: "--danger", bg: "--bg", kind: "chrome", what: "a danger button's border on the page" },
 ];
 
 // --- colour maths (WCAG 2.x relative luminance and contrast ratio) ----------------------
@@ -129,8 +156,9 @@ export function topLevelCss(css) {
   return out;
 }
 
-// The declarations of one rule block, by selector text, as written: `--ink: #1b1f24` and
-// `font-size: 18px` alike. Comments and at-rule blocks are dropped first.
+// The declarations of every rule block with this selector text, merged in order, as
+// written: `--ink: #16191d` and `font-size: 16px` alike. Comments and at-rule blocks are
+// dropped first.
 export function blockDeclarations(css, selector) {
   const text = topLevelCss(css);
   const declarations = {};
@@ -200,7 +228,7 @@ function parsePx(value) {
   return match === null ? null : Number(match[1]);
 }
 
-// The base type: font-size at least 18 px and line-height at least 1.4 on :root.
+// The base type: font-size at least 16 px and line-height at least 1.4 on :root.
 export function checkType(tokens) {
   const fontSizePx = parsePx(tokens["font-size"]);
   const lineHeight = Number(tokens["line-height"]);

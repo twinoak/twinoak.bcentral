@@ -80,7 +80,7 @@ messages with Reply, and quiet radios (not heard from within the blind time) wit
 status request**, which sends `#n Meld status`. **Print handover** puts the four lists on
 paper with the time and both names.
 
-**Readable from a metre away, operable from the keyboard.** The text is 18 px by default;
+**Readable from a metre away, operable from the keyboard.** The text is 16 px by default;
 under **Settings → Screen** choose *Large* or *Largest*, and **High contrast** for black on
 white with no greys. Both apply at once and are kept. Press **?** (or the ? button in the top
 bar) for the keyboard shortcuts: `N` new message, `R` reply to the current incoming row, `A`
@@ -117,13 +117,17 @@ Deployment: `.github/workflows/deploy.yml` publishes `dist/` to GitHub Pages on 
 | --- | --- |
 | `src/i18n/` | `en.json` (reference), `da.json`, and `t()` in `index.svelte.ts` |
 | `src/lib/settings.svelte.ts` | operator name, device id (ULID, minted once), hub URL, blind-after minutes, send attempts, the gap between send-to-all transmissions, the text size and high contrast (P1-09) |
-| `src/lib/appearance.ts` | puts the text size and the contrast mode on the root element as the attributes `app.css` keys on (P1-09) |
+| `src/lib/appearance.ts` | puts the text size and the contrast mode on the root element as the attributes `styles/tokens.css` keys on (P1-09) |
+| `src/styles/` | the design language (`docs/design.md`, P2-01): `tokens.css` (every colour, size, space, radius and shadow token, the three font-size roots 16 / 18 / 21 px, the high-contrast overrides, and the transition aliases the old screens still use), `base.css` (the bundled Inter `@font-face`, resets, headings, links, the focus ring, the print base), `components.css` (`.btn*`, `.field`, `.chip*`, `.strip`, `.card`, `.tabs`, `.table`, `.rows`, `.popover`, `.toast`, `.msg*`, `.empty`, `.icon`), `transition.css` (the P1-09 element rules, deleted screen by screen until P2-05 removes the file); `src/app.css` only imports them |
+| `src/assets/fonts/` | `InterVariable.woff2` with its SIL OFL 1.1 licence; precached by the service worker, so no font request leaves the page |
+| `src/lib/icons.ts` | the sixteen stroke icons as path data on a 20 px grid; `components/Icon.svelte` draws one (`aria-hidden` unless given a label) |
+| `src/lib/colourLiterals.ts` | finds `#hex`, `rgb(` and `hsl(` outside `styles/tokens.css`; its test counts them and is `todo` until P2-05 turns it on at zero |
 | `src/lib/shortcuts.ts` | the keyboard shortcuts as one pure rule (key in, action out; nothing in a text field but Ctrl+Enter and Esc; the G chords), and the documented set the `?` overlay lists; `shortcutDispatch.ts` the window listener and the handler registry the screens register on; `shortcutHelp.svelte.ts` whether the overlay is open |
 | `src/lib/clock.svelte.ts` | clock trust for this session (`ntp` / `manual` / `unknown`) and `now()` |
 | `src/lib/version.ts` | the running build's version, commit and build time, injected by `define` in `vite.config.ts`; `versionLabel()` for the top bar and settings |
 | `src/lib/updates.svelte.ts` | the installed app's updates: the service worker waits for the operator's Reload, "last checked", "Check now"; `main.ts` starts it with `registerSW` |
 | `src/lib/currentIncident.svelte.ts` | which incident the app is working in (id only, kept in `localStorage`), and a change listener the inbox drains on |
-| `src/lib/router.svelte.ts` | hash routing: `#/` home, `#/journal` (also `#/send`, the old stand-in), `#/handover`, `#/queue`, `#/register`, `#/register/print`, `#/radio`, `#/settings`, `#/print` |
+| `src/lib/router.svelte.ts` | hash routing: `#/` home, `#/journal` (also `#/send`, the old stand-in), `#/handover`, `#/queue`, `#/register`, `#/register/print`, `#/radio`, `#/settings`, `#/print`, `#/styleguide` (not in the navigation; linked from Settings → About) |
 | `src/lib/elapsed.ts` | "12 s" / "3 min" / "1 h 5 min" for the top bar |
 | `src/lib/persistence.svelte.ts` | `navigator.storage.persist()` on start and the usage estimate (P1-04): a refusal is a top-bar line until a journal folder is set |
 | `src/lib/journalText.ts` | the words of a journal row (strip, batch counters, history line, times), shared by the timeline and the print view |
@@ -133,17 +137,20 @@ Deployment: `.github/workflows/deploy.yml` publishes `dist/` to GitHub Pages on 
 | `src/radio/` | the MeshCore companion: `serial.ts` is the protocol (constants, frame helpers, parsers, payload builders), `CompanionLink` (one command at a time over a frame transport, pushes to an inbox) and the Web Serial transport (a port given or chosen, kept for reopening); `ble.ts` the Web Bluetooth transport (the device kept for the session); `radioStore.svelte.ts` the app's view of the radio (state, self info, contacts, last heard, blind, push listeners, and P1-07: why it is disconnected, the reconnect loop with backoff over the kept transport, one granted USB port connected on start and on its `connect` event, the link check after a wake, the companion's clock drift); `capability.ts` which transports the browser has; `outbox.svelte.ts` sends a stored message through the radio (sent → delivered, resends with the same timestamp, given up), one at a time; `inbox.svelte.ts` drains what the radio received into the journal as `message_in` (sender by key prefix, unknown senders get a register entry, dedupe, then the roger rules); `sendQueue.svelte.ts` the send-to-all queue over the outbox (minimum gap between transmissions, paused while no radio is connected, batches keyed by the messages' `batchId`, pending messages queued again under their batch after a reload); `contactSource.ts` the `ContactSource` the register's key picker reads from; `deferred.ts` the one promise resolver the transports need; `web-apis.d.ts` the Web Serial / Bluetooth types; `index.ts` wires the app's instances |
 | `src/test-support/` | fakes for tests: `localStorage`, a store on `fake-indexeddb`, the contract walkthrough, a frame transport and the companion frames it answers with, Web Serial (granted ports with real streams, plug events) and Web Bluetooth (a device, GATT server and the UART characteristics) so the real transports run in tests, an in-memory journal folder, the register CSV fixtures (built as strings so the BOM and CRLF are exact) |
 | `src/components/` | top bar (with the radio's connected / blind / disconnected state, the notices — clock not confirmed, journal folder, storage — on a line of their own, the ? button, and the version in the brand's tooltip), the `?` overlay with the keyboard shortcuts, the drill band (ØVELSE / DRILL across every screen while a drill is current), the update banner, language select, the register form (also binds a key to a row imported without one), the ad hoc batch form, the register CSV import (file, preview, errors, commit), the contact picker, the compose form (recipient, transport, text with the byte counter; "Replying to" when a reply was started from a row, Esc drops it, Ctrl+Enter sends), the send-to-all compose form (recipient picker: all / by street / by hand, byte counter for the longest prefix), and the journal screen's parts: incident bar (with the "This is a drill" checkbox and drills under their own heading), timeline (newest first, status strip and history per outgoing message, batch rows, the "N new" pill, Reply on every incoming row with the answer linked both ways), open items, last heard from, the manual-entry form |
-| `src/pages/` | one file per screen; `JournalPage.svelte` is the screen the staff live on, `HandoverPage.svelte` (`#/handover`) the shift handover (everything open on one screen, the operator change as one note, printed in place), `QueuePage.svelte` the send-to-all queue they watch drain, `PrintPage.svelte` (`#/print`) the journal as a document for the browser's print dialog, `RegisterPage.svelte` the register with its CSV import and export and the rows not yet bound to a radio, `PrintRegisterPage.svelte` (`#/register/print`) the register as a printable list for the box, `SettingsPage.svelte` also the journal folder and the storage line |
+| `src/pages/` | one file per screen; `JournalPage.svelte` is the screen the staff live on, `HandoverPage.svelte` (`#/handover`) the shift handover (everything open on one screen, the operator change as one note, printed in place), `QueuePage.svelte` the send-to-all queue they watch drain, `PrintPage.svelte` (`#/print`) the journal as a document for the browser's print dialog, `RegisterPage.svelte` the register with its CSV import and export and the rows not yet bound to a radio, `PrintRegisterPage.svelte` (`#/register/print`) the register as a printable list for the box, `SettingsPage.svelte` also the journal folder and the storage line, `StyleGuidePage.svelte` (`#/styleguide`) every component of the design language in every variant and state with the colour pairs and their contrast ratios, for review |
 | `scripts/make-icon.mjs` | writes `public/icon-192.png` and `icon-512.png` before `dev` and `build` |
-| `scripts/check-contrast.mjs` | the WCAG contrast check over the colour tokens in `src/app.css` (`contrast.mjs` is the pure part): text 7:1, UI chrome 3:1, in normal and high-contrast mode, plus the 18 px / 1.4 base; runs first in `npm run test` |
+| `scripts/check-contrast.mjs` | the WCAG contrast check over the colour tokens in `src/styles/tokens.css` (`contrast.mjs` is the pure part): text 7:1, UI chrome 3:1, in normal and high-contrast mode, plus the 16 px / 1.4 base; runs first in `npm run test` |
 
 Every user-facing string goes through `t("key")`. A key in `en.json` that is missing from
 `da.json` fails `npm run test`.
 
-Every colour on screen is a token in `src/app.css` (`--ink`, `--muted`, `--surface`, …); a
-component never writes a hex colour of its own outside `@media print`, so the contrast check
-covers the whole app. A new text-on-surface pairing is added to `PAIRS` in
-`scripts/contrast.mjs`.
+Every colour on screen is a token in `src/styles/tokens.css` (`--ink`, `--ink-2`,
+`--surface`, the status pairs `--ok` / `--ok-bg`, …) and every size, space and radius too; a
+component's `<style>` block only lays out and never writes a colour or a size of its own
+(`docs/design.md`). The colour-literal test (`src/lib/colourLiterals.test.ts`) counts every
+`#hex`, `rgb(` and `hsl(` outside the token sheet and fails on any once P2-05 turns it on.
+A new text-on-surface pairing is added to `PAIRS` in `scripts/contrast.mjs`; the style guide
+at `#/styleguide` prints the same list with the ratios on screen.
 
 The contract schema is imported straight from `../contract/journal.schema.json`; the dev
 server is allowed to serve one level above the project for that (`server.fs.allow` in

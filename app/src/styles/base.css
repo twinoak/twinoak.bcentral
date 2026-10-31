@@ -1,0 +1,143 @@
+/* The base (docs/design.md §Type, P2-01): the bundled typeface, resets, the root type, the
+   heading scale, links, the focus ring and the print base. Every value is a token from
+   tokens.css; the components are in components.css. */
+
+/* Inter, variable, bundled: no font request leaves the page (the service worker precaches
+   the file, vite.config.ts). `block` rather than `swap`: a short blank beats a reflow in the
+   middle of reading a row, and the file is local. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url("../assets/fonts/InterVariable.woff2") format("woff2");
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* The root type: the size and line height are on :root in tokens.css (the contrast check
+   reads them there); tabular numbers so times line up, single-storey a for a plainer face. */
+html {
+  font-family: var(--font);
+  font-feature-settings: "tnum", "cv11";
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* The heading scale: page title 24, section title 20, a group inside a card 16. Never
+   heavier than 600. */
+h1 {
+  font-size: var(--fs-24);
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 var(--s-4);
+}
+
+h2 {
+  font-size: var(--fs-20);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 var(--s-3);
+}
+
+h3 {
+  font-size: var(--fs-16);
+  font-weight: 500;
+  margin: 0 0 var(--s-2);
+}
+
+p {
+  margin: 0 0 var(--s-3);
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 0.15em;
+}
+
+/* The focus ring: 2 px in the focus colour, 2 px outside the element, everywhere. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+small {
+  font-size: var(--fs-14);
+}
+
+table {
+  border-collapse: collapse;
+}
+
+/* The key names on the shortcut overlay and in hints. */
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 0.35em;
+  border: 1px solid var(--rule-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--fs-14);
+  text-align: center;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The print base: black on white, 12 pt body, page numbers in the bottom margin where the
+   browser supports page margin boxes. The print pages themselves are P2-05's. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  :root {
+    background: var(--surface);
+    font-size: 12pt;
+  }
+}
+
+@page {
+  margin: 15mm;
+
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-size: 9pt;
+  }
+}
