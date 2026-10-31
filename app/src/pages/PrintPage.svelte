@@ -1,13 +1,17 @@
 <script lang="ts">
-  // The print view (P1-04): the current incident's journal as a document for the browser's
-  // print dialog. One line per message with its status strip, a batch as one block with its
-  // counters and one line per recipient, corrections under what they correct, oldest first
-  // by default (a printed journal reads top-down). "Since last print" prints only the rows
-  // with something newer than the previous print's time (store/printView.ts) and is the
-  // routine: on by default when there was a previous print. The header carries the incident,
-  // the device id, the operators and the print time; page numbers come from app.css / the
-  // browser's own footer. Browser print(), no PDF library. The print time is taken when the
-  // rows are loaded (what is on paper is what was loaded) and stored only after print().
+  // The print view (P1-04; on the design language in P2-05): the current incident's journal
+  // as a document for the browser's print dialog. One line per message with its status
+  // strip, a batch as one block with its counters and one line per recipient, corrections
+  // under what they correct, oldest first by default (a printed journal reads top-down).
+  // "Since last print" prints only the rows with something newer than the previous print's
+  // time (store/printView.ts) and is the routine: on by default when there was a previous
+  // print. The controls are a no-print toolbar on the components; the document is `.doc`
+  // (components.css): a sheet on screen, on paper 12 pt black on white with status words
+  // (styles/base.css, the paper rules at the end of components.css). The header carries the
+  // incident, the device id, the operators and the print time; page numbers come from
+  // base.css / the browser's own footer. Browser print(), no PDF library. The print time is
+  // taken when the rows are loaded (what is on paper is what was loaded) and stored only
+  // after print().
   import { onMount } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import { now } from "../lib/clock.svelte.ts";
@@ -20,6 +24,7 @@
     incidentName,
     stripText,
   } from "../lib/journalText.ts";
+  import { openPopover } from "../lib/popover.svelte.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { settings } from "../lib/settings.svelte.ts";
   import { showToast } from "../lib/toast.svelte.ts";
@@ -34,6 +39,7 @@
   import type { MessageView } from "../store/journalView.ts";
   import { operatorsOf, printRows } from "../store/printView.ts";
   import type { Incident, JournalEntry } from "../store/types.ts";
+  import Icon from "../components/Icon.svelte";
 
   let incident: Incident | null = $state(null);
   let entries: JournalEntry[] = $state([]);
@@ -123,9 +129,9 @@
 <!-- The time, with the clock-trust mark as on the screen: "?" when the clock was not
      confirmed, "✓" when confirmed by hand, nothing for ntp. -->
 {#snippet timeCell(entry: JournalEntry)}
-  <td class="time">
+  <td class="doc-time">
     {formatRowTime(entry.timestamp)}{#if entry.clockTrust !== "ntp"}<abbr
-        class="trust"
+        class="row-trust"
         data-trust={entry.clockTrust}
         title={t(`settings.clockTrust.${entry.clockTrust}`)}
         >{t(`journal.trust.${entry.clockTrust}`)}</abbr
@@ -135,12 +141,12 @@
 
 {#snippet correctionRows(corrections: readonly JournalEntry[])}
   {#each corrections as correction (correction.id)}
-    <tr class="child" data-type="correction">
+    <tr data-nested="true" data-type="correction">
       {@render timeCell(correction)}
       <td>{correction.operator}</td>
       <td>{t("journal.type.correction")}</td>
       <td></td>
-      <td class="text indented">{correction.text ?? ""}</td>
+      <td class="doc-text doc-indent">{correction.text ?? ""}</td>
       <td></td>
     </tr>
   {/each}
@@ -150,31 +156,31 @@
      shows the label and the strip only (the text is the batch's). -->
 {#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
-  <tr class:child={nested} data-type="message_out">
+  <tr data-nested={nested ? "true" : undefined} data-type="message_out">
     {@render timeCell(entry)}
     <td>{entry.operator}</td>
     <td>
       {t("journal.type.message_out")}
       {#if entry.transport !== undefined && entry.transport !== "mesh"}
-        <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
+        <span class="doc-meta">{t(`send.transport.${entry.transport}`)}</span>
       {/if}
     </td>
     <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
-    <td class="text" class:indented={nested}>
+    <td class="doc-text" class:doc-indent={nested}>
       {#if nested}
-        <span class="strip">{stripLine(view)}</span>
+        <span class="doc-meta">{stripLine(view)}</span>
       {:else}
         {entry.text ?? ""}
-        <div class="strip">{stripLine(view)}</div>
+        <div class="doc-meta">{stripLine(view)}</div>
       {/if}
     </td>
-    <td class="status">{t(`journal.status.${view.status}`)}</td>
+    <td class="doc-status">{t(`journal.status.${view.status}`)}</td>
   </tr>
   {@render correctionRows(view.corrections)}
 {/snippet}
 
-<div class="controls no-print">
-  <a href={hashFor("journal")}>{t("print.back")}</a>
+<div class="toolbar controls no-print">
+  <a class="btn" href={hashFor("journal")}>{t("print.back")}</a>
   {#if incident !== null}
     <label class="check">
       <input type="checkbox" bind:checked={sinceMode} disabled={previousPrint === null} />
@@ -188,30 +194,36 @@
       <input type="checkbox" bind:checked={oldestFirst} />
       {t("print.oldestFirst")}
     </label>
-    <span class="muted">{t("print.rows", { count: rows.length })}</span>
-    <button type="button" onclick={print} disabled={!loaded}>{t("print.print")}</button>
+    <span class="chip" role="status">{t("print.rows", { count: rows.length })}</span>
+    <span class="toolbar-end"></span>
+    <button type="button" class="btn btn-primary" onclick={print} disabled={!loaded}>
+      <Icon name="print" />{t("print.print")}
+    </button>
   {/if}
 </div>
 
 {#if loadError}
-  <p class="error no-print" role="alert">{loadError}</p>
+  <p class="msg msg-danger no-print" role="alert"><Icon name="warning" />{loadError}</p>
 {/if}
 {#if printError}
-  <p class="error no-print" role="alert">{printError}</p>
+  <p class="msg msg-danger no-print" role="alert"><Icon name="warning" />{printError}</p>
 {/if}
 
 {#if loaded && incident === null}
-  <p class="no-print">
-    {t("print.noIncident")} <a href={hashFor("journal")}>{t("nav.journal")}</a>
-  </p>
+  <div class="empty no-print">
+    <p>{t("print.noIncident")}</p>
+    <button type="button" class="btn btn-primary" onclick={() => openPopover("incident")}>
+      {t("journal.incident.choose")}
+    </button>
+  </div>
 {:else if incident !== null}
-  <article class="document" data-drill={isDrill(incident) ? "true" : undefined}>
-    <header>
+  <article class="doc" data-drill={isDrill(incident) ? "true" : undefined}>
+    <header class="doc-head">
       <h1>{t("print.title", { incident: incidentName(incident) })}</h1>
       {#if isDrill(incident)}
-        <p class="drill">{t("print.drill")}</p>
+        <p class="msg msg-drill doc-drill"><Icon name="drill" />{t("print.drill")}</p>
       {/if}
-      <dl>
+      <dl class="dl">
         <dt>{t("print.device")}</dt>
         <dd>{settings.deviceId}</dd>
         <dt>{t("print.operators")}</dt>
@@ -230,9 +242,9 @@
     </header>
 
     {#if rows.length === 0}
-      <p class="muted">{since === null ? t("journal.entries.empty") : t("print.empty")}</p>
+      <p class="msg">{since === null ? t("journal.entries.empty") : t("print.empty")}</p>
     {:else}
-      <table>
+      <table class="table">
         <thead>
           <tr>
             <th scope="col">{t("journal.entries.time")}</th>
@@ -253,11 +265,11 @@
                 <td>{row.entry.operator}</td>
                 <td>{t("journal.type.message_out")}</td>
                 <td class="label">{t("journal.batch.toAll", { count: row.counters.total })}</td>
-                <td class="text">
+                <td class="doc-text">
                   {batchText(row.body, row.drill)}
-                  <div class="strip">{countersText(row.counters)}</div>
+                  <div class="doc-meta">{countersText(row.counters)}</div>
                 </td>
-                <td class="status">{t(`journal.status.${row.status}`)}</td>
+                <td class="doc-status">{t(`journal.status.${row.status}`)}</td>
               </tr>
               {#each row.messages as view (view.entry.id)}
                 {@render messageRow(view, true)}
@@ -270,11 +282,11 @@
                 <td>
                   {t(`journal.type.${entry.type}`)}
                   {#if entry.transport !== undefined && entry.transport !== "mesh"}
-                    <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
+                    <span class="doc-meta">{t(`send.transport.${entry.transport}`)}</span>
                   {/if}
                 </td>
                 <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
-                <td class="text">
+                <td class="doc-text">
                   {#if entry.type === "status_change"}
                     {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
                       · {entry.text}{/if}
@@ -294,146 +306,9 @@
 {/if}
 
 <style>
+  /* Layout only: the toolbar's controls sit on one line above the sheet. */
   .controls {
-    display: flex;
     align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
-  }
-
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .document {
-    padding: 1.5rem;
-    border: 1px solid var(--line);
-    background: var(--surface);
-  }
-
-  header h1 {
-    margin: 0 0 0.5rem;
-  }
-
-  header .drill {
-    margin: 0 0 0.75rem;
-    padding: 0.3rem 0.6rem;
-    border: 2px solid var(--ink);
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    background: var(--drill-bg);
-  }
-
-  header dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.1rem 1rem;
-    margin: 0 0 1rem;
-    font-size: 0.9rem;
-  }
-
-  header dt {
-    font-weight: 600;
-  }
-
-  header dd {
-    margin: 0;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.3rem 0.4rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  thead th {
-    border-bottom: 2px solid var(--ink);
-  }
-
-  tr {
-    break-inside: avoid;
-  }
-
-  .time {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .trust {
-    margin-left: 0.15rem;
-    font-size: 0.8em;
-    text-decoration: none;
-  }
-
-  .trust[data-trust="unknown"] {
-    opacity: 0.6;
-  }
-
-  .label {
-    font-weight: 600;
-  }
-
-  .text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    width: 50%;
-  }
-
-  .strip {
-    font-size: 0.85em;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .status {
-    white-space: nowrap;
-  }
-
-  .indented {
-    padding-left: 1.5rem;
-  }
-
-  tr.child td {
-    border-bottom-style: dashed;
-    font-size: 0.9em;
-  }
-
-  tr[data-type="batch"] td {
-    background: var(--light);
-  }
-
-  @media print {
-    .document {
-      padding: 0;
-      border: none;
-    }
-
-    .strip,
-    .muted {
-      color: #444;
-    }
-
-    tr[data-type="batch"] td {
-      background: none;
-      font-weight: 600;
-    }
+    margin-bottom: var(--s-4);
   }
 </style>

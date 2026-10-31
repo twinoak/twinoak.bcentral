@@ -47,9 +47,13 @@
   let picking = $state(false);
   let busy = $state(false);
   let error: string | null = $state(null);
+  // The label's error waits until the field has been left or a save was tried: an empty
+  // form that has just opened is not wrong yet (P2-05's audit).
+  let labelTouched = $state(false);
 
   const normalizedKey = $derived(normalizePublicKey(publicKey));
   const labelError = $derived(label.trim() === "" ? t("register.labelRequired") : null);
+  const showLabelError = $derived(labelError !== null && labelTouched);
   const keyError = $derived(
     !isValidPublicKey(normalizedKey)
       ? t("register.publicKeyInvalid")
@@ -77,6 +81,7 @@
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
+    labelTouched = true;
     if (!canSave) {
       return;
     }
@@ -139,11 +144,12 @@
         type="text"
         required
         bind:value={label}
-        aria-invalid={labelError !== null}
+        onblur={() => (labelTouched = true)}
+        aria-invalid={showLabelError}
         aria-describedby="register-label-help"
       />
       <span class="field-help" id="register-label-help">{t("register.labelHelp")}</span>
-      {#if labelError}
+      {#if showLabelError}
         <span class="field-error"><Icon name="warning" />{labelError}</span>
       {/if}
     </div>

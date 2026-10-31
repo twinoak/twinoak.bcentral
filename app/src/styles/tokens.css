@@ -1,8 +1,10 @@
 /* The tokens (docs/design.md §Tokens, P2-01). The one file where a colour literal may be
-   written: the literal check (src/lib/colourLiterals.test.ts) fails on a hex, rgb() or hsl()
-   anywhere else, and the contrast check (scripts/check-contrast.mjs, first in `npm run test`)
-   reads the two blocks below and holds every pair in scripts/contrast.mjs to 7:1 for text and
-   3:1 for UI chrome in both modes. A value that fails is adjusted here; the rule is not.
+   written: the literal check (src/lib/colourLiterals.test.ts, on since P2-05) fails on a hex,
+   rgb() or hsl() anywhere else, and the contrast check (scripts/check-contrast.mjs, first in
+   `npm run test`) reads the two blocks below and holds every pair in scripts/contrast.mjs to
+   7:1 for text and 3:1 for UI chrome in both modes. A value that fails is adjusted here; the
+   rule is not. (The P1-09 alias block that followed the high-contrast block is gone with the
+   transition sheet, P2-05.)
 
    Sizes are in rem so the text-size setting (Settings → Screen, lib/appearance.ts) scales the
    whole screen: the px in the comments are at the normal 16 px root. */
@@ -91,16 +93,4 @@
   --drill-bg: #ffffff;
   --focus: #000000;
   --shadow: none;
-}
-
-/* Transition aliases: the P1-09 names the two print pages still reference, each an alias of
-   a token above. P2-05 moves the print pages onto the names above and deletes these lines;
-   nothing new uses them. (P2-02 removed the navy bar's own names with the bar — --on-navy,
-   --focus-on-navy, --alert-bg, --drill-line; P2-03 removed --navy with the compose form's
-   and the timeline's edges; P2-04 removed --light, --surface-in, --surface-given-up and the
-   four --dot-* with the handover, queue, register, radio and settings screens.) */
-:root {
-  --muted: var(--ink-2);
-  --line: var(--rule-2);
-  --error: var(--danger);
 }

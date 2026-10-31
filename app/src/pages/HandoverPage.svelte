@@ -99,9 +99,14 @@
   const canTakeOver = $derived(
     !busy && newOperator.trim() !== "" && newOperator.trim() !== settings.operatorName.trim(),
   );
-  // The printed header: the handover done here, or else the names as they stand now.
+  // The printed header: the handover done here, or else the operator now and the name typed
+  // for the next one; while that is still the current name, "To" is a line to write on
+  // (P2-05: the field starts with the current name, which is not a handover).
   const printFrom = $derived(lastHandover?.from ?? settings.operatorName.trim());
-  const printTo = $derived(lastHandover?.to ?? newOperator.trim());
+  const printTo = $derived(
+    lastHandover?.to ??
+      (newOperator.trim() === settings.operatorName.trim() ? "" : newOperator.trim()),
+  );
   const printTime = $derived(lastHandover?.at ?? printedAt);
 
   function describe(failure: unknown): string {

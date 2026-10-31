@@ -1,7 +1,7 @@
-/* The app's stylesheet is four files under styles/ (docs/design.md, P2-01): the tokens, the
-   base (typeface, resets, headings, focus ring, print base), the components, and the
-   transition sheet that carries the P1-09 element rules until P2-05 deletes it. */
+/* The app's stylesheet is three files under styles/ (docs/design.md, P2-01): the tokens, the
+   base (typeface, resets, headings, focus ring, print base) and the components, which end
+   with the paper rules (P2-05). The transition sheet that carried the P1-09 element rules
+   while the screens moved over is gone with the last screen. */
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/components.css";
-@import "./styles/transition.css";

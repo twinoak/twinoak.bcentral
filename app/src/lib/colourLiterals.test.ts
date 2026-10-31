@@ -1,7 +1,8 @@
 // The colour-literal check (P2-01): no `#hex`, `rgb(` or `hsl(` in a .svelte file or in any
-// CSS outside styles/tokens.css. The check itself is `todo` with the current count in its
-// name until P2-05 turns it on at zero (each task in between reports its count); the
-// scanner's rules are tested here so the count means what it says.
+// CSS outside styles/tokens.css. The check was `todo` with the count in its name while P2-02
+// to P2-04 brought it down (4, 3, 3, 2) and is on at zero since P2-05, when the two print
+// pages lost their `#444`; the scanner's rules are tested here so the count means what it
+// says.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -83,8 +84,8 @@ const where = Object.entries(perFile)
   .join(", ");
 
 describe("colour literals outside styles/tokens.css", () => {
-  // P2-05 turns this on: change `it.todo` to `it` once the count is 0.
-  it.todo(`none in any .svelte file or CSS — currently ${total} (${where || "none"})`, () => {
+  // Acceptance (P2-05): the count is 0 everywhere but the token sheet, and stays there.
+  it(`none in any .svelte file or CSS — currently ${total} (${where || "none"})`, () => {
     expect(perFile).toEqual({});
   });
 });

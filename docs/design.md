@@ -171,3 +171,42 @@ Gradients; shadows on static surfaces; full-width coloured bands; cards with a c
 left border; pills containing a whole sentence; emoji; icon fonts; Google Fonts links; more
 than one accent; all-caps labels; centred page layouts with empty flanks; any colour literal
 outside `tokens.css`.
+
+## As built
+
+Written 2026-10-31 at the end of the sprint (P2-05). What the five tasks built differently
+from the text above, and why; the reports under `tasks/phase-2/reports/` have the detail, and
+`tasks/phase-2/reports/screens/` the screenshots of every screen.
+
+- `--rule-2` is `#7f8791`, not `#bac1ca`: the document's grey is 1.8:1 on white and an input
+  border is chrome at 3:1 on every grey surface. `--rule` stays as written and is not checked
+  (a separator is decoration). Four tokens the text implies but does not name exist:
+  `--on-accent`, `--shadow`, `--scrim` (the shortcut overlay's backdrop), `--font-mono`.
+- Every size is `rem` with the document's px at the 16 px root, so the text-size setting
+  scales the whole screen; the side column alone is the written 320 px.
+- Chips in a status strip have no background: the dot and the word carry the state (hollow
+  dot delivered, filled dot roger), a chip outside a strip keeps its tint. Five tinted boxes
+  per journal row were too loud.
+- The bar: Radio is not in the navigation (five screens as listed; the radio chip and
+  Settings reach it). The chip details ("· heard 3 min", "· open for 2 h") show from 1440 px
+  up; below, the popover carries them. When three chips are tinted at 1280 px the navigation
+  half drops to a second right-aligned line; the calm bar is one 56 px row. The incident
+  switcher is a popover-sized card with the pick, create, close/reopen, export and print
+  controls, not a one-sentence popover.
+- The journal: the row list is a subgrid with the strip column capped at a third, so the
+  columns line up and the body keeps its width; row actions are a line under the row on
+  hover, focus or expansion, not an overlay; corrections are 14 px lines, not rows; the
+  compose card is padded `--s-4` vertically so ten one-line rows fit under it at 720 px;
+  `pending` is a warn state.
+- The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
+  twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
+  queued and reopens from the queue's title; the handover's row actions are always shown and
+  its age sits at the end of the strip; the register's Print is icon-only and its Notes
+  column is in the form, not the table; Settings has eight cards (Hub, for the phase-3 URL)
+  with a Save per card of typed values.
+- Print: the document is a `.doc` block in `components.css` (a sheet on screen under a
+  toolbar, 12 pt black on white on paper), and the paper rules at the end of the same file
+  turn every chip into its word and drop every edge and tint; the drill line keeps a black
+  border. No separate print stylesheet.
+- The colour-literal test is on at zero; the transition stylesheet and the alias block are
+  gone.

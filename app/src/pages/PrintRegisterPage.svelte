@@ -1,8 +1,10 @@
 <script lang="ts">
-  // The register as a document for the browser's print dialog (P1-06): one line per radio
-  // with label, person, street, role and the key's first 12 characters, the rows not yet
-  // bound to a radio under their own heading, for the box. The header carries the device id,
-  // the print time and the counts. Browser print(), like the journal's print view.
+  // The register as a document for the browser's print dialog (P1-06; on the design language
+  // in P2-05): one line per radio with label, person, street, role and the key's first 12
+  // characters, the rows not yet bound to a radio under their own heading, for the box. The
+  // header carries the device id, the print time and the counts. A no-print toolbar on the
+  // components over the `.doc` sheet (components.css), 12 pt black on white on paper, like
+  // the journal's print view. Browser print().
   import { onMount } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import { now } from "../lib/clock.svelte.ts";
@@ -12,6 +14,7 @@
   import { listPendingRegister, listRegister } from "../store/index.ts";
   import { sortedByLabel } from "../store/register.ts";
   import type { PendingRegisterRow, RegisterEntry } from "../store/types.ts";
+  import Icon from "../components/Icon.svelte";
 
   let entries: RegisterEntry[] = $state([]);
   let pending: PendingRegisterRow[] = $state([]);
@@ -51,44 +54,51 @@
   }
 </script>
 
-<div class="controls no-print">
-  <a href={hashFor("register")}>{t("printRegister.back")}</a>
-  <button type="button" onclick={print} disabled={!loaded}>{t("print.print")}</button>
+{#snippet headerRow()}
+  <thead>
+    <tr>
+      <th scope="col">{t("register.field.label")}</th>
+      <th scope="col">{t("register.field.person")}</th>
+      <th scope="col">{t("register.field.street")}</th>
+      <th scope="col">{t("register.field.role")}</th>
+      <th scope="col">{t("printRegister.keyPrefix")}</th>
+    </tr>
+  </thead>
+{/snippet}
+
+<div class="toolbar controls no-print">
+  <a class="btn" href={hashFor("register")}>{t("printRegister.back")}</a>
+  <span class="toolbar-end"></span>
+  <button type="button" class="btn btn-primary" onclick={print} disabled={!loaded}>
+    <Icon name="print" />{t("print.print")}
+  </button>
 </div>
 
 {#if loadError}
-  <p class="error no-print" role="alert">{loadError}</p>
+  <p class="msg msg-danger no-print" role="alert"><Icon name="warning" />{loadError}</p>
 {/if}
 
-<article class="document">
-  <header>
+<article class="doc">
+  <header class="doc-head">
     <h1>{t("printRegister.title")}</h1>
-    <dl>
+    <dl class="dl">
       <dt>{t("print.device")}</dt>
       <dd>{settings.deviceId}</dd>
       <dt>{t("print.printedAt")}</dt>
       <dd>{printedAt === "" ? "" : formatDateTime(printedAt)}</dd>
     </dl>
-    <p class="count">
+    <p class="doc-meta">
       {t("printRegister.count", { count: sorted.length, pending: sortedPending.length })}
     </p>
   </header>
 
   {#if loaded && sorted.length === 0 && sortedPending.length === 0}
-    <p class="muted">{t("register.empty")}</p>
+    <p class="msg">{t("register.empty")}</p>
   {/if}
 
   {#if sorted.length > 0}
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">{t("register.field.label")}</th>
-          <th scope="col">{t("register.field.person")}</th>
-          <th scope="col">{t("register.field.street")}</th>
-          <th scope="col">{t("register.field.role")}</th>
-          <th scope="col">{t("printRegister.keyPrefix")}</th>
-        </tr>
-      </thead>
+    <table class="table">
+      {@render headerRow()}
       <tbody>
         {#each sorted as entry (entry.id)}
           <tr>
@@ -105,16 +115,8 @@
 
   {#if sortedPending.length > 0}
     <h2>{t("register.pending.title")}</h2>
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">{t("register.field.label")}</th>
-          <th scope="col">{t("register.field.person")}</th>
-          <th scope="col">{t("register.field.street")}</th>
-          <th scope="col">{t("register.field.role")}</th>
-          <th scope="col">{t("printRegister.keyPrefix")}</th>
-        </tr>
-      </thead>
+    <table class="table">
+      {@render headerRow()}
       <tbody>
         {#each sortedPending as row (row.id)}
           <tr>
@@ -131,92 +133,9 @@
 </article>
 
 <style>
+  /* Layout only: the toolbar's controls sit on one line above the sheet. */
   .controls {
-    display: flex;
     align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .document {
-    padding: 1.5rem;
-    border: 1px solid var(--line);
-    background: var(--surface);
-  }
-
-  header h1 {
-    margin: 0 0 0.5rem;
-  }
-
-  header dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.1rem 1rem;
-    margin: 0 0 0.5rem;
-    font-size: 0.9rem;
-  }
-
-  header dt {
-    font-weight: 600;
-  }
-
-  header dd {
-    margin: 0;
-  }
-
-  .count {
-    margin: 0 0 1rem;
-    color: var(--muted);
-  }
-
-  h2 {
-    font-size: 1.1rem;
-    margin: 1.5rem 0 0.5rem;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.3rem 0.4rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  thead th {
-    border-bottom: 2px solid var(--ink);
-  }
-
-  tr {
-    break-inside: avoid;
-  }
-
-  .label {
-    font-weight: 600;
-  }
-
-  @media print {
-    .document {
-      padding: 0;
-      border: none;
-    }
-
-    .count,
-    .muted {
-      color: #444;
-    }
+    margin-bottom: var(--s-4);
   }
 </style>

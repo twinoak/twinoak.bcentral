@@ -134,7 +134,9 @@ kbd {
 }
 
 /* The print base: black on white, 12 pt body, page numbers in the bottom margin where the
-   browser supports page margin boxes. The print pages themselves are P2-05's. */
+   browser supports page margin boxes. The components' paper rules (status words instead of
+   chips, no edges, no tints) are at the end of components.css; the document the two print
+   pages render is `.doc` there (P2-05). */
 @media print {
   .no-print {
     display: none !important;
