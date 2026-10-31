@@ -54,7 +54,7 @@ input[type="file"] {
   padding: var(--s-1) var(--s-2);
 }
 
-button:not(.btn):not(.chip):not(.tab),
+button:not(.btn):not(.chip):not(.tab):not(.btn-link):not(.row-button),
 .button {
   display: inline-block;
   min-height: 2.25rem;
@@ -84,20 +84,9 @@ button.small {
   padding: var(--s-1) var(--s-2);
 }
 
-button.link {
-  display: inline;
-  min-height: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-  font-size: inherit;
-  font-weight: 400;
-}
-
 /* The P1-09 status chips (`.chip[data-status]`): the base look is components.css's .chip;
-   the glyph in front stays until P2-03 puts the dots in. */
+   the glyph in front stays for the handover and queue screens until P2-04 (the journal has
+   the dots since P2-03, and `button.link` went with its timeline). */
 .chip[data-status]::before {
   content: "·";
 }

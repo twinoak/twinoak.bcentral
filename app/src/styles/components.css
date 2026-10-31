@@ -405,28 +405,54 @@ button.chip:hover {
   outline-offset: -2px;
 }
 
-/* --- Row list (journal, open items, handover lists): every child of `.rows` is a row, a
-   grid of time | who | body | strip; time 14 px ink-2 tabular, who 500, body 18 px, strip
-   at the right. The current row (aria-current="true", the keyboard cursor) or a selected
-   row (aria-selected="true") is accent-weak; an expanded row's history (`.row-detail`)
-   sits on surface-2 under it. */
+/* --- Row list (journal, open items, handover lists): the list is the grid — time | who |
+   body | strip — and every child is a row laid on the same columns (subgrid), so the
+   columns line up down the list the way a table's do; time 14 px ink-2 tabular, who 500,
+   body 18 px, strip at the right. `.rows-3` is time | body | strip and `.rows-2` body |
+   strip, for the side cards. Nothing is tinted but the current row (aria-current="true",
+   the keyboard cursor; accent-weak), an expanded row and the rows of its expansion
+   (data-expanded / data-nested; surface-2), and hover. The row's own lines — its actions
+   (`.row-actions`, shown on hover, focus and while expanded), an inline form
+   (`.row-form`), a correction (`.row-note`) and its history (`.row-detail`) — span the
+   columns under the row's cells. A `.row-button` is a row that is one button (the side
+   cards: click = go to the entry). */
 .rows {
+  display: grid;
+  /* The strip column is shared down the list (subgrid), so it is capped at a third of the
+     list: a three-state strip fits one line at 1280 px, a batch's four counters wrap, and
+     the body keeps its width at every text size. */
+  grid-template-columns: max-content max-content minmax(0, 1fr) fit-content(33%);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+.rows-3 {
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+}
+
+.rows-2 {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
 .rows > * {
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   gap: var(--s-1) var(--s-4);
   align-items: baseline;
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-2) var(--s-4);
   border-bottom: 1px solid var(--rule);
 }
 
-.rows > :hover {
+.rows > :hover,
+.rows > [data-expanded="true"],
+.rows > [data-nested="true"] {
   background: var(--surface-2);
+}
+
+.rows > [data-nested="true"] {
+  padding-left: var(--s-6);
 }
 
 .rows > [aria-selected="true"],
@@ -440,6 +466,30 @@ button.chip:hover {
   outline-offset: -2px;
 }
 
+/* A focused row (the keyboard cursor, P1-09) keeps the ring inside the scrolling box. */
+.rows > [tabindex]:focus-visible {
+  outline-offset: -2px;
+}
+
+.rows > :has(> .row-button) {
+  padding: 0;
+}
+
+.row-button {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  gap: var(--s-1) var(--s-3);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
 .row-time {
   font-size: var(--fs-14);
   color: var(--ink-2);
@@ -447,26 +497,176 @@ button.chip:hover {
   white-space: nowrap;
 }
 
+/* The clock-trust mark after the time (P1-09): a quiet "?" or "✓"; the bar says it once. */
+.row-trust {
+  margin-left: 0.15em;
+  font-size: var(--fs-13);
+  text-decoration: none;
+  cursor: help;
+}
+
 .row-who {
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+
+/* The direction glyph before the counterparty: → out of the desk, ← into it. */
+.row-dir {
+  display: inline-block;
+  width: 1em;
+  margin-right: var(--s-1);
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+/* A word after the name in the who cell (the transport of a non-mesh message). */
+.row-meta {
+  font-size: var(--fs-13);
+  font-weight: 400;
+  color: var(--ink-2);
 }
 
 .row-body {
   font-size: var(--fs-18);
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.rows-3 .row-body,
+.rows-2 .row-body {
+  font-size: var(--fs-16);
 }
 
 .row-strip {
   justify-self: end;
 }
 
+/* The row's actions, under its body and strip: hidden until the pointer or the focus is on
+   the row, always shown on an expanded row. Compact quiet buttons, so the line is low. */
+.row-actions {
+  display: none;
+  grid-column: 3 / -1;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  justify-content: flex-end;
+}
+
+.rows > :hover > .row-actions,
+.rows > :focus-within > .row-actions,
+.rows > [data-expanded="true"] > .row-actions {
+  display: flex;
+}
+
+.row-actions .btn {
+  min-height: 1.75rem;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-14);
+}
+
+/* An inline form on a row (a correction, a manual status with its reason). */
+.row-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  grid-column: 1 / -1;
+}
+
+.row-form .field {
+  flex: 1 1 14rem;
+}
+
+/* A correction under the entry it corrects: a 14 px neutral line. */
+.row-note {
+  grid-column: 3 / -1;
+}
+
 .row-detail {
   grid-column: 1 / -1;
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-2) var(--s-3);
   border-radius: var(--r-1);
   background: var(--surface-2);
   color: var(--ink-2);
   font-size: var(--fs-14);
+}
+
+.rows > [data-expanded="true"] > .row-detail {
+  background: var(--surface);
+}
+
+.row-detail ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row-detail li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-2);
+  padding: var(--s-1) 0;
+}
+
+.row-detail .row-time {
+  font-size: inherit;
+}
+
+/* A button that reads as a link inside text (the reply marks on a row: "answers 19:03"). */
+.btn-link {
+  display: inline;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-14);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+/* The box a long row list scrolls in (the journal): a surface with the card's edge and no
+   padding, so the rows run edge to edge and the last row's rule is the box's. */
+.rows-box {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.rows-box > .rows > :last-child {
+  border-bottom: 0;
+}
+
+/* The "N new" chip of a scrolled list (P1-01): sticks to the top of the scrolling box, at
+   the right, over the rows. The host is zero-height so the rows do not move. */
+.rows-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  height: 0;
+}
+
+.rows-top .chip {
+  margin: var(--s-2) var(--s-3) 0 0;
+  box-shadow: var(--shadow);
+}
+
+/* A one-line textarea that grows with its text (the compose card): a message is short, and
+   the rows under the card are what the screen is for. */
+.field-grow textarea {
+  min-height: 2.25rem;
+  max-height: 9rem;
+  field-sizing: content;
 }
 
 /* --- Popover: surface, r-2, the floating shadow, max 360 px; a title line, a sentence, one

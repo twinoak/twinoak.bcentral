@@ -6,9 +6,16 @@
   //
   // Reply from the row (P1-02): the parent calls replyTo(entry) with an incoming message; the
   // form takes the recipient and transport from it, focuses the text, scrolls itself into
-  // view and shows "Replying to: …" with a ✕ that drops the link. The message is then stored
-  // with refersTo = the incoming entry's id. Keys inside the form: Esc drops the link,
-  // Ctrl+Enter sends. The N shortcut (P1-09) puts the cursor in the text from anywhere.
+  // view and shows "Replying to: …" as an inline message with a ✕ that drops the link. The
+  // message is then stored with refersTo = the incoming entry's id. Keys inside the form:
+  // Esc drops the link, Ctrl+Enter sends. The N shortcut (P1-09) puts the cursor in the
+  // text from anywhere; `onreveal` lets the parent show the form first (it sits under a tab
+  // in the journal's compose card, P2-03).
+  //
+  // One line of fields (via, recipient, the text that grows as it is typed, Send) and a
+  // 14 px meta line under it: the compose card sits above the journal's rows, and the rows
+  // are what the screen is for. The look is components.css's `.field` / `.btn` / `.msg`;
+  // this file lays nothing out of its own but the line.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
@@ -17,6 +24,7 @@
   import { composeMessage, lastSeqNo } from "../store/index.ts";
   import { MAX_MESSAGE_BYTES, previewText, replySnippet } from "../store/outgoing.ts";
   import { radio } from "../radio/index.ts";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     incidentId: string;
@@ -27,8 +35,11 @@
     register: readonly RegisterEntry[];
     // Called with the stored message_out; the parent sends mesh messages and reloads its list.
     onsent: (message: JournalEntry) => void;
+    // Called before the form takes the focus (N, a reply): the parent brings it into view —
+    // the journal switches to its tab.
+    onreveal?: () => void;
   }
-  let { incidentId, drill = false, register, onsent }: Props = $props();
+  let { incidentId, drill = false, register, onsent, onreveal }: Props = $props();
 
   const TRANSPORTS: readonly Transport[] = ["mesh", "phone", "courier", "verbal"];
 
@@ -76,7 +87,9 @@
       !busy,
   );
 
-  function focusText() {
+  async function focusText() {
+    onreveal?.();
+    await tick();
     form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     textField?.focus();
   }
@@ -84,7 +97,7 @@
   // N: the cursor goes to the message text, from anywhere on the screen.
   $effect(() =>
     onShortcut("newMessage", () => {
-      focusText();
+      void focusText();
       return true;
     }),
   );
@@ -104,8 +117,7 @@
     }
     replying = entry;
     error = null;
-    await tick();
-    focusText();
+    await focusText();
   }
 
   function dropReply() {
@@ -165,11 +177,27 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <form class="compose" bind:this={form} onsubmit={submit} {onkeydown}>
   {#if !hasOperatorName()}
-    <p class="error" role="alert">{t("send.noOperator")}</p>
+    <p class="msg msg-warn" role="alert"><Icon name="warning" />{t("send.noOperator")}</p>
   {/if}
 
-  <div class="row">
-    <div class="field">
+  {#if replying !== null}
+    <p class="msg replying" role="status" data-replying-to={replying.id}>
+      <Icon name="reply" />
+      <span class="replying-text"
+        >{t("send.replyingTo", { text: replySnippet(replying.text ?? "") })}</span
+      >
+      <button
+        type="button"
+        class="btn btn-quiet btn-icon drop"
+        aria-label={t("send.dropReply")}
+        title={t("send.dropReply")}
+        onclick={dropReply}><Icon name="close" /></button
+      >
+    </p>
+  {/if}
+
+  <div class="line">
+    <div class="field via">
       <label for="send-transport">{t("send.transport")}</label>
       <select id="send-transport" bind:value={transport}>
         {#each TRANSPORTS as option (option)}
@@ -178,7 +206,7 @@
       </select>
     </div>
 
-    <div class="field">
+    <div class="field recipient">
       <label for="send-recipient">{t("send.recipient")}</label>
       <select id="send-recipient" bind:value={counterpartyId} disabled={register.length === 0}>
         <option value="">{t("send.recipient.choose")}</option>
@@ -186,141 +214,107 @@
           <option value={entry.id}>{entry.label}</option>
         {/each}
       </select>
-      {#if register.length === 0}
-        <small class="error">{t("send.recipient.none")}</small>
-      {/if}
     </div>
-  </div>
 
-  {#if replying !== null}
-    <div class="replying" role="status" data-replying-to={replying.id}>
-      <small>{t("send.replyingTo", { text: replySnippet(replying.text ?? "") })}</small>
-      <button
-        type="button"
-        class="drop"
-        aria-label={t("send.dropReply")}
-        title={t("send.dropReply")}
-        onclick={dropReply}>✕</button
-      >
+    <div class="field field-grow text">
+      <label for="send-text">{t("send.text")}</label>
+      <textarea
+        id="send-text"
+        rows="1"
+        bind:this={textField}
+        bind:value={body}
+        aria-invalid={preview.tooLong}
+        aria-describedby="send-meta"
+      ></textarea>
     </div>
-  {/if}
 
-  <div class="field">
-    <label for="send-text">{t("send.text")}</label>
-    <textarea
-      id="send-text"
-      rows="3"
-      bind:this={textField}
-      bind:value={body}
-      aria-invalid={preview.tooLong}
-    ></textarea>
-    <div class="meta">
-      <small>{t("send.textHelp", { prefix: preview.prefix })}</small>
-      <small class:error={preview.tooLong} role="status">
-        {t("send.bytes", { bytes: preview.bytes, max: MAX_MESSAGE_BYTES })}
-      </small>
-    </div>
-    {#if preview.tooLong}
-      <small class="error" role="alert">
-        {t("send.tooLong", { bytes: preview.bytes, max: MAX_MESSAGE_BYTES })}
-      </small>
-    {/if}
-  </div>
-
-  {#if radioBlocks}
-    <p class="error" role="alert">{t("send.noRadio")}</p>
-  {/if}
-
-  <div class="actions">
-    <button type="submit" disabled={!canSend}>
-      {transport === "mesh" ? t("send.send") : t("send.record")}
+    <button type="submit" class="btn btn-primary" disabled={!canSend}>
+      <Icon name="send" />{transport === "mesh" ? t("send.send") : t("send.record")}
     </button>
-    <small>{t("send.shortcut")}</small>
-    {#if error}
-      <span class="error" role="alert">{error}</span>
-    {/if}
   </div>
+
+  <!-- The meta line: the prefix the message goes out with, the byte counter, the key. -->
+  <div class="meta field-help" id="send-meta">
+    <span>{t("send.textHelp", { prefix: preview.prefix })}</span>
+    <span class="counter" class:field-error={preview.tooLong} role="status">
+      {t("send.bytes", { bytes: preview.bytes, max: MAX_MESSAGE_BYTES })}
+    </span>
+    <span>{t("send.shortcut")}</span>
+  </div>
+
+  {#if preview.tooLong}
+    <p class="field-error" role="alert">
+      <Icon name="warning" />{t("send.tooLong", { bytes: preview.bytes, max: MAX_MESSAGE_BYTES })}
+    </p>
+  {/if}
+  {#if register.length === 0}
+    <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.none")}</p>
+  {/if}
+  {#if radioBlocks}
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{t("send.noRadio")}</p>
+  {/if}
+  {#if error}
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>
+  {/if}
 </form>
 
 <style>
+  /* Layout only. */
   .compose {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: var(--s-1);
   }
 
-  .row {
+  .line {
     display: flex;
-    gap: 1rem;
     flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
   }
 
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    min-width: 14rem;
-    flex: 1;
+  .via {
+    flex: 0 1 10rem;
   }
 
-  label {
-    font-weight: 600;
+  .recipient {
+    flex: 0 1 14rem;
+  }
+
+  .text {
+    flex: 1 1 18rem;
   }
 
   .meta {
     display: flex;
-    justify-content: space-between;
-    gap: 1rem;
     flex-wrap: wrap;
+    gap: var(--s-1) var(--s-4);
+    margin: 0;
   }
 
-  small {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+  .counter {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
   }
 
   .replying {
-    display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0.6rem;
-    border-left: 4px solid var(--navy);
-    background: var(--surface-in);
-    border-radius: 4px;
   }
 
-  .replying small {
+  .replying-text {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--ink);
   }
 
   .drop {
-    min-width: 2.5rem;
-    padding: 0 0.4rem;
-    border: none;
-    background: none;
-    color: var(--muted);
-    font-size: 1rem;
-    line-height: 1.4;
-    cursor: pointer;
+    width: 1.75rem;
+    min-height: 1.75rem;
   }
 
-  .drop:hover,
-  .drop:focus-visible {
-    color: var(--ink);
+  p {
+    margin: 0;
   }
 </style>

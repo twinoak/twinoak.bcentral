@@ -2,8 +2,10 @@
   // Entries the operator types in by hand (P0-07): a note, or a message that came in from the
   // field on a non-mesh transport (phone, courier, verbal). Outgoing messages on any transport
   // go through the compose form; status changes and corrections are row actions in the
-  // timeline. Keys (P1-09): A from anywhere puts the cursor in the text with "Note" chosen;
-  // Ctrl+Enter inside the form adds the entry.
+  // timeline. Keys (P1-09): A from anywhere puts the cursor in the text with "Note" chosen
+  // (`onreveal` lets the parent show the form first — it sits under a tab in the journal's
+  // compose card, P2-03); Ctrl+Enter inside the form adds the entry. One line of fields and
+  // a 14 px meta line, like the compose form; the look is components.css's.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
@@ -11,14 +13,17 @@
   import { addMessageIn, addNote } from "../store/index.ts";
   import { NON_MESH_TRANSPORTS } from "../store/manual.ts";
   import type { RegisterEntry, Transport } from "../store/types.ts";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     incidentId: string;
     register: readonly RegisterEntry[];
     // Called after the entry is stored; the parent reloads.
     onadded: () => Promise<void>;
+    // Called before the form takes the focus (A): the parent brings it into view.
+    onreveal?: () => void;
   }
-  let { incidentId, register, onadded }: Props = $props();
+  let { incidentId, register, onadded, onreveal }: Props = $props();
 
   type Kind = "note" | "message_in";
 
@@ -40,6 +45,7 @@
   export async function focusNote(): Promise<void> {
     kind = "note";
     error = null;
+    onreveal?.();
     await tick();
     form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     textField?.focus();
@@ -92,8 +98,8 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <form class="manual" bind:this={form} onsubmit={submit} {onkeydown}>
-  <div class="row">
-    <div class="field">
+  <div class="line">
+    <div class="field kind">
       <label for="manual-kind">{t("journal.add.kind")}</label>
       <select id="manual-kind" bind:value={kind}>
         <option value="note">{t("journal.add.kind.note")}</option>
@@ -102,7 +108,7 @@
     </div>
 
     {#if kind === "message_in"}
-      <div class="field">
+      <div class="field from">
         <label for="manual-from">{t("journal.add.counterparty")}</label>
         <select id="manual-from" bind:value={counterpartyId} disabled={register.length === 0}>
           <option value="">{t("send.recipient.choose")}</option>
@@ -110,12 +116,9 @@
             <option value={entry.id}>{entry.label}</option>
           {/each}
         </select>
-        {#if register.length === 0}
-          <small class="error">{t("send.recipient.none")}</small>
-        {/if}
       </div>
 
-      <div class="field">
+      <div class="field via">
         <label for="manual-transport">{t("send.transport")}</label>
         <select id="manual-transport" bind:value={transport}>
           {#each NON_MESH_TRANSPORTS as option (option)}
@@ -124,59 +127,67 @@
         </select>
       </div>
     {/if}
+
+    <div class="field field-grow text">
+      <label for="manual-text">{t("journal.add.text")}</label>
+      <textarea id="manual-text" rows="1" bind:this={textField} bind:value={text}></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary" disabled={!canAdd}>{t("journal.add.save")}</button
+    >
   </div>
 
-  <div class="field">
-    <label for="manual-text">{t("journal.add.text")}</label>
-    <textarea id="manual-text" rows="2" bind:this={textField} bind:value={text}></textarea>
+  <div class="meta field-help">
+    <span>{t("journal.add.shortcut")}</span>
   </div>
 
-  <div class="actions">
-    <button type="submit" disabled={!canAdd}>{t("journal.add.save")}</button>
-    <small>{t("journal.add.shortcut")}</small>
-    {#if error}
-      <span class="error" role="alert">{error}</span>
-    {/if}
-  </div>
+  {#if kind === "message_in" && register.length === 0}
+    <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.none")}</p>
+  {/if}
+  {#if error}
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>
+  {/if}
 </form>
 
 <style>
+  /* Layout only. */
   .manual {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--s-1);
   }
 
-  .row {
+  .line {
     display: flex;
-    gap: 1rem;
     flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
   }
 
-  .field {
+  .kind {
+    flex: 0 1 14rem;
+  }
+
+  .from {
+    flex: 0 1 12rem;
+  }
+
+  .via {
+    flex: 0 1 8rem;
+  }
+
+  .text {
+    flex: 1 1 18rem;
+  }
+
+  .meta {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    min-width: 12rem;
-    flex: 1;
-  }
-
-  label {
-    font-weight: 600;
-  }
-
-  small {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
     flex-wrap: wrap;
+    gap: var(--s-1) var(--s-4);
+    margin: 0;
+  }
+
+  p {
+    margin: 0;
   }
 </style>

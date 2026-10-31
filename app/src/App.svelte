@@ -19,9 +19,12 @@
   import { closeHelp, helpOpen, toggleHelp } from "./lib/shortcutHelp.svelte.ts";
   import { drillMode } from "./store/index.ts";
 
-  // Until an operator name is set, every route shows settings — except the style guide
-  // (P2-01), which is for the reviewer and records nothing.
-  const shown = $derived(hasOperatorName() || route() === "styleguide" ? route() : "settings");
+  // Until an operator name is set, every route shows the journal, where the setup card asks
+  // for it (P2-03) — except settings, which can set it too, and the style guide (P2-01),
+  // which is for the reviewer and records nothing.
+  const shown = $derived(
+    hasOperatorName() || route() === "styleguide" || route() === "settings" ? route() : "journal",
+  );
   const drillActive = $derived(drillMode.active());
 
   $effect(() => {

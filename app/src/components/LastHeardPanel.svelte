@@ -2,7 +2,9 @@
   // "Last heard from" (P0-07): every register entry with the time since its latest incoming
   // message, the quiet ones on top. The elapsed time ticks once a second. Counted over the
   // whole journal, drills included (P1-05): the register is shared, and a message in a drill
-  // is real radio contact; the heading's tooltip says so.
+  // is real radio contact; the heading's tooltip says so. A card with the count of radios in
+  // its title and a two-column row list (P2-03); "never" is a danger chip with a glyph, so
+  // it tells apart without the colour.
   import { t, language } from "../i18n/index.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
   import type { LastHeard } from "../store/journalView.ts";
@@ -29,79 +31,36 @@
   }
 </script>
 
-<section class="panel" aria-labelledby="heard-heading">
-  <h2 id="heard-heading" title={t("journal.heard.help")}>{t("journal.heard.title")}</h2>
+<section class="card" aria-labelledby="heard-heading" data-last-heard>
+  <h2 id="heard-heading" class="card-title" title={t("journal.heard.help")}>
+    {t("journal.heard.title")}
+    <span class="count">{rows.length}</span>
+  </h2>
   {#if rows.length === 0}
-    <p class="muted">{t("journal.heard.empty")}</p>
+    <p class="msg">{t("journal.heard.empty")}</p>
   {:else}
-    <table>
-      <tbody>
-        {#each rows as row (row.entry.id)}
-          <tr class:never={row.at === null}>
-            <td class="label">{row.entry.label}</td>
-            <td class="when">
-              {#if row.at === null}
-                {t("journal.heard.never")}
-              {:else}
-                <span title={formatDateTime(row.at)}>
-                  {t("journal.heard.ago", { elapsed: formatElapsed(nowMs - Date.parse(row.at)) })}
-                </span>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <ol class="rows rows-2">
+      {#each rows as row (row.entry.id)}
+        <li data-never={row.at === null ? "true" : undefined}>
+          <span class="row-who">{row.entry.label}</span>
+          {#if row.at === null}
+            <span class="row-strip chip chip-danger"
+              ><span class="glyph">!</span>{t("journal.heard.never")}</span
+            >
+          {:else}
+            <span class="row-strip row-time" title={formatDateTime(row.at)}>
+              {t("journal.heard.ago", { elapsed: formatElapsed(nowMs - Date.parse(row.at)) })}
+            </span>
+          {/if}
+        </li>
+      {/each}
+    </ol>
   {/if}
 </section>
 
 <style>
-  .panel {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface);
-  }
-
-  h2 {
-    font-size: 1.1rem;
-    margin: 0 0 0.5rem;
-  }
-
-  .muted {
-    color: var(--muted);
+  /* Layout only. */
+  .msg {
     margin: 0;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  td {
-    padding: 0.3rem 0.25rem;
-    border-bottom: 1px solid var(--rule);
-    vertical-align: top;
-  }
-
-  .label {
-    font-weight: 600;
-  }
-
-  .when {
-    text-align: right;
-    white-space: nowrap;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* "never" is red and bold, and marked, so it tells apart without the colour. */
-  tr.never .when {
-    color: var(--error);
-    font-weight: 600;
-  }
-
-  tr.never .when::before {
-    content: "! ";
   }
 </style>

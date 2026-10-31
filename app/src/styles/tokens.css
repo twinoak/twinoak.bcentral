@@ -93,12 +93,11 @@
 }
 
 /* Transition aliases: the P1-09 names the screens still reference, each an alias of a token
-   above. P2-03 to P2-05 move every screen onto the names above and delete these lines as
+   above. P2-04 and P2-05 move every screen onto the names above and delete these lines as
    their last reference goes; nothing new uses them. (P2-02 removed the navy bar's own names
-   with the bar — --on-navy, --focus-on-navy, --alert-bg, --drill-line; --navy stays for the
-   compose form's and the timeline's edges until P2-03.) */
+   with the bar — --on-navy, --focus-on-navy, --alert-bg, --drill-line; P2-03 removed --navy
+   with the compose form's and the timeline's edges.) */
 :root {
-  --navy: var(--accent);
   --light: var(--bg);
   --muted: var(--ink-2);
   --line: var(--rule-2);
