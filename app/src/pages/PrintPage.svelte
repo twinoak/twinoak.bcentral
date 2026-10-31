@@ -22,6 +22,7 @@
   } from "../lib/journalText.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { settings } from "../lib/settings.svelte.ts";
+  import { showToast } from "../lib/toast.svelte.ts";
   import { isDrill } from "../store/incidents.ts";
   import {
     entriesForIncident,
@@ -46,8 +47,6 @@
   let loaded = $state(false);
   let loadError: string | null = $state(null);
   let printError: string | null = $state(null);
-  // Set after a print: the time that was recorded.
-  let recorded: string | null = $state(null);
 
   const since = $derived(sinceMode ? previousPrint : null);
   const rows = $derived(printRows(entries, { since, oldestFirst }));
@@ -108,8 +107,9 @@
     }
     try {
       await recordPrint(printedAt);
-      recorded = printedAt;
       printError = null;
+      // The confirmation is the toast (P2-02); the error stays on the page.
+      showToast(t("print.printed", { time: formatDateTime(printedAt) }));
     } catch (failure) {
       printError = t("print.failed", { error: describe(failure) });
     }
@@ -198,9 +198,6 @@
 {/if}
 {#if printError}
   <p class="error no-print" role="alert">{printError}</p>
-{/if}
-{#if recorded !== null}
-  <p class="ok no-print" role="status">{t("print.printed", { time: formatDateTime(recorded) })}</p>
 {/if}
 
 {#if loaded && incident === null}
@@ -317,10 +314,6 @@
 
   .error {
     color: var(--error);
-  }
-
-  .ok {
-    color: var(--ok);
   }
 
   .document {

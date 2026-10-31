@@ -77,7 +77,8 @@ export const mirror: Mirror = createMirror<FileSystemDirectoryHandle>({
 
 // --- drill mode (P1-05) ----------------------------------------------------------------
 
-// Whether the current incident is a drill, for the band on every screen. main.ts starts it.
+// The current incident as stored, and whether it is a drill: the incident chip and the drill
+// tint of the top bar (P2-02) and the window title read it. main.ts starts it.
 export const drillMode: DrillMode = createDrillMode({
   store: journalStore,
   incidentId: currentIncidentId,
@@ -93,7 +94,7 @@ export interface ExportResult {
 
 // Builds, validates and downloads the export file, and writes it into the journal folder
 // when one is set; returns the names. With `scope`, the file holds the drills only or the
-// real incidents only (P1-05: the incident bar passes the current incident's kind, so a
+// real incidents only (P1-05: the incident switcher passes the current incident's kind, so a
 // drill's export never carries the real journal and the real journal's export never carries
 // a drill); without it, everything.
 export async function exportJournal(scope?: { drill: boolean }): Promise<ExportResult> {
@@ -183,6 +184,13 @@ export async function exportRegisterCsv(): Promise<string> {
 export async function listIncidents(): Promise<Incident[]> {
   const store = await journalStore();
   return await store.allIncidents();
+}
+
+// Open or closed, from the entries that refer to the incident (incidents.ts); the switcher
+// in the top bar shows it (P2-02).
+export async function isIncidentOpen(incidentId: string): Promise<boolean> {
+  const store = await journalStore();
+  return await store.isIncidentOpen(incidentId);
 }
 
 // `drill` is decided here, once (P1-05): the store refuses to change it later.

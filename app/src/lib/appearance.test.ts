@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeStorage } from "../test-support/fakeStorage.ts";
 import {
   applyAppearance,
+  applyDrill,
   CONTRAST_ATTRIBUTE,
+  DRILL_ATTRIBUTE,
   FONT_SIZE_ATTRIBUTE,
   type RootLike,
 } from "./appearance.ts";
@@ -71,5 +73,20 @@ describe("appearance", () => {
     expect(css).toContain(`:root[${FONT_SIZE_ATTRIBUTE}="large"]`);
     expect(css).toContain(`:root[${FONT_SIZE_ATTRIBUTE}="largest"]`);
     expect(css).toContain(`:root[${CONTRAST_ATTRIBUTE}="high"]`);
+  });
+
+  // Acceptance (P2-02): the root attribute is set while a drill is current and unset after.
+  it("a drill sets data-drill on the root; a real incident or none removes it", () => {
+    const root = fakeRoot();
+    applyDrill(root, true);
+    expect(root.attributes.get(DRILL_ATTRIBUTE)).toBe("true");
+    applyDrill(root, false);
+    expect(root.attributes.has(DRILL_ATTRIBUTE)).toBe(false);
+  });
+
+  it("the component sheet keys the bar's drill tint on that attribute", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(new URL("../styles/components.css", import.meta.url), "utf8");
+    expect(css).toContain(`:root[${DRILL_ATTRIBUTE}="true"] .shell`);
   });
 });

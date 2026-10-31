@@ -24,33 +24,41 @@ iPads and iPhones are out too.
 4. Under **Settings**, type the operator name and check the clock, then plug in the radio and
    connect it under **Radio**.
 
+**The top bar says what needs you.** One bar on every screen: the incident you are working
+in (click it to switch, create, close, export or print), then a row of small status chips —
+radio, clock, storage, and an update when one waits. A grey chip is fine; a tinted chip needs
+a decision, and clicking it shows one sentence and one button (confirm the clock, choose a
+folder, reconnect the radio, reload). Then the screens, your name (click it for the handover
+page) and the language.
+
 **Before a drill, open it once while online.** The installed app keeps a copy of itself and
 opens without network, but a new version is only fetched while the laptop is online. Open
-BCentral a day before the drill, wait for the banner "A new version is available" if there is
-one, click **Reload**, and check under **Settings → About** that the version is the expected
-one. From then on the laptop can be offline.
+BCentral a day before the drill, wait for the chip "Update waiting" in the top bar if there is
+one, click it and **Reload**, and check under **Settings → About** that the version is the
+expected one. From then on the laptop can be offline.
 
 **Updates never happen on their own.** When a new version is published the running app shows
-a banner with a Reload button; until it is clicked the app stays exactly as it is, so nothing
-changes in the middle of an incident. The journal is kept in the browser on the laptop and
-survives updates, restarts and being offline; export it (**Journal → Export**) after every
-incident anyway.
+an update chip in the top bar with a Reload button behind it; until it is clicked the app
+stays exactly as it is, so nothing changes in the middle of an incident. The journal is kept
+in the browser on the laptop and survives updates, restarts and being offline; export it (the
+incident in the top bar → **Export journal**) after every incident anyway.
 
-**Set a journal folder.** Under **Settings → Journal folder**, choose a folder on a USB stick
-or in a synced folder. From then on every journal entry is appended to a file there the moment
-it is written, and every export is saved there too; if the laptop dies, the file is still
-there. After a browser restart the top bar asks once for permission to the folder again: one
-click. **Print the journal** (**Journal → Print journal**) as a routine, say every hour: the
-print view prints only what is new since the last print.
+**Set a journal folder.** Under **Settings → Journal folder** (or from the storage chip in
+the top bar), choose a folder on a USB stick or in a synced folder. From then on every journal
+entry is appended to a file there the moment it is written, and every export is saved there
+too; if the laptop dies, the file is still there. After a browser restart the storage chip
+asks once for permission to the folder again: one click. **Print the journal** (the incident
+in the top bar → **Print journal**) as a routine, say every hour: the print view prints only
+what is new since the last print.
 
-**Rehearse in a drill.** When creating an incident, tick **This is a drill**. A yellow
-ØVELSE / DRILL band then sits across the top of every screen while that incident is selected,
-every message goes out as `ØVELSE #n …` so nobody on a phone mistakes it for the real thing,
-drills are listed under their own heading in the incident switcher, and an export made while
-a drill is selected holds the drills only (the file is named `…-drill.json`); an export made
-while a real incident is selected holds the real journal only. The choice is final: a drill
-cannot become a real incident, nor the other way round. The register and "last heard from"
-are shared, because a radio heard in a drill is a radio that works.
+**Rehearse in a drill.** When creating an incident, tick **This is a drill**. The whole top
+bar then turns lavender with an ØVELSE chip next to the incident while that incident is
+selected, every message goes out as `ØVELSE #n …` so nobody on a phone mistakes it for the
+real thing, drills are listed under their own heading in the incident switcher, and an export
+made while a drill is selected holds the drills only (the file is named `…-drill.json`); an
+export made while a real incident is selected holds the real journal only. The choice is
+final: a drill cannot become a real incident, nor the other way round. The register and "last
+heard from" are shared, because a radio heard in a drill is a radio that works.
 
 **Load the resident list.** Under **Register → Import CSV**, pick the association's list as a
 CSV file (saved from Excel with `;` or `,`): columns `label` (required), `person`, `street`,
@@ -66,9 +74,10 @@ register back out as a file Excel opens as it is, and **Print register** prints 
 the app on its own, and the next time the app starts it connects the radio it was granted
 before without a click. A Bluetooth radio that drops is tried again for five minutes; after
 that, **Radio → Reconnect**. When the laptop wakes from sleep the link is checked and
-re-established if the radio does not answer. The top bar says why there is no radio ("radio
-unplugged", "the radio did not answer"), and the radio page says when the radio's own clock
-disagreed with the laptop's by more than a minute; the journal always uses the laptop's clock.
+re-established if the radio does not answer. The radio chip in the top bar says why there is
+no radio ("radio unplugged", "the radio did not answer") and offers Reconnect, and the radio
+page says when the radio's own clock disagreed with the laptop's by more than a minute; the
+journal always uses the laptop's clock.
 
 **Hand over to the next operator.** The operator taking over opens **Handover** (next to
 Journal), types their name and presses **Take over**: the journal gets one note
@@ -117,27 +126,28 @@ Deployment: `.github/workflows/deploy.yml` publishes `dist/` to GitHub Pages on 
 | --- | --- |
 | `src/i18n/` | `en.json` (reference), `da.json`, and `t()` in `index.svelte.ts` |
 | `src/lib/settings.svelte.ts` | operator name, device id (ULID, minted once), hub URL, blind-after minutes, send attempts, the gap between send-to-all transmissions, the text size and high contrast (P1-09) |
-| `src/lib/appearance.ts` | puts the text size and the contrast mode on the root element as the attributes `styles/tokens.css` keys on (P1-09) |
-| `src/styles/` | the design language (`docs/design.md`, P2-01): `tokens.css` (every colour, size, space, radius and shadow token, the three font-size roots 16 / 18 / 21 px, the high-contrast overrides, and the transition aliases the old screens still use), `base.css` (the bundled Inter `@font-face`, resets, headings, links, the focus ring, the print base), `components.css` (`.btn*`, `.field`, `.chip*`, `.strip`, `.card`, `.tabs`, `.table`, `.rows`, `.popover`, `.toast`, `.msg*`, `.empty`, `.icon`), `transition.css` (the P1-09 element rules, deleted screen by screen until P2-05 removes the file); `src/app.css` only imports them |
+| `src/lib/appearance.ts` | puts the text size and the contrast mode on the root element as the attributes `styles/tokens.css` keys on (P1-09), and `data-drill` while a drill is current, which the top bar's tint keys on (P2-02) |
+| `src/styles/` | the design language (`docs/design.md`, P2-01): `tokens.css` (every colour, size, space, radius, shadow and scrim token, the three font-size roots 16 / 18 / 21 px, the high-contrast overrides, and the transition aliases the old screens still use), `base.css` (the bundled Inter `@font-face`, resets, headings, links, the focus ring, the print base), `components.css` (`.btn*`, `.field`, `.chip*`, `.strip`, `.card`, `.tabs`, `.table`, `.rows`, `.popover` with `.popover-host` and the modal `.popover-dialog`, `.toast`, `.msg*`, `.empty`, `.icon`, and the `.shell*` rules of the top bar with its drill tint, P2-02), `transition.css` (the P1-09 element rules, deleted screen by screen until P2-05 removes the file); `src/app.css` only imports them |
 | `src/assets/fonts/` | `InterVariable.woff2` with its SIL OFL 1.1 licence; precached by the service worker, so no font request leaves the page |
 | `src/lib/icons.ts` | the sixteen stroke icons as path data on a 20 px grid; `components/Icon.svelte` draws one (`aria-hidden` unless given a label) |
 | `src/lib/colourLiterals.ts` | finds `#hex`, `rgb(` and `hsl(` outside `styles/tokens.css`; its test counts them and is `todo` until P2-05 turns it on at zero |
 | `src/lib/shortcuts.ts` | the keyboard shortcuts as one pure rule (key in, action out; nothing in a text field but Ctrl+Enter and Esc; the G chords), and the documented set the `?` overlay lists; `shortcutDispatch.ts` the window listener and the handler registry the screens register on; `shortcutHelp.svelte.ts` whether the overlay is open |
+| `src/lib/statusChips.ts` | the status cluster of the top bar (P2-02) as one pure rule: for each of radio, clock, storage and update, whether the chip shows, its tint, its words and what its popover says and offers, from the stores' states; `popover.svelte.ts` which popover is open (one at a time); `toast.svelte.ts` the one confirmation showing, four seconds |
 | `src/lib/clock.svelte.ts` | clock trust for this session (`ntp` / `manual` / `unknown`) and `now()` |
 | `src/lib/version.ts` | the running build's version, commit and build time, injected by `define` in `vite.config.ts`; `versionLabel()` for the top bar and settings |
-| `src/lib/updates.svelte.ts` | the installed app's updates: the service worker waits for the operator's Reload, "last checked", "Check now"; `main.ts` starts it with `registerSW` |
-| `src/lib/currentIncident.svelte.ts` | which incident the app is working in (id only, kept in `localStorage`), and a change listener the inbox drains on |
-| `src/lib/router.svelte.ts` | hash routing: `#/` home, `#/journal` (also `#/send`, the old stand-in), `#/handover`, `#/queue`, `#/register`, `#/register/print`, `#/radio`, `#/settings`, `#/print`, `#/styleguide` (not in the navigation; linked from Settings → About) |
+| `src/lib/updates.svelte.ts` | the installed app's updates: the service worker waits for the operator's Reload (the update chip in the top bar, and Settings → About), "last checked", "Check now"; `main.ts` starts it with `registerSW` |
+| `src/lib/currentIncident.svelte.ts` | which incident the app is working in (id only, kept in `localStorage`), a change listener the inbox drains on, and the revision the switcher bumps when it closes or reopens the incident |
+| `src/lib/router.svelte.ts` | hash routing: `#/journal` (also `#/`, no hash, and `#/send`, the old stand-in — there is no home page), `#/handover`, `#/queue`, `#/register`, `#/register/print`, `#/radio`, `#/settings`, `#/print`, `#/styleguide` (not in the navigation; linked from Settings → About) |
 | `src/lib/elapsed.ts` | "12 s" / "3 min" / "1 h 5 min" for the top bar |
-| `src/lib/persistence.svelte.ts` | `navigator.storage.persist()` on start and the usage estimate (P1-04): a refusal is a top-bar line until a journal folder is set |
+| `src/lib/persistence.svelte.ts` | `navigator.storage.persist()` on start and the usage estimate (P1-04): a refusal is the storage chip in the top bar until a journal folder is set |
 | `src/lib/journalText.ts` | the words of a journal row (strip, batch counters, history line, times), shared by the timeline and the print view |
 | `src/lib/file-system-access.d.ts` | the File System Access API members lib.dom lacks: the directory picker, `queryPermission` / `requestPermission` |
 | `src/lib/storage.ts` | the only place that touches `localStorage` |
 | `src/store/` | the journal in IndexedDB (`idb`): `journalStore.ts` is the one write path per object kind, validated with `ajv` against `contract/journal.schema.json` (`schema.ts`); `status.ts` derives a message's status; `dedupeKey.ts` hashes an incoming message; `register.ts` is the register's rules (key validation, ad hoc labels, the edit and its journal note); `outgoing.ts` the `#n` prefix, the 160-byte rule, composing a `message_out` with its reserved number (one, or one per recipient for send-to-all; with `refersTo` when it answers an incoming message) and the operator's manual status changes; `incoming.ts` the roger rules of the text protocol applied to a stored `message_in`; `incidents.ts` open / closed and the two status changes that move it, and whether an incident is a drill (P1-05: `drill: true`, fixed at creation; `outgoing.ts` puts `ØVELSE ` in front of every text of a drill, the export can be scoped to drills or real incidents and the drill file is named `-drill`); `drillMode.svelte.ts` follows the current incident so the band on every screen and the window title say ØVELSE while a drill is selected; `manual.ts` the entries the operator types in (note, correction, non-mesh incoming message); `journalView.ts` what the journal screen shows, derived from an incident's entries (the timeline newest first: one row per slip with the status strip on an outgoing message, its transitions folded into a history, the messages of one send-to-all as one row with counters; open items; last heard from); `export.ts` writes the export file; `mirrorFile.ts` the journal folder's files (P1-04: one append-only `.ndjson` per device, one line per write with its kind first, read back into an envelope; the export file written whole) and `mirror.svelte.ts` the mirror itself (listens to the store's writes, keeps the folder handle in `meta`, re-asks the permission after a restart, shows its state in the top bar, never blocks a write); `printView.ts` the print view's rows (the timeline's folding, oldest first, "since last print" by what changed in a row); `handoverView.ts` the handover screen's four lists (P1-08: open orders, given up, unanswered incoming, quiet radios, each oldest first, derived from the entries and the register) and `handover.ts` its writes (the handover note, the status request `#n Meld status`, "send by courier" on a given-up message); `registerCsv.ts` the register as a CSV file (P1-06: the import's parsing and rules, every fault an error naming the line, the export with `;`, BOM and CRLF) and `registerImport.ts` its write (one transaction for the entries and the pending rows — rows without a key, kept in `meta` until a key is bound — and the note in the current incident); `index.ts` is the app's store |
 | `src/radio/` | the MeshCore companion: `serial.ts` is the protocol (constants, frame helpers, parsers, payload builders), `CompanionLink` (one command at a time over a frame transport, pushes to an inbox) and the Web Serial transport (a port given or chosen, kept for reopening); `ble.ts` the Web Bluetooth transport (the device kept for the session); `radioStore.svelte.ts` the app's view of the radio (state, self info, contacts, last heard, blind, push listeners, and P1-07: why it is disconnected, the reconnect loop with backoff over the kept transport, one granted USB port connected on start and on its `connect` event, the link check after a wake, the companion's clock drift); `capability.ts` which transports the browser has; `outbox.svelte.ts` sends a stored message through the radio (sent → delivered, resends with the same timestamp, given up), one at a time; `inbox.svelte.ts` drains what the radio received into the journal as `message_in` (sender by key prefix, unknown senders get a register entry, dedupe, then the roger rules); `sendQueue.svelte.ts` the send-to-all queue over the outbox (minimum gap between transmissions, paused while no radio is connected, batches keyed by the messages' `batchId`, pending messages queued again under their batch after a reload); `contactSource.ts` the `ContactSource` the register's key picker reads from; `deferred.ts` the one promise resolver the transports need; `web-apis.d.ts` the Web Serial / Bluetooth types; `index.ts` wires the app's instances |
 | `src/test-support/` | fakes for tests: `localStorage`, a store on `fake-indexeddb`, the contract walkthrough, a frame transport and the companion frames it answers with, Web Serial (granted ports with real streams, plug events) and Web Bluetooth (a device, GATT server and the UART characteristics) so the real transports run in tests, an in-memory journal folder, the register CSV fixtures (built as strings so the BOM and CRLF are exact) |
-| `src/components/` | top bar (with the radio's connected / blind / disconnected state, the notices — clock not confirmed, journal folder, storage — on a line of their own, the ? button, and the version in the brand's tooltip), the `?` overlay with the keyboard shortcuts, the drill band (ØVELSE / DRILL across every screen while a drill is current), the update banner, language select, the register form (also binds a key to a row imported without one), the ad hoc batch form, the register CSV import (file, preview, errors, commit), the contact picker, the compose form (recipient, transport, text with the byte counter; "Replying to" when a reply was started from a row, Esc drops it, Ctrl+Enter sends), the send-to-all compose form (recipient picker: all / by street / by hand, byte counter for the longest prefix), and the journal screen's parts: incident bar (with the "This is a drill" checkbox and drills under their own heading), timeline (newest first, status strip and history per outgoing message, batch rows, the "N new" pill, Reply on every incoming row with the answer linked both ways), open items, last heard from, the manual-entry form |
-| `src/pages/` | one file per screen; `JournalPage.svelte` is the screen the staff live on, `HandoverPage.svelte` (`#/handover`) the shift handover (everything open on one screen, the operator change as one note, printed in place), `QueuePage.svelte` the send-to-all queue they watch drain, `PrintPage.svelte` (`#/print`) the journal as a document for the browser's print dialog, `RegisterPage.svelte` the register with its CSV import and export and the rows not yet bound to a radio, `PrintRegisterPage.svelte` (`#/register/print`) the register as a printable list for the box, `SettingsPage.svelte` also the journal folder and the storage line, `StyleGuidePage.svelte` (`#/styleguide`) every component of the design language in every variant and state with the colour pairs and their contrast ratios, for review |
+| `src/components/` | the shell (P2-02): `TopBar.svelte` (the one 56 px bar: wordmark with the version in its tooltip, the incident, the status cluster, the navigation, the operator chip, the compact language select, the ? button), `IncidentSwitcher.svelte` (the incident chip with its open duration and the ØVELSE chip beside it in a drill, and the popover that picks, creates — with the "This is a drill" checkbox and drills under their own heading — closes or reopens, exports and prints), `StatusChips.svelte` (radio, clock, storage, update, each a chip that opens its popover; the clock popover carries the confirm checkbox), `Popover.svelte` (title, sentences, one action; Esc, a click outside or the chip closes it), `Toast.svelte` (the confirmation bottom left); the `?` overlay with the keyboard shortcuts as a popover-sized card, language select, the register form (also binds a key to a row imported without one), the ad hoc batch form, the register CSV import (file, preview, errors, commit), the contact picker, the compose form (recipient, transport, text with the byte counter; "Replying to" when a reply was started from a row, Esc drops it, Ctrl+Enter sends), the send-to-all compose form (recipient picker: all / by street / by hand, byte counter for the longest prefix), and the journal screen's parts: timeline (newest first, status strip and history per outgoing message, batch rows, the "N new" pill, Reply on every incoming row with the answer linked both ways), open items, last heard from, the manual-entry form |
+| `src/pages/` | one file per screen; `JournalPage.svelte` is the screen the staff live on (`#/journal`, and where `#/` lands), `HandoverPage.svelte` (`#/handover`) the shift handover (everything open on one screen, the operator change as one note, printed in place), `QueuePage.svelte` the send-to-all queue they watch drain, `PrintPage.svelte` (`#/print`) the journal as a document for the browser's print dialog, `RegisterPage.svelte` the register with its CSV import and export and the rows not yet bound to a radio, `PrintRegisterPage.svelte` (`#/register/print`) the register as a printable list for the box, `SettingsPage.svelte` also the journal folder and the storage line, `StyleGuidePage.svelte` (`#/styleguide`) every component of the design language in every variant and state with the colour pairs and their contrast ratios, for review |
 | `scripts/make-icon.mjs` | writes `public/icon-192.png` and `icon-512.png` before `dev` and `build` |
 | `scripts/check-contrast.mjs` | the WCAG contrast check over the colour tokens in `src/styles/tokens.css` (`contrast.mjs` is the pure part): text 7:1, UI chrome 3:1, in normal and high-contrast mode, plus the 16 px / 1.4 base; runs first in `npm run test` |
 

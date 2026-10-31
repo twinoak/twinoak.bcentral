@@ -1,6 +1,7 @@
 // Which incident the app is working in, kept across reloads in localStorage. P0-03 reads it
-// to attach register-edit notes to the open incident; P0-07's incident bar is what sets it.
-// Only the id is stored; whether the incident exists and is open is the store's answer.
+// to attach register-edit notes to the open incident; the incident switcher in the top bar
+// (P2-02, before that P0-07's incident bar) is what sets it. Only the id is stored; whether
+// the incident exists and is open is the store's answer.
 
 import { readStorage, removeStorage, writeStorage } from "./storage.ts";
 import { ULID_PATTERN } from "./settings.svelte.ts";
@@ -42,4 +43,17 @@ export function onCurrentIncidentChange(listener: IncidentListener): () => void 
   return () => {
     listeners.delete(listener);
   };
+}
+
+// Bumped by the switcher (P2-02) after it closes or reopens the current incident, so a
+// screen that derives the incident's state from its entries (journal, handover) reloads: the
+// switcher lives in the top bar, outside every screen, and the id did not change.
+let revision = $state(0);
+
+export function incidentRevision(): number {
+  return revision;
+}
+
+export function bumpIncidentRevision(): void {
+  revision += 1;
 }

@@ -237,6 +237,21 @@ button.chip:hover {
   line-height: 1;
 }
 
+/* A chip's word that may be long (an incident's name, a folder's name, the operator): cut
+   with an ellipsis rather than widening the bar. The detail after it ("heard 3 min", "open
+   for 2 h") shows from 90 rem (1440 px) up; narrower, the popover carries it. */
+.chip-label {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 89.99rem) {
+  .shell .chip-detail {
+    display: none;
+  }
+}
+
 .chip-dot {
   flex: none;
   width: 0.375rem;
@@ -455,9 +470,19 @@ button.chip:hover {
 }
 
 /* --- Popover: surface, r-2, the floating shadow, max 360 px; a title line, a sentence, one
-   action. Opened from a status chip; Esc closes. */
+   action. Opened from a status chip; Esc closes. The chip's button and its popover sit in a
+   `.popover-host` (components/Popover.svelte), which places the popover under the chip. */
+.popover-host {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
 .popover {
   position: absolute;
+  top: calc(100% + var(--s-2));
+  left: 0;
   z-index: 20;
   width: max-content;
   max-width: 22.5rem;
@@ -485,6 +510,40 @@ button.chip:hover {
   display: flex;
   justify-content: flex-end;
   gap: var(--s-2);
+}
+
+/* A modal card in the popover's clothes: the keyboard-shortcuts overlay (P2-02), under the
+   bar's ? button at the right. A little wider than a popover so each shortcut's line holds,
+   and it scrolls rather than outgrow a 720 px screen. The backdrop is the scrim token. */
+.popover-dialog {
+  position: fixed;
+  inset: calc(3.5rem + var(--s-2)) var(--s-5) auto auto;
+  margin: 0;
+  width: max-content;
+  max-width: min(26rem, calc(100vw - 2 * var(--s-5)));
+  max-height: calc(100vh - 3.5rem - 2 * var(--s-5));
+  overflow: auto;
+  padding: var(--s-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.popover-dialog::backdrop {
+  background: var(--scrim);
+}
+
+.popover-dialog p {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+.popover-dialog .table td {
+  font-size: var(--fs-14);
+  vertical-align: baseline;
 }
 
 /* --- Toast: bottom left, one at a time, neutral surface with the floating shadow; for
@@ -573,4 +632,71 @@ button.chip:hover {
 .empty p {
   max-width: 36rem;
   margin: 0;
+}
+
+/* --- Shell (docs/design.md §The shell, P2-02): the one 56 px top bar — surface with a rule
+   under it, the wordmark, the incident chip, the status chips, the navigation (text links,
+   the 2 px accent underline of `.tab[aria-current="page"]` on the current one), the operator
+   chip and a compact language select. When every chip is showing and the window is narrow
+   the right half (navigation, operator, language) drops to a second line, right-aligned,
+   rather than overflow. While a drill is current (`data-drill="true"` on the root,
+   lib/appearance.ts) the whole bar takes the drill pair; nothing else does. */
+.shell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  min-height: 3.5rem;
+  padding: var(--s-2) var(--s-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+.shell-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  margin-left: auto;
+}
+
+.shell-brand {
+  font-size: var(--fs-18);
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.shell-chips,
+.shell-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.shell-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s-3);
+}
+
+.shell-nav .tab {
+  min-height: 2.5rem;
+}
+
+.shell-select {
+  height: 1.5rem;
+  padding: 0 var(--s-1);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+
+:root[data-drill="true"] .shell {
+  background: var(--drill-bg);
+  color: var(--drill);
 }

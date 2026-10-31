@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t, language } from "../i18n/index.svelte.ts";
   import { hashFor } from "../lib/router.svelte.ts";
+  import { showToast } from "../lib/toast.svelte.ts";
   import type { PendingRegisterRow, RegisterEntry } from "../store/types.ts";
   import { exportRegisterCsv, listPendingRegister, listRegister } from "../store/index.ts";
   import { sortedByLabel } from "../store/register.ts";
@@ -77,7 +78,8 @@
     exportError = null;
     try {
       const filename = await exportRegisterCsv();
-      status = t("register.exported", { filename });
+      // The confirmation is the toast (P2-02); the error stays next to the buttons.
+      showToast(t("register.exported", { filename }));
     } catch (failure) {
       exportError = t("register.exportFailed", { error: describe(failure) });
     } finally {

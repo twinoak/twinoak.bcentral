@@ -1,26 +1,24 @@
 <script lang="ts">
-  // The journal screen (P0-07): the screen the staff live on. Incident bar on top; the
-  // incident's timeline with the compose form and the manual-entry form under it; open items
-  // and "last heard from" at the side. Everything shown is derived from the incident's
-  // entries on every reload (store/journalView.ts); a reload runs on an incident change, on
+  // The journal screen (P0-07): the screen the staff live on. The incident's timeline with
+  // the compose form and the manual-entry form under it; open items and "last heard from"
+  // at the side. The incident itself — picking, creating, closing, export, print — is the
+  // switcher in the top bar (P2-02; the incident bar that sat here is gone). Everything
+  // shown is derived from the incident's entries on every reload (store/journalView.ts); a
+  // reload runs on an incident change, when the switcher closes or reopens the incident, on
   // every entry the inbox or the outbox writes, and after every write from this screen.
   import { t, language } from "../i18n/index.svelte.ts";
-  import { currentIncidentId, setCurrentIncidentId } from "../lib/currentIncident.svelte.ts";
-  import { navigate } from "../lib/router.svelte.ts";
+  import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
+  import { openPopover } from "../lib/popover.svelte.ts";
   import { inbox, outbox, sendQueue } from "../radio/index.ts";
   import {
     addCorrection,
-    addIncident,
-    closeIncident,
     entriesForIncident,
-    exportJournal,
     lastHeardByCounterparty,
     listIncidents,
     listRegister,
     recordManualStatus,
-    reopenIncident,
   } from "../store/index.ts";
-  import { incidentStateOf, isDrill } from "../store/incidents.ts";
+  import { isDrill } from "../store/incidents.ts";
   import {
     buildTimeline,
     entriesById,
@@ -31,7 +29,6 @@
   import { statusOf } from "../store/status.ts";
   import type { Incident, JournalEntry, RegisterEntry, Status } from "../store/types.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
-  import IncidentBar from "../components/IncidentBar.svelte";
   import LastHeardPanel from "../components/LastHeardPanel.svelte";
   import ManualEntryForm from "../components/ManualEntryForm.svelte";
   import OpenItemsPanel from "../components/OpenItemsPanel.svelte";
@@ -50,9 +47,7 @@
 
   const incidentId = $derived(currentIncidentId());
   const current = $derived(incidents.find((incident) => incident.id === incidentId) ?? null);
-  const incidentState = $derived(current === null ? null : incidentStateOf(entries, current.id));
-  // A drill incident (P1-05): the compose forms show the ØVELSE prefix, the export holds
-  // drills only.
+  // A drill incident (P1-05): the compose forms show the ØVELSE prefix.
   const drill = $derived(isDrill(current));
   const sortedRegister = $derived(sortedByLabel(register, language()));
   const labels = $derived(new Map(register.map((entry) => [entry.id, entry.label])));
@@ -93,6 +88,7 @@
     inbox.revision();
     outbox.revision();
     sendQueue.revision();
+    incidentRevision();
     void ownRevision;
     void reload(incidentId);
   });
@@ -100,41 +96,6 @@
   async function changed() {
     ownRevision += 1;
     await reload(currentIncidentId());
-  }
-
-  // --- incident bar ----------------------------------------------------------------------
-
-  function pickIncident(id: string | null) {
-    actionError = null;
-    setCurrentIncidentId(id);
-  }
-
-  async function createIncident(name: string, isDrillIncident: boolean) {
-    const incident = await addIncident(name, isDrillIncident);
-    setCurrentIncidentId(incident.id);
-    await changed();
-  }
-
-  // The export file is the journal of the current incident's kind: drills only while a drill
-  // is current, real incidents only while a real one is, everything while none is selected.
-  function exportCurrentKind() {
-    return exportJournal(current === null ? undefined : { drill });
-  }
-
-  async function close(reason: string) {
-    if (current === null) {
-      return;
-    }
-    await closeIncident(current, reason);
-    await changed();
-  }
-
-  async function reopen(reason: string) {
-    if (current === null) {
-      return;
-    }
-    await reopenIncident(current, reason);
-    await changed();
   }
 
   // --- outgoing messages (P0-05's path) --------------------------------------------------
@@ -201,20 +162,9 @@
   }
 </script>
 
-<!-- The page heading sits in the incident bar's first row (P1-09): at 1280×720 the timeline
-     then keeps ten rows in view at the 18 px base. -->
-<IncidentBar
-  title={t("journal.title")}
-  {incidents}
-  {current}
-  {incidentState}
-  onpick={pickIncident}
-  oncreate={createIncident}
-  onclose={close}
-  onreopen={reopen}
-  onexport={exportCurrentKind}
-  onprint={() => navigate("print")}
-/>
+<!-- The page heading is for assistive technology; the bar names the incident (P2-02), and the
+     timeline keeps its rows in view at 1280×720 (P1-09). -->
+<h1 class="visually-hidden">{t("journal.title")}</h1>
 
 {#if loadError}
   <p class="error" role="alert">{loadError}</p>
@@ -223,7 +173,15 @@
   <p class="error" role="alert">{actionError}</p>
 {/if}
 
-{#if current !== null}
+{#if current === null}
+  <!-- No incident: one sentence and the switcher (P2-03 puts the first-run setup card here). -->
+  <div class="empty">
+    <p>{t("journal.incident.none")}</p>
+    <button type="button" class="btn btn-primary" onclick={() => openPopover("incident")}>
+      {t("journal.incident.choose")}
+    </button>
+  </div>
+{:else}
   <div class="layout">
     <div class="main">
       <section aria-labelledby="timeline-heading">
@@ -281,7 +239,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) 18rem;
     gap: 1rem;
-    margin-top: 1rem;
     align-items: start;
   }
 

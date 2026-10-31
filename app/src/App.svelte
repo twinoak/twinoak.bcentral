@@ -1,10 +1,8 @@
 <script lang="ts">
-  import DrillBand from "./components/DrillBand.svelte";
   import ShortcutHelp from "./components/ShortcutHelp.svelte";
+  import Toast from "./components/Toast.svelte";
   import TopBar from "./components/TopBar.svelte";
-  import UpdateBanner from "./components/UpdateBanner.svelte";
   import HandoverPage from "./pages/HandoverPage.svelte";
-  import HomePage from "./pages/HomePage.svelte";
   import JournalPage from "./pages/JournalPage.svelte";
   import PrintPage from "./pages/PrintPage.svelte";
   import PrintRegisterPage from "./pages/PrintRegisterPage.svelte";
@@ -14,7 +12,7 @@
   import SettingsPage from "./pages/SettingsPage.svelte";
   import StyleGuidePage from "./pages/StyleGuidePage.svelte";
   import { language, t } from "./i18n/index.svelte.ts";
-  import { applyAppearance } from "./lib/appearance.ts";
+  import { applyAppearance, applyDrill } from "./lib/appearance.ts";
   import { navigate, route } from "./lib/router.svelte.ts";
   import { hasOperatorName, settings } from "./lib/settings.svelte.ts";
   import { deferShortcut, installShortcuts, onShortcut } from "./lib/shortcutDispatch.ts";
@@ -24,7 +22,7 @@
   // Until an operator name is set, every route shows settings — except the style guide
   // (P2-01), which is for the reviewer and records nothing.
   const shown = $derived(hasOperatorName() || route() === "styleguide" ? route() : "settings");
-  const drillIncident = $derived(drillMode.active() ? drillMode.incident() : null);
+  const drillActive = $derived(drillMode.active());
 
   $effect(() => {
     document.documentElement.lang = language();
@@ -38,11 +36,17 @@
     });
   });
 
-  // The window title says ØVELSE while a drill is current (P1-05), so the taskbar and the
-  // tab say it too. The print view sets its own title for the duration of a print and puts
-  // this one back.
+  // Drill mode (P1-05, P2-02): `data-drill="true"` on the root while the current incident is
+  // a drill — the top bar takes the drill tint from it (components.css) and the drill chip
+  // sits next to the incident; nothing else changes. The window title says ØVELSE too, so
+  // the taskbar and the tab say it. The print view sets its own title for the duration of
+  // a print and puts this one back.
   $effect(() => {
-    document.title = drillIncident === null ? t("app.name") : t("drill.documentTitle");
+    applyDrill(document.documentElement, drillActive);
+  });
+
+  $effect(() => {
+    document.title = drillActive ? t("drill.documentTitle") : t("app.name");
   });
 
   // The keyboard shortcuts (P1-09): one listener on the window; these are the defaults, the
@@ -108,17 +112,10 @@
 
 <TopBar />
 
-<!-- The drill band (P1-05): on every screen while the current incident is a drill. -->
-{#if drillIncident !== null}
-  <DrillBand incident={drillIncident} />
-{/if}
-
-<!-- Shown only when a new build is waiting; the reload is the operator's click. -->
-<UpdateBanner />
-
-<!-- The journal, queue and handover screens have side panels and need the width; the print
-     views are tables; the style guide (P2-01) shows components side by side; the others are
-     forms. -->
+<!-- Nothing between the bar and the page (P2-02): every band and banner is a chip in the
+     bar now. The journal, queue and handover screens have side panels and need the width;
+     the print views are tables; the style guide (P2-01) shows components side by side; the
+     others are forms. -->
 <main
   class:wide={shown === "journal" ||
     shown === "queue" ||
@@ -129,8 +126,6 @@
 >
   {#if shown === "settings"}
     <SettingsPage />
-  {:else if shown === "journal"}
-    <JournalPage />
   {:else if shown === "handover"}
     <HandoverPage />
   {:else if shown === "print"}
@@ -146,8 +141,9 @@
   {:else if shown === "styleguide"}
     <StyleGuidePage />
   {:else}
-    <HomePage />
+    <JournalPage />
   {/if}
 </main>
 
+<Toast />
 <ShortcutHelp />

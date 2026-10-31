@@ -11,6 +11,7 @@
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { openHelp } from "../lib/shortcutHelp.svelte.ts";
+  import { showToast } from "../lib/toast.svelte.ts";
   import { builtAt, versionLabel } from "../lib/version.ts";
   import { updater } from "../lib/updates.svelte.ts";
   import { formatBytes, persistence } from "../lib/persistence.svelte.ts";
@@ -76,7 +77,6 @@
   let blindAfterMinutes: number | undefined = $state(settings.blindAfterMinutes);
   let maxSendAttempts: number | undefined = $state(settings.maxSendAttempts);
   let sendGapSeconds: number | undefined = $state(settings.sendGapSeconds);
-  let saved = $state(false);
 
   const operatorNameError = $derived(
     operatorName.trim() === "" ? t("settings.operatorNameRequired") : null,
@@ -124,13 +124,14 @@
       maxSendAttempts: attempts,
       sendGapSeconds: gap,
     });
-    saved = true;
+    // The confirmation is the toast (P2-02), not a line next to the button.
+    showToast(t("settings.saved"));
   }
 </script>
 
 <h1>{t("settings.title")}</h1>
 
-<form onsubmit={save} oninput={() => (saved = false)}>
+<form onsubmit={save}>
   <div class="field">
     <label for="operator-name">{t("settings.operatorName")}</label>
     <input
@@ -226,9 +227,6 @@
 
   <div class="actions">
     <button type="submit" disabled={!canSave}>{t("settings.save")}</button>
-    {#if saved}
-      <span class="saved" role="status">{t("settings.saved")}</span>
-    {/if}
   </div>
 </form>
 
@@ -361,7 +359,7 @@
 </section>
 
 <!-- The running code is the installed one; a new build waits for the reload button here or
-     in the banner above the page (lib/updates.svelte.ts). -->
+     in the update chip of the top bar (lib/updates.svelte.ts). -->
 <section class="field about" aria-labelledby="about-heading">
   <h2 id="about-heading">{t("settings.about")}</h2>
   <dl>
