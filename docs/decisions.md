@@ -4,6 +4,9 @@ Newest first. One line per decision, with the reason. Reversals get a new row, n
 
 | Date | Decision | Why |
 | --- | --- | --- |
+| 2026-10-31 | Phase 2 is a design sprint on `docs/design.md`; the hub moves to phase 3 | After phase 1 every feature had added its own coloured band; the screens need one system before more features. |
+| 2026-10-31 | Design language: a calm operations desk — Inter bundled, one accent (navy), colour only as status pairs, one 56 px bar with status chips and popovers instead of bands, no home page | Operators must see what needs them in one glance; nothing decorative; works in black and white. |
+| 2026-10-31 | Base font size back to 16 px (large 18, largest 21); the setting is where readability lives | P1-09's 18 px default made every screen look oversized; the three-size setting stays. |
 | 2026-10-29 | Delivery status is shown as metadata on the message row, never as journal lines; the store keeps `status_change` entries | A message form carries its own "sent at / acknowledged at" fields; four lines per message made the journal unreadable in the first walkthrough. Keeping the entries keeps immutability and merge-by-union. |
 | 2026-10-29 | `pending` is implicit (a `message_out` without `sent`); no `pending` status change is written | One entry fewer per message, no information lost. |
 | 2026-10-29 | Send-to-all messages carry a shared `batchId` (optional ULID on `message_out`) and render as one row | Grouping must survive a reload; the only contract change from the walkthrough. |

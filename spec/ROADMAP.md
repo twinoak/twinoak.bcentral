@@ -56,7 +56,26 @@ reads as one line, a browser crash mid-queue with no lost entries, a drill incid
 leaves the real journal untouched, and a laptop handed to a second operator who finds every
 open item without asking.
 
-## Phase 2 — the hub
+## Phase 2 — the design sprint
+
+Decided 2026-10-31: after phase 1 the top of the app had become a stack of coloured bands
+and the screens were styled one component at a time. Phase 2 does nothing but bring every
+screen onto one design language, `docs/design.md` — a calm operations desk: one typeface,
+one accent, colour only where it means something, one 56 px bar that says what needs the
+operator.
+
+| Task | Delivers | Depends on |
+| --- | --- | --- |
+| P2-01 | Tokens, bundled Inter, base and component stylesheets, icons, a style-guide page, the colour-literal test (off, counting) | P1-09 |
+| P2-02 | The shell: one top bar with incident, status chips + popovers, nav, operator; every band, banner and the home page removed; drill as the bar's tint; toasts | P2-01 |
+| P2-03 | Journal: compose card with tabs above the newest-first row list, side cards, first-run setup card | P2-02 |
+| P2-04 | Handover, Send to all, Register, Radio, Settings on the components | P2-03 |
+| P2-05 | Print pages, the literal test turned on at zero, a Playwright screenshot set of every screen committed for review, the audit | P2-04 |
+
+**Phase 2 walkthrough:** the phase-1 walkthrough again, by someone who has not seen the app
+before, with one question at the end: "what needed you, and how did you know?"
+
+## Phase 3 — the hub
 
 Self-hosted C#/ASP.NET Core in Docker. Receives journal envelopes from any number of apps,
 merges by ULID union, dedupes `message_in` by key, shows a read-only merged journal. Sync is

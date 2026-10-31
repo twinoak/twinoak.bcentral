@@ -36,8 +36,8 @@ in a total failure BCentral is replaced by people on bicycles carrying notes.
 
 ## Status
 
-Phase 0 (walking skeleton) is merged and proven on real radios (2026-10-29). Phase 1 makes the
-PWA solid; the hub comes in phase 2.
+Phases 0 and 1 are merged and proven on real radios. Phase 2 is a design sprint on
+[docs/design.md](docs/design.md); the hub comes in phase 3.
 Start with [docs/brainstorm-2026-10-28.md](docs/brainstorm-2026-10-28.md), then [contract/](contract/),
 then [spec/ROADMAP.md](spec/ROADMAP.md) and [tasks/](tasks/).
 
