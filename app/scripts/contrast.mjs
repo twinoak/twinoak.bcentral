@@ -52,8 +52,14 @@ export const PAIRS = [
   { fg: "--drill", bg: "--surface", kind: "text", what: "the drill word in a card" },
   { fg: "--drill", bg: "--bg", kind: "text", what: "the drill word on the page" },
   // The drill bar (P2-02) carries the shell's text and links on the drill tint.
-  { fg: "--ink", bg: "--drill-bg", kind: "text", what: "the incident name on the drill bar" },
-  { fg: "--accent", bg: "--drill-bg", kind: "text", what: "the navigation on the drill bar" },
+  { fg: "--ink", bg: "--drill-bg", kind: "text", what: "text on the drill bar" },
+  { fg: "--ink-2", bg: "--drill-bg", kind: "text", what: "the navigation on the drill bar" },
+  {
+    fg: "--accent",
+    bg: "--drill-bg",
+    kind: "text",
+    what: "the wordmark and the current screen on the drill bar",
+  },
   // UI chrome: input and default-button borders, the focus ring, underlines and boundaries.
   { fg: "--rule-2", bg: "--surface", kind: "chrome", what: "a field or button border in a card" },
   { fg: "--rule-2", bg: "--bg", kind: "chrome", what: "a field or button border on the page" },
@@ -64,6 +70,12 @@ export const PAIRS = [
   { fg: "--focus", bg: "--surface-2", kind: "chrome", what: "the focus ring on an expanded row" },
   { fg: "--focus", bg: "--accent-weak", kind: "chrome", what: "the focus ring on a selected row" },
   { fg: "--focus", bg: "--drill-bg", kind: "chrome", what: "the focus ring on the drill bar" },
+  {
+    fg: "--rule-2",
+    bg: "--drill-bg",
+    kind: "chrome",
+    what: "the language select on the drill bar",
+  },
   {
     fg: "--accent",
     bg: "--surface",

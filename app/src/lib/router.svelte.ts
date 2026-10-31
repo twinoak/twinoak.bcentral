@@ -2,12 +2,12 @@
 // "#/register", "#/register/print" (the register's print view, P1-06), "#/radio",
 // "#/print" (the journal's print view, P1-04), "#/handover" (the shift handover, P1-08) and
 // "#/styleguide" (the design language's style guide, P2-01; not in the navigation) are
-// routes; anything else is home. "#/send" (P0-05's stand-in screen, absorbed into the
-// journal screen in P0-07) opens the journal, so an old bookmark still lands right. Later
-// tasks add their screen to `Route`, `parseHash` and `hashFor`.
+// routes; anything else — "#/", no hash, an unknown one — is the journal (P2-02: there is no
+// home page; the journal is where the work is). "#/send" (P0-05's stand-in screen, absorbed
+// into the journal screen in P0-07) opens the journal too, so an old bookmark still lands
+// right. Later tasks add their screen to `Route`, `parseHash` and `hashFor`.
 
 export type Route =
-  | "home"
   | "settings"
   | "journal"
   | "queue"
@@ -23,9 +23,6 @@ const PRINT_REGISTER_HASH = "#/register/print";
 export function parseHash(hash: string): Route {
   if (hash === "#/settings") {
     return "settings";
-  }
-  if (hash === "#/journal" || hash === "#/send") {
-    return "journal";
   }
   if (hash === "#/queue") {
     return "queue";
@@ -48,20 +45,17 @@ export function parseHash(hash: string): Route {
   if (hash === "#/styleguide") {
     return "styleguide";
   }
-  return "home";
+  return "journal";
 }
 
 export function hashFor(route: Route): string {
-  if (route === "home") {
-    return "#/";
-  }
   if (route === "printRegister") {
     return PRINT_REGISTER_HASH;
   }
   return `#/${route}`;
 }
 
-let current: Route = $state(typeof location === "undefined" ? "home" : parseHash(location.hash));
+let current: Route = $state(typeof location === "undefined" ? "journal" : parseHash(location.hash));
 
 if (typeof window !== "undefined") {
   window.addEventListener("hashchange", () => {

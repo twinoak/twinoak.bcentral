@@ -15,7 +15,7 @@ main.wide {
 }
 
 input:not(.field input):not([type="checkbox"]):not([type="radio"]),
-select:not(.field select),
+select:not(.field select):not(.shell-select),
 textarea:not(.field textarea) {
   min-height: 2.25rem;
   padding: var(--s-1) var(--s-2);

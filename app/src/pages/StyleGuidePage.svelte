@@ -130,7 +130,7 @@
         <code>{token} = {values[token] ?? ""}</code>
         {#each WEIGHTS as weight (weight)}
           <span style="font-size: var({token}); font-weight: {weight}">
-            {t("home.intro")}
+            {t("handover.intro")}
           </span>
         {/each}
       </div>
@@ -273,7 +273,7 @@
     <span class="chip chip-danger"
       ><span class="chip-dot"></span>{t("journal.status.given_up")}</span
     >
-    <span class="chip chip-drill"><Icon name="drill" />{t("drill.band")}</span>
+    <span class="chip chip-drill"><Icon name="drill" />{t("drill.onAir")}</span>
     <span class="chip chip-accent"><span class="chip-dot"></span>{t("nav.journal")}</span>
   </div>
   <div class="samples">
@@ -311,7 +311,7 @@
   <div class="samples cards">
     <div class="card">
       <h3 class="card-title">{t("journal.open.title")} <span class="count">3</span></h3>
-      <p>{t("home.start")}</p>
+      <p>{t("handover.open.help")}</p>
     </div>
     <div class="card">
       <h3 class="card-title">
@@ -405,7 +405,7 @@
     <li>
       <span class="row-time">08:30:12</span>
       <span class="row-who">{t("register.field.person")} C</span>
-      <span class="row-body">#3 {t("home.intro")}</span>
+      <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
       <span class="row-strip strip">
         <span class="chip"><span class="chip-dot"></span>{t("journal.status.sent")}</span>
         <span class="chip chip-warn"
@@ -416,7 +416,7 @@
     <li aria-current="true">
       <span class="row-time">08:12:40</span>
       <span class="row-who">{t("register.field.person")} B</span>
-      <span class="row-body">{t("home.start")}</span>
+      <span class="row-body">{t("handover.intro")}</span>
       <span class="row-strip">
         <button type="button" class="btn btn-quiet"
           ><Icon name="reply" />{t("journal.action.reply")}</button
@@ -470,11 +470,9 @@
   <div class="msgs">
     <p class="msg"><Icon name="history" />{t("settings.operatorNameHelp")}</p>
     <p class="msg msg-ok"><Icon name="check" />{t("settings.storage.persisted")}</p>
-    <p class="msg msg-warn"><Icon name="clock" />{t("topbar.clockUnconfirmed")}</p>
+    <p class="msg msg-warn"><Icon name="clock" />{t("settings.clockTrust.unknown")}</p>
     <p class="msg msg-danger"><Icon name="warning" />{t("settings.operatorNameRequired")}</p>
-    <p class="msg msg-drill">
-      <Icon name="drill" />{t("drill.bandDetail", { name: t("drill.band") })}
-    </p>
+    <p class="msg msg-drill"><Icon name="drill" />{t("journal.incident.drillHelp")}</p>
   </div>
 </section>
 

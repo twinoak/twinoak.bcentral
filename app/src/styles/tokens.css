@@ -30,8 +30,10 @@
   --drill: #4a2a78;
   --drill-bg: #efe8f8;
   --focus: #1e3a5f;
-  /* Depth: only a popover and the toast float. Cards have a border and no shadow. */
+  /* Depth: only a popover and the toast float. Cards have a border and no shadow. The scrim
+     is the backdrop of the one modal card (the keyboard-shortcuts overlay, P2-02). */
   --shadow: 0 4px 16px rgba(22, 25, 29, 0.12);
+  --scrim: rgba(22, 25, 29, 0.35);
 
   /* Type. Inter is bundled (styles/base.css); the stack after it is for the first paint. */
   --font: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
@@ -91,25 +93,22 @@
 }
 
 /* Transition aliases: the P1-09 names the screens still reference, each an alias of a token
-   above. P2-02 to P2-05 move every screen onto the names above and delete these lines as
-   their last reference goes; nothing new uses them. The one value of its own is the focus
-   ring on the navy top bar, which P2-02 removes with the bar. */
+   above. P2-03 to P2-05 move every screen onto the names above and delete these lines as
+   their last reference goes; nothing new uses them. (P2-02 removed the navy bar's own names
+   with the bar — --on-navy, --focus-on-navy, --alert-bg, --drill-line; --navy stays for the
+   compose form's and the timeline's edges until P2-03.) */
 :root {
   --navy: var(--accent);
-  --on-navy: var(--on-accent);
   --light: var(--bg);
   --muted: var(--ink-2);
   --line: var(--rule-2);
   --error: var(--danger);
   --surface-in: var(--accent-weak);
   --surface-given-up: var(--danger-bg);
-  --alert-bg: var(--danger-bg);
-  --drill-line: var(--drill);
   --dot-idle: var(--rule-2);
   --dot-connecting: var(--warn);
   --dot-connected: var(--ok);
   --dot-blind: var(--danger);
-  --focus-on-navy: #ffd166;
 }
 
 :root[data-contrast="high"] {

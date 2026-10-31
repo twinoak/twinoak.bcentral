@@ -13,7 +13,7 @@
   import { tick } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import { clockTrust, now, setClockConfirmed } from "../lib/clock.svelte.ts";
-  import { currentIncidentId } from "../lib/currentIncident.svelte.ts";
+  import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
   import { formatDateTime, formatShortTime, incidentName, stripText } from "../lib/journalText.ts";
   import { hashFor } from "../lib/router.svelte.ts";
@@ -118,6 +118,8 @@
     inbox.revision();
     outbox.revision();
     sendQueue.revision();
+    // The switcher in the top bar closed or reopened the incident (P2-02).
+    incidentRevision();
     void ownRevision;
     void reload(incidentId);
   });
