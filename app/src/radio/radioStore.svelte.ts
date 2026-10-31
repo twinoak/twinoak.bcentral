@@ -115,6 +115,8 @@ export interface RadioStore {
   // now − lastHeardAt, or null when nothing has been heard yet.
   elapsedMs(): number | null;
   log(): readonly string[];
+  // Empties the log (the radio page's Clear button, P2-04); the next line starts it afresh.
+  clearLog(): void;
   // The live link, for the tasks that send and receive (P0-05, P0-06); null when not connected.
   link(): CompanionLink | null;
   // Why the link is down, or null after a manual disconnect and while connected.
@@ -659,6 +661,9 @@ export function createRadioStore(deps: RadioStoreDeps): RadioStore {
     lastHeardAt: () => lastHeardAt,
     elapsedMs,
     log: () => logLines,
+    clearLog: () => {
+      logLines = [];
+    },
     link: () => link,
     disconnectReason: () => reason,
     reconnecting: () => reconnecting,

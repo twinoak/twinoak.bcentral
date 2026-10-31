@@ -1,4 +1,11 @@
 <script lang="ts">
+  // Settings (P0-01 … P1-09; on the design language in P2-04): one column of cards, one per
+  // topic — Operator, Clock, Journal folder, Radio, Hub, Text & contrast, Language, About.
+  // The save pattern: a card with typed values (Operator, Radio, Hub) has its own Save
+  // button, validates its own fields and shows the Saved toast; a card with switches (Clock,
+  // Text & contrast, Language) applies at once, as before; the Journal folder's buttons are
+  // user gestures the mirror needs. The clock-confirm checkbox stays here and in the clock
+  // chip's popover (docs/design.md §Screens).
   import { t, language } from "../i18n/index.svelte.ts";
   import {
     FONT_SIZES,
@@ -9,13 +16,16 @@
     type FontSize,
   } from "../lib/settings.svelte.ts";
   import { clockTrust, setClockConfirmed } from "../lib/clock.svelte.ts";
+  import { chipClass } from "../lib/journalRows.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { openHelp } from "../lib/shortcutHelp.svelte.ts";
   import { showToast } from "../lib/toast.svelte.ts";
   import { builtAt, versionLabel } from "../lib/version.ts";
   import { updater } from "../lib/updates.svelte.ts";
   import { formatBytes, persistence } from "../lib/persistence.svelte.ts";
+  import { radio } from "../radio/index.ts";
   import { mirror } from "../store/index.ts";
+  import Icon from "../components/Icon.svelte";
   import LanguageSelect from "../components/LanguageSelect.svelte";
 
   // Build time and "last checked" as the operator reads them, in the UI language.
@@ -60,9 +70,16 @@
     }, 1000);
     return () => clearInterval(timer);
   });
+  const clockUnknown = $derived(clockTrust() === "unknown");
 
-  // The screen settings (P1-09) apply at once, like the language: the operator sees the
-  // change as they make it, and App.svelte puts it on the page from the saved value.
+  // The radio's state, for the Radio card's line (the page itself is reached from here).
+  const radioState = $derived(radio.state());
+  const radioTint = $derived(
+    radioState === "connected" ? "neutral" : radioState === "connecting" ? "warn" : "danger",
+  );
+
+  // The text size and the contrast (P1-09) apply at once, like the language: the operator
+  // sees the change as they make it, and App.svelte puts it on the page from the saved value.
   function setFontSize(size: FontSize) {
     updateSettings({ fontSize: size });
   }
@@ -71,19 +88,27 @@
     updateSettings({ highContrast: on });
   }
 
-  // Drafts: edited here, written to settings on save.
+  // --- Operator: drafts, edited here, written to settings on the card's Save. ------------
   let operatorName = $state(settings.operatorName);
-  let hubUrl = $state(settings.hubUrl);
+  const operatorNameError = $derived(
+    operatorName.trim() === "" ? t("settings.operatorNameRequired") : null,
+  );
+
+  function saveOperator(event: SubmitEvent) {
+    event.preventDefault();
+    if (operatorNameError !== null) {
+      return;
+    }
+    updateSettings({ operatorName: operatorName.trim() });
+    // The confirmation is the toast (P2-02), not a line next to the button.
+    showToast(t("settings.saved"));
+  }
+
+  // --- Radio: the three numbers. ---------------------------------------------------------
   let blindAfterMinutes: number | undefined = $state(settings.blindAfterMinutes);
   let maxSendAttempts: number | undefined = $state(settings.maxSendAttempts);
   let sendGapSeconds: number | undefined = $state(settings.sendGapSeconds);
 
-  const operatorNameError = $derived(
-    operatorName.trim() === "" ? t("settings.operatorNameRequired") : null,
-  );
-  const hubUrlError = $derived(
-    hubUrl.trim() !== "" && !URL.canParse(hubUrl.trim()) ? t("settings.hubUrlInvalid") : null,
-  );
   const blindAfterError = $derived(
     blindAfterMinutes === undefined || !Number.isInteger(blindAfterMinutes) || blindAfterMinutes < 1
       ? t("settings.blindAfterInvalid")
@@ -105,429 +130,462 @@
       ? t("settings.sendGapInvalid")
       : null,
   );
-  const canSave = $derived(
-    !operatorNameError && !hubUrlError && !blindAfterError && !maxSendAttemptsError && !sendGapError,
-  );
+  const canSaveRadio = $derived(!blindAfterError && !maxSendAttemptsError && !sendGapError);
 
-  function save(event: SubmitEvent) {
+  function saveRadio(event: SubmitEvent) {
     event.preventDefault();
     const minutes = blindAfterMinutes;
     const attempts = maxSendAttempts;
     const gap = sendGapSeconds;
-    if (!canSave || minutes === undefined || attempts === undefined || gap === undefined) {
+    if (!canSaveRadio || minutes === undefined || attempts === undefined || gap === undefined) {
       return;
     }
-    updateSettings({
-      operatorName: operatorName.trim(),
-      hubUrl: hubUrl.trim(),
-      blindAfterMinutes: minutes,
-      maxSendAttempts: attempts,
-      sendGapSeconds: gap,
-    });
-    // The confirmation is the toast (P2-02), not a line next to the button.
+    updateSettings({ blindAfterMinutes: minutes, maxSendAttempts: attempts, sendGapSeconds: gap });
+    showToast(t("settings.saved"));
+  }
+
+  // --- Hub: the URL, a placeholder until phase 3. ----------------------------------------
+  let hubUrl = $state(settings.hubUrl);
+  const hubUrlError = $derived(
+    hubUrl.trim() !== "" && !URL.canParse(hubUrl.trim()) ? t("settings.hubUrlInvalid") : null,
+  );
+
+  function saveHub(event: SubmitEvent) {
+    event.preventDefault();
+    if (hubUrlError !== null) {
+      return;
+    }
+    updateSettings({ hubUrl: hubUrl.trim() });
     showToast(t("settings.saved"));
   }
 </script>
 
-<h1>{t("settings.title")}</h1>
+<!-- The page heading is for assistive technology; the bar's navigation names the screen. -->
+<h1 class="visually-hidden">{t("settings.title")}</h1>
 
-<form onsubmit={save}>
-  <div class="field">
-    <label for="operator-name">{t("settings.operatorName")}</label>
-    <input
-      id="operator-name"
-      type="text"
-      autocomplete="name"
-      required
-      bind:value={operatorName}
-      aria-invalid={operatorNameError !== null}
-    />
-    <small>{t("settings.operatorNameHelp")}</small>
-    {#if operatorNameError}
-      <small class="error" role="alert">{operatorNameError}</small>
-    {/if}
-  </div>
-
-  <div class="field">
-    <label for="device-id">{t("settings.deviceId")}</label>
-    <input id="device-id" type="text" readonly value={settings.deviceId} />
-    <small>{t("settings.deviceIdHelp")}</small>
-  </div>
-
-  <div class="field">
-    <label for="hub-url">{t("settings.hubUrl")}</label>
-    <input
-      id="hub-url"
-      type="url"
-      inputmode="url"
-      placeholder="https://"
-      bind:value={hubUrl}
-      aria-invalid={hubUrlError !== null}
-    />
-    <small>{t("settings.hubUrlHelp")}</small>
-    {#if hubUrlError}
-      <small class="error">{hubUrlError}</small>
-    {/if}
-  </div>
-
-  <div class="field">
-    <label for="blind-after">{t("settings.blindAfterMinutes")}</label>
-    <input
-      id="blind-after"
-      type="number"
-      min="1"
-      step="1"
-      bind:value={blindAfterMinutes}
-      aria-invalid={blindAfterError !== null}
-    />
-    <small>{t("settings.blindAfterHelp")}</small>
-    {#if blindAfterError}
-      <small class="error">{blindAfterError}</small>
-    {/if}
-  </div>
-
-  <div class="field">
-    <label for="max-send-attempts">{t("settings.maxSendAttempts")}</label>
-    <input
-      id="max-send-attempts"
-      type="number"
-      min="1"
-      max={MAX_SEND_ATTEMPTS_LIMIT}
-      step="1"
-      bind:value={maxSendAttempts}
-      aria-invalid={maxSendAttemptsError !== null}
-    />
-    <small>{t("settings.maxSendAttemptsHelp")}</small>
-    {#if maxSendAttemptsError}
-      <small class="error">{maxSendAttemptsError}</small>
-    {/if}
-  </div>
-
-  <div class="field">
-    <label for="send-gap">{t("settings.sendGapSeconds")}</label>
-    <input
-      id="send-gap"
-      type="number"
-      min="1"
-      max={SEND_GAP_SECONDS_LIMIT}
-      step="1"
-      bind:value={sendGapSeconds}
-      aria-invalid={sendGapError !== null}
-    />
-    <small>{t("settings.sendGapHelp")}</small>
-    {#if sendGapError}
-      <small class="error">{sendGapError}</small>
-    {/if}
-  </div>
-
-  <div class="field">
-    <label for="settings-language">{t("language.label")}</label>
-    <LanguageSelect id="settings-language" />
-  </div>
-
-  <div class="actions">
-    <button type="submit" disabled={!canSave}>{t("settings.save")}</button>
-  </div>
-</form>
-
-<!-- The screen (P1-09): text size, high contrast, the keyboard shortcuts. Applied at once
-     and kept; nothing here waits for Save. -->
-<section class="field appearance" aria-labelledby="appearance-heading">
-  <h2 id="appearance-heading">{t("settings.appearance")}</h2>
-  <fieldset class="sizes">
-    <legend>{t("settings.fontSize")}</legend>
-    <div class="options">
-      {#each FONT_SIZES as size (size)}
-        <label class="check" data-size={size}>
-          <input
-            type="radio"
-            name="font-size"
-            value={size}
-            checked={settings.fontSize === size}
-            onchange={() => setFontSize(size)}
-          />
-          {t(`settings.fontSize.${size}`)}
-        </label>
-      {/each}
+<div class="column">
+  <!-- Operator -->
+  <form class="card" onsubmit={saveOperator} aria-labelledby="settings-operator-heading">
+    <h2 id="settings-operator-heading" class="card-title">{t("settings.card.operator")}</h2>
+    <div class="field">
+      <label for="operator-name">{t("settings.operatorName")}</label>
+      <input
+        id="operator-name"
+        type="text"
+        autocomplete="name"
+        required
+        bind:value={operatorName}
+        aria-invalid={operatorNameError !== null}
+        aria-describedby="operator-name-help"
+      />
+      <span class="field-help" id="operator-name-help">{t("settings.operatorNameHelp")}</span>
+      {#if operatorNameError}
+        <span class="field-error" role="alert"><Icon name="warning" />{operatorNameError}</span>
+      {/if}
     </div>
-    <small>{t("settings.fontSizeHelp")}</small>
-  </fieldset>
-  <label class="check">
-    <input
-      type="checkbox"
-      checked={settings.highContrast}
-      onchange={(event) => setHighContrast(event.currentTarget.checked)}
-    />
-    {t("settings.highContrast")}
-  </label>
-  <small>{t("settings.highContrastHelp")}</small>
-  <div class="actions">
-    <button type="button" class="secondary" onclick={openHelp}>{t("settings.shortcuts")}</button>
-  </div>
-</section>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" disabled={operatorNameError !== null}>
+        {t("settings.save")}
+      </button>
+    </div>
+  </form>
 
-<!-- The journal folder (P1-04): a copy of the journal outside the browser. The handle is kept
-     in the journal database; the browser re-asks for the permission after a restart. -->
-<section class="field folder" aria-labelledby="folder-heading">
-  <h2 id="folder-heading">{t("settings.journalFolder")}</h2>
-  <small>{t("settings.journalFolderHelp")}</small>
-  {#if !mirror.supported()}
-    <small class="error">{t("settings.journalFolder.unsupported")}</small>
-  {:else}
-    {#if mirrorState === "off"}
-      <small>{t("settings.journalFolder.none")}</small>
+  <!-- Clock: session state, not a saved setting; applies at once and lasts until the app is
+       closed. -->
+  <section class="card" aria-labelledby="clock-heading">
+    <h2 id="clock-heading" class="card-title">{t("settings.clock")}</h2>
+    <p class="msg clock-now"><Icon name="clock" />{t("settings.clockNow", { time: clockNow })}</p>
+    <div class="field">
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={clockTrust() !== "unknown"}
+          disabled={clockTrust() === "ntp"}
+          onchange={(event) => setClockConfirmed(event.currentTarget.checked)}
+        />
+        {t("settings.clockConfirm")}
+      </label>
+      <span class="field-help">{t("settings.clockHelp")}</span>
+    </div>
+    <p class="msg" class:msg-warn={clockUnknown} class:msg-ok={!clockUnknown} role="status">
+      <Icon name={clockUnknown ? "warning" : "check"} />{t(`settings.clockTrust.${clockTrust()}`)}
+    </p>
+  </section>
+
+  <!-- Journal folder (P1-04): a copy of the journal outside the browser. The handle is kept
+       in the journal database; the browser re-asks for the permission after a restart. -->
+  <section class="card" aria-labelledby="folder-heading">
+    <h2 id="folder-heading" class="card-title">{t("settings.journalFolder")}</h2>
+    <p class="msg">{t("settings.journalFolderHelp")}</p>
+    {#if !mirror.supported()}
+      <p class="msg msg-danger"><Icon name="warning" />{t("settings.journalFolder.unsupported")}</p>
     {:else}
-      <span class="folder-name" role="status">
-        {t("settings.journalFolder.current", { name: mirror.folderName() ?? "" })}
+      {#if mirrorState === "off"}
+        <p class="msg"><Icon name="storage" />{t("settings.journalFolder.none")}</p>
+      {:else}
+        <dl class="dl">
+          <dt>{t("settings.journalFolder")}</dt>
+          <dd role="status">
+            {t("settings.journalFolder.current", { name: mirror.folderName() ?? "" })}
+          </dd>
+          <dd class="field-help">
+            {t("settings.journalFolder.file", { name: mirror.fileName() })}
+          </dd>
+        </dl>
+        {#if mirrorState === "needsPermission"}
+          <p class="msg msg-warn" role="alert">
+            <Icon name="warning" />{t("settings.journalFolder.needsPermission")}
+          </p>
+        {:else if mirrorState === "error"}
+          <p class="msg msg-danger" role="alert">
+            <Icon name="warning" />{t("settings.journalFolder.error", {
+              error: mirror.error() ?? "",
+            })}
+          </p>
+        {:else if mirror.lastWriteAt() !== null}
+          <p class="msg msg-ok">
+            <Icon name="check" />{t("settings.journalFolder.lastWrite", {
+              time: formatClockTime(mirror.lastWriteAt() ?? ""),
+            })}
+          </p>
+        {:else}
+          <p class="msg">{t("settings.journalFolder.neverWritten")}</p>
+        {/if}
+        {#if mirror.pending() > 0}
+          <p class="msg">{t("settings.journalFolder.pending", { count: mirror.pending() })}</p>
+        {/if}
+      {/if}
+      <div class="form-actions">
+        {#if mirrorState === "needsPermission"}
+          <button
+            type="button"
+            class="btn btn-primary"
+            disabled={folderBusy}
+            onclick={() => folderAction(() => mirror.reconnect())}
+          >
+            {t("settings.journalFolder.reconnect")}
+          </button>
+        {:else if mirrorState === "error"}
+          <button
+            type="button"
+            class="btn btn-primary"
+            disabled={folderBusy}
+            onclick={() => folderAction(() => mirror.retry())}
+          >
+            <Icon name="retry" />{t("settings.journalFolder.retry")}
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="btn"
+          class:btn-primary={mirrorState === "off"}
+          disabled={folderBusy}
+          onclick={() => folderAction(() => mirror.chooseFolder())}
+        >
+          <Icon name="storage" />{mirrorState === "off"
+            ? t("settings.journalFolder.choose")
+            : t("settings.journalFolder.change")}
+        </button>
+        {#if mirrorState !== "off"}
+          <button
+            type="button"
+            class="btn"
+            disabled={folderBusy}
+            onclick={() => folderAction(() => mirror.forget())}
+          >
+            {t("settings.journalFolder.forget")}
+          </button>
+        {/if}
+      </div>
+      {#if folderError}
+        <p class="msg msg-danger" role="alert"><Icon name="warning" />{folderError}</p>
+      {/if}
+    {/if}
+  </section>
+
+  <!-- Radio: the state and the page, and the three numbers. -->
+  <form class="card" onsubmit={saveRadio} aria-labelledby="settings-radio-heading">
+    <h2 id="settings-radio-heading" class="card-title">
+      <span>{t("topbar.radio")}</span>
+      <span class="chip {chipClass(radioTint)}" role="status">
+        <Icon name="radio" />{t(`radio.status.${radioState}`)}
       </span>
-      <small>{t("settings.journalFolder.file", { name: mirror.fileName() })}</small>
-      {#if mirrorState === "needsPermission"}
-        <small class="error" role="alert">{t("settings.journalFolder.needsPermission")}</small>
-      {:else if mirrorState === "error"}
-        <small class="error" role="alert"
-          >{t("settings.journalFolder.error", { error: mirror.error() ?? "" })}</small
-        >
-      {:else if mirror.lastWriteAt() !== null}
-        <small class="saved"
-          >{t("settings.journalFolder.lastWrite", {
-            time: formatClockTime(mirror.lastWriteAt() ?? ""),
-          })}</small
-        >
-      {:else}
-        <small>{t("settings.journalFolder.neverWritten")}</small>
-      {/if}
-      {#if mirror.pending() > 0}
-        <small>{t("settings.journalFolder.pending", { count: mirror.pending() })}</small>
-      {/if}
-    {/if}
-    <div class="actions">
-      {#if mirrorState === "needsPermission"}
-        <button
-          type="button"
-          disabled={folderBusy}
-          onclick={() => folderAction(() => mirror.reconnect())}
-        >
-          {t("settings.journalFolder.reconnect")}
-        </button>
-      {:else if mirrorState === "error"}
-        <button type="button" disabled={folderBusy} onclick={() => folderAction(() => mirror.retry())}>
-          {t("settings.journalFolder.retry")}
-        </button>
-      {/if}
-      <button
-        type="button"
-        class:secondary={mirrorState !== "off"}
-        disabled={folderBusy}
-        onclick={() => folderAction(() => mirror.chooseFolder())}
-      >
-        {mirrorState === "off"
-          ? t("settings.journalFolder.choose")
-          : t("settings.journalFolder.change")}
+    </h2>
+    <div class="form-actions radio-line">
+      <a class="btn" href={hashFor("radio")}><Icon name="radio" />{t("popover.radio.open")}</a>
+    </div>
+    <div class="fields">
+      <div class="field">
+        <label for="blind-after">{t("settings.blindAfterMinutes")}</label>
+        <input
+          id="blind-after"
+          type="number"
+          min="1"
+          step="1"
+          bind:value={blindAfterMinutes}
+          aria-invalid={blindAfterError !== null}
+        />
+        <span class="field-help">{t("settings.blindAfterHelp")}</span>
+        {#if blindAfterError}
+          <span class="field-error"><Icon name="warning" />{blindAfterError}</span>
+        {/if}
+      </div>
+
+      <div class="field">
+        <label for="max-send-attempts">{t("settings.maxSendAttempts")}</label>
+        <input
+          id="max-send-attempts"
+          type="number"
+          min="1"
+          max={MAX_SEND_ATTEMPTS_LIMIT}
+          step="1"
+          bind:value={maxSendAttempts}
+          aria-invalid={maxSendAttemptsError !== null}
+        />
+        <span class="field-help">{t("settings.maxSendAttemptsHelp")}</span>
+        {#if maxSendAttemptsError}
+          <span class="field-error"><Icon name="warning" />{maxSendAttemptsError}</span>
+        {/if}
+      </div>
+
+      <div class="field">
+        <label for="send-gap">{t("settings.sendGapSeconds")}</label>
+        <input
+          id="send-gap"
+          type="number"
+          min="1"
+          max={SEND_GAP_SECONDS_LIMIT}
+          step="1"
+          bind:value={sendGapSeconds}
+          aria-invalid={sendGapError !== null}
+        />
+        <span class="field-help">{t("settings.sendGapHelp")}</span>
+        {#if sendGapError}
+          <span class="field-error"><Icon name="warning" />{sendGapError}</span>
+        {/if}
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" disabled={!canSaveRadio}>
+        {t("settings.save")}
       </button>
-      {#if mirrorState !== "off"}
-        <button
-          type="button"
-          class="secondary"
-          disabled={folderBusy}
-          onclick={() => folderAction(() => mirror.forget())}
-        >
-          {t("settings.journalFolder.forget")}
-        </button>
+    </div>
+  </form>
+
+  <!-- Hub: the sync target of phase 3; a placeholder until then. -->
+  <form class="card" onsubmit={saveHub} aria-labelledby="settings-hub-heading">
+    <h2 id="settings-hub-heading" class="card-title">{t("settings.card.hub")}</h2>
+    <div class="field">
+      <label for="hub-url">{t("settings.hubUrl")}</label>
+      <input
+        id="hub-url"
+        type="url"
+        inputmode="url"
+        placeholder="https://"
+        bind:value={hubUrl}
+        aria-invalid={hubUrlError !== null}
+      />
+      <span class="field-help">{t("settings.hubUrlHelp")}</span>
+      {#if hubUrlError}
+        <span class="field-error"><Icon name="warning" />{hubUrlError}</span>
       {/if}
     </div>
-    {#if folderError}
-      <small class="error" role="alert">{folderError}</small>
-    {/if}
-  {/if}
-</section>
-
-<!-- Session state, not a saved setting: applies at once and lasts until the app is closed. -->
-<section class="field clock" aria-labelledby="clock-heading">
-  <h2 id="clock-heading">{t("settings.clock")}</h2>
-  <small>{t("settings.clockNow", { time: clockNow })}</small>
-  <label class="check">
-    <input
-      type="checkbox"
-      checked={clockTrust() !== "unknown"}
-      disabled={clockTrust() === "ntp"}
-      onchange={(event) => setClockConfirmed(event.currentTarget.checked)}
-    />
-    {t("settings.clockConfirm")}
-  </label>
-  <small>{t("settings.clockHelp")}</small>
-  <small class="trust" role="status">{t(`settings.clockTrust.${clockTrust()}`)}</small>
-</section>
-
-<!-- The running code is the installed one; a new build waits for the reload button here or
-     in the update chip of the top bar (lib/updates.svelte.ts). -->
-<section class="field about" aria-labelledby="about-heading">
-  <h2 id="about-heading">{t("settings.about")}</h2>
-  <dl>
-    <dt>{t("settings.installedVersion")}</dt>
-    <dd>{versionLabel()}</dd>
-    <dt>{t("settings.builtAt")}</dt>
-    <dd>{formatInstant(builtAt)}</dd>
-    <dt>{t("settings.lastChecked")}</dt>
-    <dd>
-      {#if updater.lastCheckedAt() !== null}
-        {formatInstant(updater.lastCheckedAt() ?? "")}
-      {:else}
-        {t("settings.lastCheckedNever")}
-      {/if}
-    </dd>
-    <!-- Persistent storage (P1-04): what navigator.storage said on start. -->
-    <dt>{t("settings.storage")}</dt>
-    <dd>
-      {#if persistence.persisted() === null}
-        {t("settings.storage.unknown")}
-      {:else if persistence.persisted()}
-        {t("settings.storage.persisted")}
-      {:else}
-        <span class="error">{t("settings.storage.notPersisted")}</span>
-      {/if}
-      <br />
-      {#if usage === null}
-        {t("settings.storage.estimateUnavailable")}
-      {:else}
-        {t("settings.storage.estimate", {
-          usage: formatBytes(usage.usage, language()),
-          quota: formatBytes(usage.quota, language()),
-        })}
-      {/if}
-    </dd>
-  </dl>
-  {#if updater.registered()}
-    <div class="actions">
-      <button type="button" disabled={updater.checking()} onclick={() => updater.checkNow()}>
-        {updater.checking() ? t("settings.checking") : t("settings.checkNow")}
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" disabled={hubUrlError !== null}>
+        {t("settings.save")}
       </button>
+    </div>
+  </form>
+
+  <!-- Text & contrast (P1-09): applied at once and kept; nothing here waits for Save. -->
+  <section class="card" aria-labelledby="text-heading">
+    <h2 id="text-heading" class="card-title">{t("settings.card.text")}</h2>
+    <fieldset class="field sizes">
+      <legend class="field-label">{t("settings.fontSize")}</legend>
+      <div class="options">
+        {#each FONT_SIZES as size (size)}
+          <label class="check" data-size={size}>
+            <input
+              type="radio"
+              name="font-size"
+              value={size}
+              checked={settings.fontSize === size}
+              onchange={() => setFontSize(size)}
+            />
+            {t(`settings.fontSize.${size}`)}
+          </label>
+        {/each}
+      </div>
+      <span class="field-help">{t("settings.fontSizeHelp")}</span>
+    </fieldset>
+    <div class="field">
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={settings.highContrast}
+          onchange={(event) => setHighContrast(event.currentTarget.checked)}
+        />
+        {t("settings.highContrast")}
+      </label>
+      <span class="field-help">{t("settings.highContrastHelp")}</span>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn" onclick={openHelp}>{t("settings.shortcuts")}</button>
+    </div>
+  </section>
+
+  <!-- Language: applies at once. -->
+  <section class="card" aria-labelledby="language-heading">
+    <h2 id="language-heading" class="card-title">{t("language.label")}</h2>
+    <div class="field language">
+      <label for="settings-language">{t("language.label")}</label>
+      <LanguageSelect id="settings-language" />
+    </div>
+  </section>
+
+  <!-- About: the running code is the installed one; a new build waits for the reload button
+       here or in the update chip of the top bar (lib/updates.svelte.ts). -->
+  <section class="card" aria-labelledby="about-heading">
+    <h2 id="about-heading" class="card-title">{t("settings.about")}</h2>
+    <dl class="dl">
+      <dt>{t("settings.installedVersion")}</dt>
+      <dd>{versionLabel()}</dd>
+      <dt>{t("settings.builtAt")}</dt>
+      <dd>{formatInstant(builtAt)}</dd>
+      <dt>{t("settings.lastChecked")}</dt>
+      <dd>
+        {#if updater.lastCheckedAt() !== null}
+          {formatInstant(updater.lastCheckedAt() ?? "")}
+        {:else}
+          {t("settings.lastCheckedNever")}
+        {/if}
+      </dd>
+      <dt>{t("settings.deviceId")}</dt>
+      <dd>
+        <code>{settings.deviceId}</code>
+        <span class="field-help">{t("settings.deviceIdHelp")}</span>
+      </dd>
+      <!-- Persistent storage (P1-04): what navigator.storage said on start. -->
+      <dt>{t("settings.storage")}</dt>
+      <dd>
+        {#if persistence.persisted() === null}
+          <span class="msg">{t("settings.storage.unknown")}</span>
+        {:else if persistence.persisted()}
+          <span class="msg msg-ok"><Icon name="check" />{t("settings.storage.persisted")}</span>
+        {:else}
+          <span class="msg msg-warn"
+            ><Icon name="warning" />{t("settings.storage.notPersisted")}</span
+          >
+        {/if}
+        <span class="field-help">
+          {#if usage === null}
+            {t("settings.storage.estimateUnavailable")}
+          {:else}
+            {t("settings.storage.estimate", {
+              usage: formatBytes(usage.usage, language()),
+              quota: formatBytes(usage.quota, language()),
+            })}
+          {/if}
+        </span>
+      </dd>
+    </dl>
+    {#if updater.registered()}
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn"
+          disabled={updater.checking()}
+          onclick={() => updater.checkNow()}
+        >
+          <Icon name="update" />{updater.checking()
+            ? t("settings.checking")
+            : t("settings.checkNow")}
+        </button>
+        {#if updater.updateAvailable()}
+          <button type="button" class="btn btn-primary" onclick={() => updater.reload()}>
+            {t("update.reload")}
+          </button>
+        {/if}
+      </div>
       {#if updater.updateAvailable()}
-        <span role="status">{t("update.available")}</span>
-        <button type="button" onclick={() => updater.reload()}>{t("update.reload")}</button>
+        <p class="msg msg-warn" role="status"><Icon name="update" />{t("update.available")}</p>
       {:else if updater.lastCheckError() !== null}
-        <small class="error" role="status">
-          {t("settings.checkFailed", { error: updater.lastCheckError() ?? "" })}
-        </small>
+        <p class="msg msg-danger" role="status">
+          <Icon name="warning" />{t("settings.checkFailed", {
+            error: updater.lastCheckError() ?? "",
+          })}
+        </p>
       {/if}
-    </div>
-  {:else}
-    <small>{t("settings.updatesUnavailable")}</small>
-  {/if}
-  <!-- The design language's style guide (P2-01): for review, not in the navigation. -->
-  <small><a href={hashFor("styleguide")}>{t("settings.styleguide")}</a></small>
-</section>
+    {:else}
+      <p class="msg">{t("settings.updatesUnavailable")}</p>
+    {/if}
+    <!-- The design language's style guide (P2-01): for review, not in the navigation. -->
+    <p class="msg"><a href={hashFor("styleguide")}>{t("settings.styleguide")}</a></p>
+  </section>
+</div>
 
 <style>
-  .field {
+  /* Layout only (docs/design.md §Screens → Settings): one column of cards, no wider than a
+     form needs, at the left (no empty flanks). */
+  .column {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1.25rem;
-    max-width: 28rem;
+    gap: var(--s-4);
+    max-width: 44rem;
   }
 
-  label {
-    font-weight: 600;
-  }
-
-  small {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .actions {
+  .card {
     display: flex;
-    align-items: center;
-    gap: 1rem;
+    flex-direction: column;
+    gap: var(--s-3);
   }
 
-  .saved {
-    color: var(--ok);
+  .card-title {
+    margin-bottom: 0;
   }
 
-  .appearance,
-  .folder,
-  .clock,
-  .about {
-    margin-top: 2rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--line);
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
   }
 
-  .appearance h2,
-  .folder h2,
-  .clock h2,
-  .about h2 {
-    font-size: 1.1rem;
-    margin: 0;
+  .field,
+  .language {
+    max-width: 28rem;
   }
 
   .sizes {
     margin: 0;
     padding: 0;
-    border: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    border-width: 0;
+    min-width: 0;
   }
 
   .sizes legend {
-    font-weight: 600;
     padding: 0;
+    margin-bottom: var(--s-1);
   }
 
   .options {
     display: flex;
-    gap: 1.5rem;
     flex-wrap: wrap;
+    gap: 0 var(--s-5);
   }
 
-  /* The three sizes shown at their own size, so the choice can be seen before it is made. */
-  .options label[data-size="large"] {
-    font-size: 1.17em;
-  }
-
-  .options label[data-size="largest"] {
-    font-size: 1.33em;
-  }
-
-  .folder-name {
-    font-weight: 600;
-  }
-
-  .folder .actions,
-  .appearance .actions {
-    margin-top: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .about dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.25rem 1rem;
-    margin: 0.5rem 0;
-  }
-
-  .about dt {
-    font-weight: 600;
-  }
-
-  .about dd {
+  .msg {
     margin: 0;
   }
 
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-height: 2.5rem;
-    font-weight: 600;
+  .dl dd + .field-help {
+    grid-column: 2;
   }
 
-  .trust {
-    color: var(--ink);
+  .dl .field-help {
+    display: block;
+  }
+
+  .radio-line {
+    margin-top: calc(-1 * var(--s-1));
   }
 </style>

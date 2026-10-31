@@ -39,7 +39,11 @@ const BLIND_AFTER = 15 * MINUTE;
 const FAST: ReconnectTiming = { delaysMs: [5, 10, 20], bleGiveUpMs: 80, linkCheckTimeoutMs: 50 };
 // A first wait no test outlives, so the waiting phase can be looked at; the budget has to
 // hold it, since the wait itself counts against the budget.
-const PATIENT: ReconnectTiming = { delaysMs: [10_000], bleGiveUpMs: 600_000, linkCheckTimeoutMs: 50 };
+const PATIENT: ReconnectTiming = {
+  delaysMs: [10_000],
+  bleGiveUpMs: 600_000,
+  linkCheckTimeoutMs: 50,
+};
 
 setLanguage("en");
 
@@ -211,7 +215,9 @@ describe("radio store", () => {
     await expect(store.connect("ble")).rejects.toThrow("no port chosen");
     expect(store.state()).toBe("disconnected");
     expect(store.kind()).toBeNull();
-    expect(store.log().some((line) => line.includes("connect (ble) failed: no port chosen"))).toBe(true);
+    expect(store.log().some((line) => line.includes("connect (ble) failed: no port chosen"))).toBe(
+      true,
+    );
   });
 
   it("drops the connection when the device is not a companion", async () => {
@@ -291,7 +297,9 @@ describe("radio store", () => {
 
     transport.push(bytes(PUSH_CODE_MSG_WAITING));
     await vi.waitFor(() => expect(seen).toEqual([PUSH_CODE_MSG_WAITING]));
-    expect(store.log().some((line) => line.includes("push listener failed: listener broke"))).toBe(true);
+    expect(store.log().some((line) => line.includes("push listener failed: listener broke"))).toBe(
+      true,
+    );
     // The response frames of connect() did not reach the listener: pushes only.
     expect(seen).toHaveLength(1);
 
@@ -317,6 +325,19 @@ describe("radio store", () => {
     expect(store.log().length).toBe(200);
     expect(store.log()[0]).toContain("attempt 30");
     expect(store.log()[199]).toContain("attempt 229");
+  });
+
+  it("clearLog empties the log and the next line starts it afresh (P2-04)", async () => {
+    const { store, transport } = setUp();
+    transport.connectError = new Error("first");
+    await expect(store.connect("usb")).rejects.toThrow();
+    expect(store.log().length).toBeGreaterThan(0);
+    store.clearLog();
+    expect(store.log()).toEqual([]);
+    transport.connectError = new Error("second");
+    await expect(store.connect("usb")).rejects.toThrow();
+    expect(store.log().some((line) => line.includes("second"))).toBe(true);
+    expect(store.log().some((line) => line.includes("first"))).toBe(false);
   });
 });
 
@@ -531,7 +552,9 @@ describe("link check after a wake (P1-07)", () => {
 
     page.visible = true;
     page.document.dispatchEvent(new Event("visibilitychange"));
-    await vi.waitFor(() => expect(logHas("link check (visible): the companion answered")).toBe(true));
+    await vi.waitFor(() =>
+      expect(logHas("link check (visible): the companion answered")).toBe(true),
+    );
     page.document.dispatchEvent(new Event("resume"));
     await vi.waitFor(() => expect(logHas("link check (resume)")).toBe(true));
     page.window.dispatchEvent(new Event("pageshow"));

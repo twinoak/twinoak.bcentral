@@ -81,6 +81,38 @@
   cursor: default;
 }
 
+/* A compact button (28 px, 14 px text) for a line of row actions and for a table cell, so
+   the row stays low. `.row-actions .btn` is compact by itself (P2-03). */
+.btn-compact,
+.row-actions .btn {
+  min-height: 1.75rem;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-14);
+}
+
+/* A line of buttons that closes a form, and the toolbar above a table (a search field, the
+   buttons): the controls wrap rather than overflow. */
+.form-actions,
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.toolbar {
+  align-items: flex-end;
+}
+
+.toolbar .field {
+  flex: 1 1 14rem;
+  max-width: 20rem;
+}
+
+.toolbar-end {
+  margin-left: auto;
+}
+
 /* --- Field: a label above (14 px 500 ink-2), the control (36 px, rule-2 border, r-1), help
    below (14 px ink-2), an error below (14 px danger with a glyph — an <Icon name="warning">
    in the markup). An invalid control carries aria-invalid="true". */
@@ -151,6 +183,46 @@
 
 .field-error .icon {
   margin-top: -0.05em;
+}
+
+/* A field whose control line holds a button beside the input (a key with Pick from radio,
+   the operator taking over with Take over): the input takes the width, the button its own. */
+.field-line {
+  display: flex;
+  gap: var(--s-2);
+  align-items: flex-start;
+}
+
+.field-line > input,
+.field-line > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A field for a public key: monospaced, so the hex reads in columns. */
+.field-mono input,
+.field-mono textarea {
+  font-family: var(--font-mono);
+}
+
+/* A definition list (the radio's self info, About): the term 14 px 500 ink-2 at the left,
+   the value beside it. */
+.dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--s-1) var(--s-4);
+  margin: 0;
+}
+
+.dl dt {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 /* A checkbox or radio with its label on one 36 px line. */
@@ -356,10 +428,25 @@ button.chip:hover {
 
 /* --- Table: header on surface-2 in 13 px 500 ink-2, rows separated by rule, numbers right
    and tabular (`.num`), hover surface-2, selected (aria-selected="true") accent-weak. The
-   header sticks when the table scrolls inside a `.table-scroll` box. No zebra stripes. */
+   header sticks when the table scrolls inside a `.table-scroll` box, or in a `.table-box`
+   (the card's edge, no padding: the register, the queue). A `th` in the body is a group
+   line (a street, a batch) and does not stick. No zebra stripes. Rows are s-1 tall in
+   padding (32 px at 16 px; 33 with a chip): dense where data is dense, so fifteen register
+   rows and twelve queue rows fit a 720 px screen (P2-04). */
 .table-scroll {
   overflow: auto;
   min-width: 0;
+}
+
+.table-box {
+  /* Positioned, so a visually hidden span inside a scrolled row stays inside the box
+     instead of stretching the page (the same for `.rows-box`). */
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--surface);
 }
 
 .table {
@@ -382,14 +469,63 @@ button.chip:hover {
   white-space: nowrap;
 }
 
+.table tbody th {
+  position: static;
+  white-space: normal;
+}
+
 .table td {
-  padding: var(--s-2) var(--s-3);
+  padding: var(--s-1) var(--s-3);
   border-bottom: 1px solid var(--rule);
   vertical-align: top;
 }
 
+.table-box > .table > tbody > tr:last-child > td {
+  border-bottom: 0;
+}
+
 .table .num {
   text-align: right;
+  white-space: nowrap;
+}
+
+/* A chip or a compact button in a cell sits on the line's middle and gives back the height
+   it is taller than the line, so a row with one stays 32 px. */
+.table td > .chip,
+.table td > .btn-compact {
+  vertical-align: middle;
+  margin-top: -0.125rem;
+  margin-bottom: -0.125rem;
+}
+
+.table td > .btn-compact {
+  margin-top: -0.25rem;
+  margin-bottom: -0.25rem;
+}
+
+/* The column that names the row (a radio's label, a contact's name): 500, on one line. */
+.table .label {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* A cell that is one checkbox (a checklist table). */
+.table .pick {
+  width: 1px;
+  padding-right: 0;
+}
+
+.table .pick input {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+/* A row that is a label for its checkbox, or one button: the pointer says so. */
+.table tr[data-pick] {
+  cursor: pointer;
 }
 
 .table tbody tr:hover {
@@ -433,6 +569,19 @@ button.chip:hover {
 
 .rows-2 {
   grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+/* One column of monospaced 13 px lines (the radio log, newest first). */
+.rows-log {
+  grid-template-columns: minmax(0, 1fr);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+
+.rows-log > * {
+  padding: var(--s-1) var(--s-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .rows > * {
@@ -556,14 +705,15 @@ button.chip:hover {
 
 .rows > :hover > .row-actions,
 .rows > :focus-within > .row-actions,
-.rows > [data-expanded="true"] > .row-actions {
+.rows > [data-expanded="true"] > .row-actions,
+.rows-actions-always > * > .row-actions {
   display: flex;
 }
 
-.row-actions .btn {
-  min-height: 1.75rem;
-  padding: 0 var(--s-2);
-  font-size: var(--fs-14);
+/* In the two- and three-column lists the actions line spans the row. */
+.rows-3 .row-actions,
+.rows-2 .row-actions {
+  grid-column: 1 / -1;
 }
 
 /* An inline form on a row (a correction, a manual status with its reason). */
@@ -633,6 +783,9 @@ button.chip:hover {
 /* The box a long row list scrolls in (the journal): a surface with the card's edge and no
    padding, so the rows run edge to edge and the last row's rule is the box's. */
 .rows-box {
+  /* Positioned: the visually hidden words in a scrolled row (the direction of a message)
+     are absolutely positioned and would otherwise stretch the page under the box. */
+  position: relative;
   min-height: 0;
   overflow-y: auto;
   overflow-anchor: auto;

@@ -1,23 +1,29 @@
 <script lang="ts">
-  // The shift handover (P1-08): the screen a new operator opens first. The incident and how
-  // long it has been open; the operator name field, where changing the name is the handover
-  // (one note "handover: ‹old› → ‹new›", then the new name on everything); the clock-confirm
-  // box from the settings; the radio's state; then four lists, each oldest first, derived
-  // from the entries on every reload (store/handoverView.ts): open orders, given-up messages
-  // with the three decisions on the row (retry, send by courier, close with a reason),
-  // unanswered incoming messages with Reply (P1-02's compose form sits under the lists), and
-  // quiet radios with "Send status request" ("#n Meld status"). The page reloads on every
-  // entry the inbox, the outbox or the queue writes, and after every write from here.
-  // Print handover prints this page: the lists as they are, under a header with the handover
-  // time and both names (app.css hides the chrome, P1-04).
+  // The shift handover (P1-08; on the design language in P2-04): the screen a new operator
+  // opens first. A slim card on top — the incident and how long it has been open, the
+  // operator name field where changing the name is the handover (one note "handover: ‹old›
+  // → ‹new›", then the new name on everything), the clock-confirm box from the settings, the
+  // radio's state, Print — then four cards in a 2 × 2 grid, each a row list with its count
+  // in the title, oldest first, derived from the entries on every reload
+  // (store/handoverView.ts): open orders, given-up messages with the three decisions on the
+  // row (retry, send by courier, close with a reason), unanswered incoming messages with
+  // Reply, and quiet radios with "Send status request" ("#n Meld status"). Reply opens a
+  // compose card between the head and the lists (P1-02's form); it closes on send or with
+  // its ✕. The page reloads on every entry the inbox, the outbox or the queue writes, and
+  // after every write from here. The handover done, a courier copy and a status request are
+  // toasts; errors stay inline. Print handover prints this page: the lists as they are under
+  // a header with the handover time and both names (the bar and the controls are no-print).
   import { tick } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import { clockTrust, now, setClockConfirmed } from "../lib/clock.svelte.ts";
   import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
+  import { chipClass, DIRECTION_GLYPH, stripChip } from "../lib/journalRows.ts";
   import { formatDateTime, formatShortTime, incidentName, stripText } from "../lib/journalText.ts";
+  import { openPopover } from "../lib/popover.svelte.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { hasOperatorName, settings } from "../lib/settings.svelte.ts";
+  import { showToast } from "../lib/toast.svelte.ts";
   import { capability, inbox, outbox, radio, sendQueue } from "../radio/index.ts";
   import { disconnectReasonText } from "../radio/radioStore.svelte.ts";
   import { buildHandover, quietRadios } from "../store/handoverView.ts";
@@ -36,6 +42,7 @@
   import { sortedByLabel } from "../store/register.ts";
   import type { Incident, JournalEntry, RegisterEntry } from "../store/types.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
+  import Icon from "../components/Icon.svelte";
 
   let incidents: Incident[] = $state([]);
   let register: RegisterEntry[] = $state([]);
@@ -43,13 +50,14 @@
   let heard: Map<string, string> = $state(new Map());
   let loadError: string | null = $state(null);
   let actionError: string | null = $state(null);
-  let notice: string | null = $state(null);
   // Bumped after every write from this screen, so the effect below reloads.
   let ownRevision = $state(0);
   let busy = $state(false);
   // Ticks once a second: the ages and the incident's open time move without a reload.
   let nowMs = $state(Date.now());
   let compose: ComposeForm | undefined = $state(undefined);
+  // The compose card, shown while a reply is being written.
+  let composeOpen = $state(false);
 
   // The name typed for the operator taking over; the handover happens on Take over.
   let newOperator = $state(settings.operatorName);
@@ -79,6 +87,11 @@
   const radioElapsed = $derived(radio.elapsedMs());
   const radioReason = $derived(radioState === "disconnected" ? radio.disconnectReason() : null);
   const radioReady = $derived(radioState === "connected" || radioState === "blind");
+  // The radio chip's tint, as the bar's chip (lib/statusChips.ts): connected grey, connecting
+  // warn, blind and disconnected danger.
+  const radioTint = $derived(
+    radioState === "connected" ? "neutral" : radioState === "connecting" ? "warn" : "danger",
+  );
   const active = $derived(outbox.active());
   const queued = $derived(outbox.queued());
   const waitingInQueue = $derived(sendQueue.waiting());
@@ -149,14 +162,13 @@
     }
     busy = true;
     actionError = null;
-    notice = null;
     const from = settings.operatorName.trim();
     try {
       const note = await handOver(current.id, newOperator);
       if (note !== null) {
         lastHandover = { from, to: note.operator, at: note.timestamp };
         newOperator = note.operator;
-        notice = t("handover.operator.done", { from, to: note.operator });
+        showToast(t("handover.operator.done", { from, to: note.operator }));
       }
       await changed();
     } catch (failure) {
@@ -200,7 +212,6 @@
 
   async function retry(view: MessageView) {
     actionError = null;
-    notice = null;
     await transmit(view.entry);
   }
 
@@ -210,10 +221,9 @@
     }
     busy = true;
     actionError = null;
-    notice = null;
     try {
       const { copy } = await handOffToCourier(view.entry);
-      notice = t("handover.givenUp.courierDone", { n: copy.seqNo ?? 0 });
+      showToast(t("handover.givenUp.courierDone", { n: copy.seqNo ?? 0 }));
       await changed();
     } catch (failure) {
       actionError = t("send.manual.failed", { error: describe(failure) });
@@ -240,7 +250,6 @@
     }
     busy = true;
     actionError = null;
-    notice = null;
     try {
       await recordManualStatus(view.entry, "roger", reason);
       closing = null;
@@ -253,13 +262,22 @@
     }
   }
 
-  function reply(entry: JournalEntry) {
+  // Reply from the row (P1-02): the compose card opens between the head and the lists and
+  // takes the sender and the transport from the row.
+  async function reply(entry: JournalEntry) {
     actionError = null;
+    composeOpen = true;
+    await tick();
     void compose?.replyTo(entry);
+  }
+
+  function closeCompose() {
+    composeOpen = false;
   }
 
   async function onsent(message: JournalEntry) {
     actionError = null;
+    composeOpen = false;
     await changed();
     if (message.transport === "mesh") {
       void transmit(message);
@@ -272,10 +290,9 @@
     }
     busy = true;
     actionError = null;
-    notice = null;
     try {
       const { message } = await sendStatusRequest(current.id, entry.id);
-      notice = t("send.result", { n: message.seqNo ?? 0, label: entry.label });
+      showToast(t("send.result", { n: message.seqNo ?? 0, label: entry.label }));
       await changed();
       void transmit(message);
     } catch (failure) {
@@ -304,32 +321,75 @@
     }
   }
 
-  function stripLine(view: MessageView): string {
-    const inflightText = inflight(view.entry.id);
-    return view.strip.map((item) => stripText(item, inflightText)).join(" · ");
+  function label(entry: JournalEntry): string {
+    return labels.get(entry.counterpartyId ?? "") ?? "";
   }
 </script>
 
-<h1 class="no-print">{t("handover.title")}</h1>
-<p class="intro no-print">{t("handover.intro")}</p>
+<!-- The time of an entry, and the counterparty with the direction glyph and the transport
+     when it is not the radio: the journal's cells (components/Timeline.svelte). -->
+{#snippet timeCell(entry: JournalEntry)}
+  <span class="row-time" title={formatDateTime(entry.timestamp)}>
+    {formatShortTime(entry.timestamp)}
+  </span>
+{/snippet}
+
+{#snippet whoCell(entry: JournalEntry, direction: "out" | "in")}
+  <span class="row-who">
+    <span class="row-dir" aria-hidden="true">{DIRECTION_GLYPH[direction]}</span><span
+      class="visually-hidden"
+      >{t(`journal.type.message_${direction}`)}
+    </span>{label(entry)}
+    {#if entry.transport !== undefined && entry.transport !== "mesh"}
+      <span class="row-meta">· {t(`send.transport.${entry.transport}`)}</span>
+    {/if}
+  </span>
+{/snippet}
+
+<!-- An outgoing message's strip (a dot-chip per state, the in-flight words while the outbox
+     or the queue holds it) with the age at its end. -->
+{#snippet stripCell(view: MessageView)}
+  {@const inflightText = inflight(view.entry.id)}
+  <span class="row-strip strip">
+    {#each view.strip as item, index (index)}
+      {@const look = stripChip(item.kind)}
+      <span
+        class="chip {chipClass(look.tint)}"
+        data-kind={item.kind}
+        title={item.at === null ? undefined : formatDateTime(item.at)}
+      >
+        <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{stripText(
+          item,
+          inflightText,
+        )}
+      </span>
+    {/each}
+    <span class="row-time age" title={t("handover.column.age")}>{age(view.entry.timestamp)}</span>
+  </span>
+{/snippet}
+
+<!-- The page heading is for assistive technology; the bar's navigation names the screen. -->
+<h1 class="visually-hidden no-print">{t("handover.title")}</h1>
 
 {#if loadError}
-  <p class="error no-print" role="alert">{loadError}</p>
+  <p class="msg msg-danger no-print" role="alert"><Icon name="warning" />{loadError}</p>
 {/if}
 
 {#if current === null}
-  <p class="notice no-print">
-    {t("print.noIncident")}
-    <a href={hashFor("journal")}>{t("nav.journal")}</a>
-  </p>
+  <div class="empty no-print">
+    <p>{t("print.noIncident")}</p>
+    <button type="button" class="btn btn-primary" onclick={() => openPopover("incident")}>
+      {t("journal.incident.choose")}
+    </button>
+  </div>
 {:else}
   <!-- The header on paper: the incident, the handover time and both names. -->
   <header class="print-only">
     <h1>{t("handover.print.title", { incident: incidentName(current) })}</h1>
     {#if drill}
-      <p class="drill">{t("print.drill")}</p>
+      <p class="msg msg-drill"><Icon name="drill" />{t("print.drill")}</p>
     {/if}
-    <dl>
+    <dl class="dl">
       <dt>{t("handover.print.time")}</dt>
       <dd>{printTime === "" ? "" : formatDateTime(printTime)}</dd>
       <dt>{t("handover.print.from")}</dt>
@@ -341,43 +401,50 @@
     </dl>
   </header>
 
-  <section class="head no-print" aria-labelledby="handover-incident-heading">
-    <div class="row">
-      <h2 id="handover-incident-heading">{incidentName(current)}</h2>
-      {#if incidentState === "closed"}
-        <span class="state" data-state="closed">{t("journal.incident.state.closed")}</span>
-      {:else}
-        <span class="muted">
+  <div class="layout" class:replying={composeOpen}>
+    <!-- The slim card: the incident, the operator change, the clock, the radio, Print. -->
+    <section class="card head no-print" aria-label={t("handover.title")} data-handover-head>
+      <div class="field">
+        <span class="field-label">{t("journal.incident.label")}</span>
+        <span class="value">
+          {incidentName(current)}
+          {#if incidentState === "closed"}
+            <span class="chip"
+              ><span class="chip-dot"></span>{t("journal.incident.state.closed")}</span
+            >
+          {/if}
+        </span>
+        <span class="field-help">
           {t("handover.incident.openFor", {
             elapsed: formatElapsed(nowMs - Date.parse(current.createdAt)),
           })}
         </span>
-      {/if}
-      <span class="spacer"></span>
-      <button type="button" class="secondary" onclick={print}>{t("handover.print")}</button>
-    </div>
+      </div>
 
-    <div class="row panels">
       <!-- Changing the name here is the handover. -->
-      <form class="panel operator" onsubmit={takeOver}>
+      <form class="field operator" onsubmit={takeOver}>
         <label for="handover-operator">{t("handover.operator.label")}</label>
-        <div class="row">
+        <div class="field-line">
           <input
             id="handover-operator"
             type="text"
             autocomplete="name"
             bind:value={newOperator}
             disabled={busy}
+            aria-describedby="handover-operator-help"
           />
-          <button type="submit" disabled={!canTakeOver}>{t("handover.operator.takeOver")}</button>
+          <button type="submit" class="btn btn-primary" disabled={!canTakeOver}>
+            {t("handover.operator.takeOver")}
+          </button>
         </div>
-        <small>{t("handover.operator.current", { name: settings.operatorName })}</small>
-        <small>{t("handover.operator.help")}</small>
+        <span class="field-help" id="handover-operator-help" title={t("handover.operator.help")}>
+          {t("handover.operator.current", { name: settings.operatorName })}
+        </span>
       </form>
 
       <!-- The settings' clock box, repeated: an unconfirmed clock is the first thing to fix. -->
-      <div class="panel clock">
-        <span class="label">{t("settings.clock")}</span>
+      <div class="field">
+        <span class="field-label">{t("settings.clock")}</span>
         <label class="check">
           <input
             type="checkbox"
@@ -387,607 +454,417 @@
           />
           {t("settings.clockConfirm")}
         </label>
-        <small class="trust" data-trust={clockTrust()} role="status"
-          >{t(`settings.clockTrust.${clockTrust()}`)}</small
+        <span
+          class="field-help"
+          role="status"
+          data-trust={clockTrust()}
+          title={t(`settings.clockTrust.${clockTrust()}`)}
         >
+          {t(`settings.clockTrust.${clockTrust()}`)}
+        </span>
       </div>
 
-      <div class="panel radio">
-        <span class="label">{t("topbar.radio")}</span>
-        <a href={hashFor("radio")} data-state={radioState}>
-          <span class="dot" aria-hidden="true"></span>
-          <span role="status">
+      <div class="field">
+        <span class="field-label">{t("topbar.radio")}</span>
+        <span class="value">
+          <a class="chip {chipClass(radioTint)}" href={hashFor("radio")} data-state={radioState}>
+            <Icon name="radio" />
             {#if capability === "none"}
               {t("topbar.noRadioApi")}
             {:else}
               {t(`radio.status.${radioState}`)}{#if radioReason !== null}
                 · {disconnectReasonText(radioReason)}{/if}
             {/if}
-          </span>
-        </a>
-        <small>
+          </a>
+        </span>
+        <span class="field-help">
           {#if radioElapsed === null}
             {t("handover.radio.never")}
           {:else}
             {t("radio.heard", { elapsed: formatElapsed(radioElapsed) })}
           {/if}
-        </small>
+        </span>
       </div>
-    </div>
-  </section>
 
-  {#if actionError}
-    <p class="error no-print" role="alert">{actionError}</p>
-  {/if}
-  {#if notice}
-    <p class="ok no-print" role="status">{notice}</p>
-  {/if}
-
-  <div class="lists">
-    <section class="list" aria-labelledby="handover-open-heading">
-      <h2 id="handover-open-heading" title={t("handover.open.help")}>
-        {t("handover.open.title", { count: lists.open.length })}
-      </h2>
-      {#if lists.open.length === 0}
-        <p class="muted">{t("handover.open.empty")}</p>
-      {:else}
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t("journal.entries.time")}</th>
-              <th scope="col">{t("journal.entries.counterparty")}</th>
-              <th scope="col">{t("journal.entries.text")}</th>
-              <th scope="col">{t("handover.column.age")}</th>
-              <th scope="col">{t("journal.timeline.status")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each lists.open as view (view.entry.id)}
-              <tr data-entry-id={view.entry.id}>
-                <td class="time" title={formatDateTime(view.entry.timestamp)}>
-                  {formatShortTime(view.entry.timestamp)}
-                </td>
-                <td class="label">
-                  {labels.get(view.entry.counterpartyId ?? "") ?? ""}
-                  {#if view.entry.transport !== undefined && view.entry.transport !== "mesh"}
-                    <small class="muted">{t(`send.transport.${view.entry.transport}`)}</small>
-                  {/if}
-                </td>
-                <td class="text">
-                  {view.entry.text ?? ""}
-                  <div class="strip">{stripLine(view)}</div>
-                </td>
-                <td class="num">{age(view.entry.timestamp)}</td>
-                <td
-                  ><span class="chip" data-status={view.status}
-                    >{t(`journal.status.${view.status}`)}</span
-                  ></td
-                >
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
+      <div class="head-actions">
+        <button type="button" class="btn" onclick={print}>
+          <Icon name="print" />{t("handover.print")}
+        </button>
+      </div>
     </section>
 
-    <section class="list" aria-labelledby="handover-givenup-heading">
-      <h2 id="handover-givenup-heading" title={t("handover.givenUp.help")}>
-        {t("handover.givenUp.title", { count: lists.givenUp.length })}
-      </h2>
-      {#if lists.givenUp.length === 0}
-        <p class="muted">{t("handover.givenUp.empty")}</p>
-      {:else}
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t("journal.entries.time")}</th>
-              <th scope="col">{t("journal.entries.counterparty")}</th>
-              <th scope="col">{t("journal.entries.text")}</th>
-              <th scope="col">{t("handover.column.age")}</th>
-              <th scope="col" class="no-print"
-                ><span class="visually-hidden">{t("journal.timeline.actions")}</span></th
-              >
-            </tr>
-          </thead>
-          <tbody>
-            {#each lists.givenUp as view (view.entry.id)}
-              <tr data-entry-id={view.entry.id} data-status="given_up">
-                <td class="time" title={formatDateTime(view.entry.timestamp)}>
-                  {formatShortTime(view.entry.timestamp)}
-                </td>
-                <td class="label">
-                  {labels.get(view.entry.counterpartyId ?? "") ?? ""}
-                  {#if view.entry.transport !== undefined && view.entry.transport !== "mesh"}
-                    <small class="muted">{t(`send.transport.${view.entry.transport}`)}</small>
-                  {/if}
-                </td>
-                <td class="text">
-                  {view.entry.text ?? ""}
-                  <div class="strip">{stripLine(view)}</div>
-                </td>
-                <td class="num">{age(view.entry.timestamp)}</td>
-                <td class="actions no-print">
-                  {#if canRetry(view)}
+    <!-- Reply lands here (P1-02): the form takes the sender and the transport from the row. -->
+    {#if composeOpen}
+      <section class="card compose-card no-print" aria-labelledby="handover-compose-heading">
+        <h2 id="handover-compose-heading" class="card-title">
+          <span>{t("journal.compose.title")}</span>
+          <button
+            type="button"
+            class="btn btn-quiet btn-icon"
+            aria-label={t("handover.compose.close")}
+            title={t("handover.compose.close")}
+            onclick={closeCompose}><Icon name="close" /></button
+          >
+        </h2>
+        {#key current.id}
+          <ComposeForm
+            bind:this={compose}
+            incidentId={current.id}
+            {drill}
+            register={sortedRegister}
+            {onsent}
+          />
+        {/key}
+      </section>
+    {/if}
+
+    {#if actionError}
+      <p class="msg msg-danger no-print" role="alert"><Icon name="warning" />{actionError}</p>
+    {/if}
+
+    <div class="lists">
+      <section class="card list-card" aria-labelledby="handover-open-heading" data-list="open">
+        <h2 id="handover-open-heading" class="card-title" title={t("handover.open.help")}>
+          <span>{t("handover.open.title")} <span class="count">{lists.open.length}</span></span>
+        </h2>
+        {#if lists.open.length === 0}
+          <p class="msg">{t("handover.open.empty")}</p>
+        {:else}
+          <div class="rows-box list-box">
+            <ol class="rows">
+              {#each lists.open as view (view.entry.id)}
+                <li data-entry-id={view.entry.id}>
+                  {@render timeCell(view.entry)}
+                  {@render whoCell(view.entry, "out")}
+                  <span class="row-body">{view.entry.text ?? ""}</span>
+                  {@render stripCell(view)}
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+      </section>
+
+      <section
+        class="card list-card"
+        aria-labelledby="handover-givenup-heading"
+        data-list="givenUp"
+      >
+        <h2 id="handover-givenup-heading" class="card-title" title={t("handover.givenUp.help")}>
+          <span
+            >{t("handover.givenUp.title")} <span class="count">{lists.givenUp.length}</span></span
+          >
+        </h2>
+        {#if lists.givenUp.length === 0}
+          <p class="msg">{t("handover.givenUp.empty")}</p>
+        {:else}
+          <div class="rows-box list-box">
+            <ol class="rows rows-actions-always">
+              {#each lists.givenUp as view (view.entry.id)}
+                <li data-entry-id={view.entry.id} data-status="given_up">
+                  {@render timeCell(view.entry)}
+                  {@render whoCell(view.entry, "out")}
+                  <span class="row-body">{view.entry.text ?? ""}</span>
+                  {@render stripCell(view)}
+                  <span class="row-actions no-print">
+                    {#if canRetry(view)}
+                      <button
+                        type="button"
+                        class="btn btn-quiet"
+                        disabled={busy}
+                        onclick={() => retry(view)}
+                      >
+                        <Icon name="retry" />{t("send.retry")}
+                      </button>
+                    {/if}
                     <button
                       type="button"
-                      class="secondary small"
+                      class="btn btn-quiet"
+                      title={t("handover.givenUp.courierHelp")}
                       disabled={busy}
-                      onclick={() => retry(view)}
+                      onclick={() => courier(view)}
                     >
-                      {t("send.retry")}
+                      <Icon name="send" />{t("handover.givenUp.courier")}
                     </button>
-                  {/if}
-                  <button
-                    type="button"
-                    class="secondary small"
-                    title={t("handover.givenUp.courierHelp")}
-                    disabled={busy}
-                    onclick={() => courier(view)}
-                  >
-                    {t("handover.givenUp.courier")}
-                  </button>
-                  <button
-                    type="button"
-                    class="secondary small"
-                    title={t("handover.givenUp.closeHelp")}
-                    disabled={busy}
-                    aria-expanded={closing === view.entry.id}
-                    onclick={() => startClose(view)}
-                  >
-                    {t("handover.givenUp.close")}
-                  </button>
-                </td>
-              </tr>
-              {#if closing === view.entry.id}
-                <tr class="form no-print">
-                  <td colspan="5">
-                    <form class="inline" onsubmit={(event) => close(view, event)}>
-                      <input
-                        type="text"
-                        placeholder={t("journal.manual.reason")}
-                        aria-label={t("journal.manual.reason")}
-                        bind:value={reason}
-                      />
-                      <button type="submit" class="small" disabled={busy || reason.trim() === ""}>
+                    <button
+                      type="button"
+                      class="btn btn-quiet"
+                      title={t("handover.givenUp.closeHelp")}
+                      disabled={busy}
+                      aria-expanded={closing === view.entry.id}
+                      onclick={() => startClose(view)}
+                    >
+                      <Icon name="check" />{t("handover.givenUp.close")}
+                    </button>
+                  </span>
+                  {#if closing === view.entry.id}
+                    <form class="row-form no-print" onsubmit={(event) => close(view, event)}>
+                      <div class="field">
+                        <input
+                          type="text"
+                          placeholder={t("journal.manual.reason")}
+                          aria-label={t("journal.manual.reason")}
+                          bind:value={reason}
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        class="btn btn-primary"
+                        disabled={busy || reason.trim() === ""}
+                      >
                         {t("handover.givenUp.close")}
                       </button>
-                      <button type="button" class="secondary small" onclick={cancelClose}>
+                      <button type="button" class="btn" onclick={cancelClose}>
                         {t("journal.action.cancel")}
                       </button>
                     </form>
-                  </td>
-                </tr>
-              {/if}
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    </section>
-
-    <section class="list" aria-labelledby="handover-unanswered-heading">
-      <h2 id="handover-unanswered-heading" title={t("handover.unanswered.help")}>
-        {t("handover.unanswered.title", { count: lists.unanswered.length })}
-      </h2>
-      {#if lists.unanswered.length === 0}
-        <p class="muted">{t("handover.unanswered.empty")}</p>
-      {:else}
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t("journal.entries.time")}</th>
-              <th scope="col">{t("journal.entries.counterparty")}</th>
-              <th scope="col">{t("journal.entries.text")}</th>
-              <th scope="col">{t("handover.column.age")}</th>
-              <th scope="col" class="no-print"
-                ><span class="visually-hidden">{t("journal.timeline.actions")}</span></th
-              >
-            </tr>
-          </thead>
-          <tbody>
-            {#each lists.unanswered as entry (entry.id)}
-              <tr data-entry-id={entry.id} data-type="message_in">
-                <td class="time" title={formatDateTime(entry.timestamp)}>
-                  {formatShortTime(entry.timestamp)}
-                </td>
-                <td class="label">
-                  {labels.get(entry.counterpartyId ?? "") ?? ""}
-                  {#if entry.transport !== undefined && entry.transport !== "mesh"}
-                    <small class="muted">{t(`send.transport.${entry.transport}`)}</small>
                   {/if}
-                </td>
-                <td class="text">{entry.text ?? ""}</td>
-                <td class="num">{age(entry.timestamp)}</td>
-                <td class="actions no-print">
-                  <button type="button" class="small" onclick={() => reply(entry)}>
-                    {t("journal.action.reply")}
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    </section>
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+      </section>
 
-    <section class="list" aria-labelledby="handover-quiet-heading">
-      <h2
-        id="handover-quiet-heading"
-        title={t("handover.quiet.help", { minutes: settings.blindAfterMinutes })}
+      <section
+        class="card list-card"
+        aria-labelledby="handover-unanswered-heading"
+        data-list="unanswered"
       >
-        {t("handover.quiet.title", { count: quiet.length })}
-      </h2>
-      {#if quiet.length === 0}
-        <p class="muted">{t("handover.quiet.empty", { minutes: settings.blindAfterMinutes })}</p>
-      {:else}
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t("journal.entries.counterparty")}</th>
-              <th scope="col">{t("handover.column.lastHeard")}</th>
-              <th scope="col" class="no-print"
-                ><span class="visually-hidden">{t("journal.timeline.actions")}</span></th
-              >
-            </tr>
-          </thead>
-          <tbody>
-            {#each quiet as row (row.entry.id)}
-              <tr data-register-id={row.entry.id} class:never={row.at === null}>
-                <td class="label">{row.entry.label}</td>
-                <td class="when">
-                  {#if row.at === null}
-                    {t("journal.heard.never")}
-                  {:else}
-                    <span title={formatDateTime(row.at)}
-                      >{t("journal.heard.ago", { elapsed: age(row.at) })}</span
+        <h2
+          id="handover-unanswered-heading"
+          class="card-title"
+          title={t("handover.unanswered.help")}
+        >
+          <span
+            >{t("handover.unanswered.title")}
+            <span class="count">{lists.unanswered.length}</span></span
+          >
+        </h2>
+        {#if lists.unanswered.length === 0}
+          <p class="msg">{t("handover.unanswered.empty")}</p>
+        {:else}
+          <div class="rows-box list-box">
+            <ol class="rows rows-actions-always">
+              {#each lists.unanswered as entry (entry.id)}
+                <li data-entry-id={entry.id} data-type="message_in">
+                  {@render timeCell(entry)}
+                  {@render whoCell(entry, "in")}
+                  <span class="row-body">{entry.text ?? ""}</span>
+                  <span class="row-strip strip">
+                    <span class="row-time age" title={t("handover.column.age")}
+                      >{age(entry.timestamp)}</span
                     >
-                  {/if}
-                </td>
-                <td class="actions no-print">
-                  <button
-                    type="button"
-                    class="secondary small"
-                    title={radioReady ? t("handover.quiet.requestHelp") : t("send.noRadio")}
-                    disabled={busy || !radioReady || !hasOperatorName()}
-                    onclick={() => statusRequest(row.entry)}
-                  >
-                    {t("handover.quiet.request")}
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    </section>
-  </div>
+                  </span>
+                  <span class="row-actions no-print">
+                    <button type="button" class="btn btn-quiet" onclick={() => reply(entry)}>
+                      <Icon name="reply" />{t("journal.action.reply")}
+                    </button>
+                  </span>
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+      </section>
 
-  <!-- Reply lands here (P1-02): the form takes the sender and the transport from the row. -->
-  <section class="compose no-print" aria-labelledby="handover-compose-heading">
-    <h2 id="handover-compose-heading">{t("journal.compose.title")}</h2>
-    {#key current.id}
-      <ComposeForm
-        bind:this={compose}
-        incidentId={current.id}
-        {drill}
-        register={sortedRegister}
-        {onsent}
-      />
-    {/key}
-  </section>
+      <section class="card list-card" aria-labelledby="handover-quiet-heading" data-list="quiet">
+        <h2
+          id="handover-quiet-heading"
+          class="card-title"
+          title={t("handover.quiet.help", { minutes: settings.blindAfterMinutes })}
+        >
+          <span>{t("handover.quiet.title")} <span class="count">{quiet.length}</span></span>
+        </h2>
+        {#if quiet.length === 0}
+          <p class="msg">{t("handover.quiet.empty", { minutes: settings.blindAfterMinutes })}</p>
+        {:else}
+          <div class="rows-box list-box">
+            <ol class="rows rows-2 rows-actions-always">
+              {#each quiet as row (row.entry.id)}
+                <li
+                  data-register-id={row.entry.id}
+                  data-never={row.at === null ? "true" : undefined}
+                >
+                  <span class="row-who">{row.entry.label}</span>
+                  {#if row.at === null}
+                    <span class="row-strip chip chip-danger"
+                      ><span class="glyph">!</span>{t("journal.heard.never")}</span
+                    >
+                  {:else}
+                    <span class="row-strip row-time" title={formatDateTime(row.at)}>
+                      {t("journal.heard.ago", { elapsed: age(row.at) })}
+                    </span>
+                  {/if}
+                  <span class="row-actions no-print">
+                    <button
+                      type="button"
+                      class="btn btn-quiet"
+                      title={radioReady ? t("handover.quiet.requestHelp") : t("send.noRadio")}
+                      disabled={busy || !radioReady || !hasOperatorName()}
+                      onclick={() => statusRequest(row.entry)}
+                    >
+                      <Icon name="send" />{t("handover.quiet.request")}
+                    </button>
+                  </span>
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+      </section>
+    </div>
+  </div>
 {/if}
 
 <style>
-  .intro {
-    color: var(--muted);
-    margin: 0 0 1rem;
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .ok {
-    color: var(--ok);
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
-  .notice {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface);
-  }
-
+  /* Layout only (docs/design.md §Screens → Handover): the slim card, then the four cards in a
+     2 × 2 grid that takes the rest of the viewport, each list scrolling in its card; one
+     column under 60 rem, where the page scrolls. */
   .print-only {
     display: none;
   }
 
+  .layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    height: calc(100vh - 3.5rem - 2 * var(--s-5));
+    min-height: 24rem;
+  }
+
   .head {
+    flex: none;
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface);
-    margin-bottom: 1rem;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
     flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s-3) var(--s-5);
+    padding-top: var(--s-4);
+    padding-bottom: var(--s-4);
   }
 
-  .panels {
-    align-items: stretch;
-    gap: 1rem;
-  }
-
-  .panel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    flex: 1;
-    min-width: 16rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--light);
-  }
-
-  .panel label,
-  .panel .label {
-    font-weight: 600;
-  }
-
-  .panel small {
-    color: var(--muted);
-  }
-
-  .operator input {
-    flex: 1;
-    min-width: 10rem;
-  }
-
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-height: 2.5rem;
-  }
-
-  .trust {
-    color: var(--ink);
-  }
-
-  .trust[data-trust="unknown"] {
-    color: var(--error);
-    font-weight: 600;
-  }
-
-  .radio a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 2.5rem;
-    text-decoration: none;
-    color: var(--ink);
-  }
-
-  /* The dot has an edge of its own, so it reads as a shape beside its word in every mode. */
-  .dot {
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 50%;
-    border: 2px solid var(--ink);
-    background: var(--dot-idle);
-  }
-
-  .radio a[data-state="connecting"] .dot {
-    background: var(--dot-connecting);
-  }
-
-  .radio a[data-state="connected"] .dot {
-    background: var(--dot-connected);
-  }
-
-  .radio a[data-state="blind"] .dot {
-    background: var(--dot-blind);
-  }
-
-  .radio a[data-state="blind"],
-  .radio a[data-state="disconnected"] {
-    font-weight: 700;
-  }
-
-  h2 {
-    font-size: 1.1rem;
-    margin: 0;
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .state {
-    padding: 0.1rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    background: var(--light);
-    color: var(--error);
-  }
-
-  .state::before {
-    content: "■ ";
-  }
-
-  /* Two columns on a wide screen; one under 80rem (1440 px at the 18 px base), so the
-     tables with their row buttons fit at 1280 px without a horizontal scroll (P1-09). */
-  .lists {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-    align-items: start;
-  }
-
-  @media (max-width: 80rem) {
-    .lists {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-
-  .list {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface);
+  .head > .field {
+    flex: 1 1 11rem;
     min-width: 0;
   }
 
-  .list h2 {
-    margin-bottom: 0.5rem;
+  .head > .operator {
+    flex: 1.5 1 16rem;
   }
 
-  .list p {
+  .head .value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: 2.25rem;
+    overflow-wrap: anywhere;
+  }
+
+  .head .field-help {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Print sits at the row's end, level with the controls. */
+  .head-actions {
+    display: flex;
+    align-items: center;
+    flex: none;
+    margin-left: auto;
+    margin-top: calc(var(--fs-14) * 1.45 + var(--s-1));
+  }
+
+  .compose-card {
+    flex: none;
+    padding-top: var(--s-4);
+    padding-bottom: var(--s-4);
+  }
+
+  .compose-card .card-title {
+    margin-bottom: var(--s-2);
+  }
+
+  .lists {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: var(--s-4);
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .list-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-top: var(--s-4);
+    padding-bottom: var(--s-4);
+  }
+
+  .list-card .card-title {
+    margin-bottom: var(--s-2);
+  }
+
+  .list-card .msg {
     margin: 0;
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
+  .list-box {
+    flex: 1 1 auto;
   }
 
-  th,
-  td {
-    text-align: left;
-    vertical-align: top;
-    padding: 0.35rem 0.4rem;
-    border-bottom: 1px solid var(--rule);
+  .age {
+    margin-left: var(--s-2);
   }
 
-  thead th {
-    background: var(--light);
-    border-bottom-color: var(--line);
+  .msg {
+    margin: 0;
   }
 
-  .time,
-  .num,
-  .when {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+  /* While a reply is being written the compose card takes its room and the page scrolls,
+     rather than the lists shrinking to their titles. */
+  .layout.replying {
+    height: auto;
   }
 
-  .when {
-    color: var(--muted);
+  .layout.replying .lists {
+    grid-template-rows: auto;
   }
 
-  tr.never .when {
-    color: var(--error);
-    font-weight: 600;
+  .layout.replying .list-box {
+    max-height: 40vh;
   }
 
-  tr.never .when::before {
-    content: "! ";
+  @media (max-width: 60rem) {
+    .layout {
+      height: auto;
+    }
+
+    .lists {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto;
+    }
+
+    .list-box {
+      max-height: 50vh;
+    }
   }
 
-  .label {
-    font-weight: 600;
-  }
-
-  .text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    width: 50%;
-  }
-
-  .strip {
-    margin-top: 0.15rem;
-    font-size: 0.85rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  tr[data-status="given_up"] td {
-    background: var(--surface-given-up);
-  }
-
-  tr[data-type="message_in"] td {
-    background: var(--surface-in);
-  }
-
-  tr.form td {
-    background: var(--light);
-  }
-
-  /* The row buttons wrap instead of widening the table past its section. */
-  .actions {
-    min-width: 10rem;
-  }
-
-  .actions button {
-    margin: 0 0.25rem 0.25rem 0;
-  }
-
-  .inline {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .inline input {
-    flex: 1;
-    min-width: 12rem;
-  }
-
-  .compose {
-    margin-top: 1.5rem;
-  }
-
-  .compose h2 {
-    margin-bottom: 0.5rem;
-  }
-
-  /* On paper (P1-04's print rules in app.css hide the chrome): the header with the time and
-     both names, then the four lists as plain tables, one after the other. */
+  /* On paper (styles/base.css hides the bar; the controls are no-print): the header with the
+     time and both names, then the four lists one after the other, as plain rows. */
   @media print {
     .print-only {
       display: block;
     }
 
     .print-only h1 {
-      margin: 0 0 0.5rem;
+      margin: 0 0 var(--s-2);
     }
 
-    .print-only .drill {
-      margin: 0 0 0.75rem;
-      padding: 0.3rem 0.6rem;
-      border: 2px solid var(--ink);
-      font-weight: 700;
-      letter-spacing: 0.05em;
-    }
-
-    .print-only dl {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 0.1rem 1rem;
-      margin: 0 0 1rem;
-      font-size: 0.9rem;
-    }
-
-    .print-only dt {
-      font-weight: 600;
-    }
-
-    .print-only dd {
-      margin: 0;
+    .print-only .dl {
+      margin: var(--s-2) 0 var(--s-4);
     }
 
     .blank {
@@ -996,43 +873,31 @@
       border-bottom: 1px solid var(--ink);
     }
 
+    .layout {
+      display: block;
+      height: auto;
+    }
+
     .lists {
       display: block;
     }
 
-    .list {
+    .list-card {
+      display: block;
       padding: 0;
-      border: none;
-      margin-bottom: 1rem;
+      border-width: 0;
+      margin-bottom: var(--s-4);
       break-inside: avoid;
     }
 
-    thead th {
-      background: none;
-      border-bottom: 2px solid var(--ink);
+    .list-box {
+      max-height: none;
+      overflow: visible;
+      border-width: 0;
     }
 
-    tr {
+    .list-box li {
       break-inside: avoid;
-    }
-
-    tr[data-status="given_up"] td,
-    tr[data-type="message_in"] td {
-      background: none;
-    }
-
-    .strip,
-    .muted,
-    .when {
-      color: #444;
-    }
-
-    .chip {
-      padding: 0;
-      border: none;
-      background: none;
-      color: inherit;
-      font-weight: 400;
     }
   }
 </style>

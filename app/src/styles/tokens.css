@@ -37,6 +37,7 @@
 
   /* Type. Inter is bundled (styles/base.css); the stack after it is for the first paint. */
   --font: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   --fs-13: 0.8125rem; /* meta, table captions */
   --fs-14: 0.875rem; /* labels, chips, help */
   --fs-16: 1rem; /* body, rows */
@@ -92,26 +93,14 @@
   --shadow: none;
 }
 
-/* Transition aliases: the P1-09 names the screens still reference, each an alias of a token
-   above. P2-04 and P2-05 move every screen onto the names above and delete these lines as
-   their last reference goes; nothing new uses them. (P2-02 removed the navy bar's own names
-   with the bar — --on-navy, --focus-on-navy, --alert-bg, --drill-line; P2-03 removed --navy
-   with the compose form's and the timeline's edges.) */
+/* Transition aliases: the P1-09 names the two print pages still reference, each an alias of
+   a token above. P2-05 moves the print pages onto the names above and deletes these lines;
+   nothing new uses them. (P2-02 removed the navy bar's own names with the bar — --on-navy,
+   --focus-on-navy, --alert-bg, --drill-line; P2-03 removed --navy with the compose form's
+   and the timeline's edges; P2-04 removed --light, --surface-in, --surface-given-up and the
+   four --dot-* with the handover, queue, register, radio and settings screens.) */
 :root {
-  --light: var(--bg);
   --muted: var(--ink-2);
   --line: var(--rule-2);
   --error: var(--danger);
-  --surface-in: var(--accent-weak);
-  --surface-given-up: var(--danger-bg);
-  --dot-idle: var(--rule-2);
-  --dot-connecting: var(--warn);
-  --dot-connected: var(--ok);
-  --dot-blind: var(--danger);
-}
-
-:root[data-contrast="high"] {
-  --dot-idle: var(--surface);
-  --dot-connecting: var(--surface);
-  --dot-blind: var(--surface);
 }

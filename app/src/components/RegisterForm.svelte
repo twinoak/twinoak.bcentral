@@ -1,4 +1,8 @@
 <script lang="ts">
+  // Add or edit a register entry, or bind a pending row to a radio (P0-03, P1-06; on the
+  // components in P2-04): the fields on `.field`, the key with Pick from radio beside it and
+  // the contact picker under it, Save / Bind and Cancel. The register page puts this in a
+  // card at the side (or inline under the toolbar on a narrow screen) and gives the title.
   import { untrack } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import type { PendingRegisterRow, RegisterEntry, RegisterOrigin } from "../store/types.ts";
@@ -7,6 +11,7 @@
   import { addRegisterEntry, bindPendingRegisterRow, saveRegisterEntry } from "../store/index.ts";
   import type { Contact } from "../radio/contactSource.ts";
   import ContactPicker from "./ContactPicker.svelte";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     // The entry being edited; absent for a new one.
@@ -52,6 +57,7 @@
         ? t("register.publicKeyTaken")
         : null,
   );
+  const showKeyError = $derived(keyError !== null && publicKey.trim() !== "");
   const canSave = $derived(labelError === null && keyError === null && !busy);
 
   const takenKeys = $derived(
@@ -114,8 +120,8 @@
   }
 </script>
 
-<form onsubmit={save}>
-  <h2>
+<form class="register-form" onsubmit={save} aria-labelledby="register-form-heading">
+  <h2 id="register-form-heading" class="card-title">
     {#if pending !== undefined}
       {t("register.formTitle.bind", { label: pending.label })}
     {:else if entry === undefined}
@@ -125,128 +131,114 @@
     {/if}
   </h2>
 
-  <div class="field">
-    <label for="register-label">{t("register.field.label")}</label>
-    <input
-      id="register-label"
-      type="text"
-      required
-      bind:value={label}
-      aria-invalid={labelError !== null}
-    />
-    <small>{t("register.labelHelp")}</small>
-    {#if labelError}
-      <small class="error">{labelError}</small>
-    {/if}
-  </div>
-
-  <div class="field">
-    <label for="register-person">{t("register.field.person")}</label>
-    <input id="register-person" type="text" autocomplete="off" bind:value={person} />
-  </div>
-
-  <div class="field">
-    <label for="register-street">{t("register.field.street")}</label>
-    <input id="register-street" type="text" autocomplete="off" bind:value={street} />
-  </div>
-
-  <div class="field">
-    <label for="register-role">{t("register.field.role")}</label>
-    <input id="register-role" type="text" autocomplete="off" bind:value={role} />
-  </div>
-
-  <div class="field">
-    <label for="register-origin">{t("register.field.origin")}</label>
-    <select id="register-origin" bind:value={origin}>
-      {#each REGISTER_ORIGINS as option (option)}
-        <option value={option}>{t(`register.origin.${option}`)}</option>
-      {/each}
-    </select>
-  </div>
-
-  <div class="field">
-    <label for="register-public-key">{t("register.field.publicKey")}</label>
-    <div class="key-row">
+  <div class="fields">
+    <div class="field">
+      <label for="register-label">{t("register.field.label")}</label>
       <input
-        id="register-public-key"
+        id="register-label"
         type="text"
-        class="key"
-        autocomplete="off"
-        spellcheck="false"
-        maxlength="80"
-        bind:value={publicKey}
-        aria-invalid={keyError !== null}
+        required
+        bind:value={label}
+        aria-invalid={labelError !== null}
+        aria-describedby="register-label-help"
       />
-      <button type="button" class="secondary" onclick={() => (picking = !picking)}>
-        {t("register.pick")}
-      </button>
+      <span class="field-help" id="register-label-help">{t("register.labelHelp")}</span>
+      {#if labelError}
+        <span class="field-error"><Icon name="warning" />{labelError}</span>
+      {/if}
     </div>
-    <small>{t("register.publicKeyHelp")}</small>
-    {#if keyError && publicKey.trim() !== ""}
-      <small class="error">{keyError}</small>
-    {/if}
-    {#if picking}
-      <ContactPicker {takenKeys} {onpick} onclose={() => (picking = false)} />
-    {/if}
+
+    <div class="pair">
+      <div class="field">
+        <label for="register-person">{t("register.field.person")}</label>
+        <input id="register-person" type="text" autocomplete="off" bind:value={person} />
+      </div>
+
+      <div class="field">
+        <label for="register-street">{t("register.field.street")}</label>
+        <input id="register-street" type="text" autocomplete="off" bind:value={street} />
+      </div>
+
+      <div class="field">
+        <label for="register-role">{t("register.field.role")}</label>
+        <input id="register-role" type="text" autocomplete="off" bind:value={role} />
+      </div>
+
+      <div class="field">
+        <label for="register-origin">{t("register.field.origin")}</label>
+        <select id="register-origin" bind:value={origin}>
+          {#each REGISTER_ORIGINS as option (option)}
+            <option value={option}>{t(`register.origin.${option}`)}</option>
+          {/each}
+        </select>
+      </div>
+    </div>
+
+    <div class="field field-mono">
+      <label for="register-public-key">{t("register.field.publicKey")}</label>
+      <div class="field-line">
+        <input
+          id="register-public-key"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="80"
+          bind:value={publicKey}
+          aria-invalid={showKeyError}
+          aria-describedby="register-public-key-help"
+        />
+        <button
+          type="button"
+          class="btn"
+          aria-expanded={picking}
+          onclick={() => (picking = !picking)}
+        >
+          <Icon name="radio" />{t("register.pick")}
+        </button>
+      </div>
+      <span class="field-help" id="register-public-key-help">{t("register.publicKeyHelp")}</span>
+      {#if showKeyError}
+        <span class="field-error" role="alert"><Icon name="warning" />{keyError}</span>
+      {/if}
+      {#if picking}
+        <ContactPicker {takenKeys} {onpick} onclose={() => (picking = false)} />
+      {/if}
+    </div>
+
+    <div class="field">
+      <label for="register-notes">{t("register.field.notes")}</label>
+      <textarea id="register-notes" rows="3" bind:value={notes}></textarea>
+      <span class="field-help">{t("register.notesHelp")}</span>
+    </div>
   </div>
 
-  <div class="field">
-    <label for="register-notes">{t("register.field.notes")}</label>
-    <textarea id="register-notes" rows="3" bind:value={notes}></textarea>
-    <small>{t("register.notesHelp")}</small>
-  </div>
-
-  <div class="actions">
-    <button type="submit" disabled={!canSave}>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary" disabled={!canSave}>
       {pending === undefined ? t("register.save") : t("register.bind")}
     </button>
-    <button type="button" class="secondary" onclick={oncancel}>{t("register.cancel")}</button>
-    {#if error}
-      <span class="error" role="alert">{error}</span>
-    {/if}
+    <button type="button" class="btn" onclick={oncancel}>{t("register.cancel")}</button>
   </div>
+  {#if error}
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>
+  {/if}
 </form>
 
 <style>
-  h2 {
-    font-size: 1.2rem;
-    margin: 0 0 1rem;
-  }
-
-  .field {
+  /* Layout only: the fields stacked, the four short ones two to a line when there is room. */
+  .fields {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
-    max-width: 40rem;
+    gap: var(--s-4);
+    margin-bottom: var(--s-4);
   }
 
-  label {
-    font-weight: 600;
+  .pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--s-4);
   }
 
-  small {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
-  }
-
-  .key-row {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .key {
-    flex: 1;
-    font-family: ui-monospace, Consolas, monospace;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+  .msg {
+    margin: var(--s-3) 0 0;
   }
 </style>

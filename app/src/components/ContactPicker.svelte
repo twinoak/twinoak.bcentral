@@ -1,7 +1,12 @@
 <script lang="ts">
+  // The radio's contact list as a picker (P0-03; on the components in P2-04): a small card
+  // under the public-key field with one row per contact — the name, the key's prefix and
+  // Pick, or a chip when the key is already in the register. Closed by its own button or by
+  // a pick.
   import { t } from "../i18n/index.svelte.ts";
   import { contactSource } from "../radio/index.ts";
   import type { Contact } from "../radio/contactSource.ts";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     // Keys already bound to a register entry: shown, but not pickable.
@@ -26,87 +31,76 @@
   void load();
 </script>
 
-<section class="picker" aria-labelledby="picker-heading">
-  <h3 id="picker-heading">{t("register.picker.title")}</h3>
+<section class="card picker" aria-labelledby="picker-heading">
+  <h3 id="picker-heading" class="card-title">
+    <span>{t("register.picker.title")}</span>
+    <button
+      type="button"
+      class="btn btn-quiet btn-icon"
+      aria-label={t("register.picker.close")}
+      title={t("register.picker.close")}
+      onclick={onclose}><Icon name="close" /></button
+    >
+  </h3>
 
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>
   {:else if contacts === null}
-    <p class="muted">{t("register.picker.loading")}</p>
+    <p class="msg">{t("register.picker.loading")}</p>
   {:else if contacts.length === 0}
-    <p class="muted">{t("register.picker.empty")}</p>
+    <p class="msg">{t("register.picker.empty")}</p>
   {:else}
-    <ul>
-      {#each contacts as contact (contact.publicKey)}
-        <li>
-          <button
-            type="button"
-            class="contact"
-            disabled={takenKeys.has(contact.publicKey)}
-            onclick={() => onpick(contact)}
-          >
-            <span class="name">{contact.name}</span>
-            <code title={contact.publicKey}>{contact.publicKey.slice(0, 12)}…</code>
-            {#if takenKeys.has(contact.publicKey)}
-              <span class="muted">{t("register.picker.taken")}</span>
-            {/if}
-          </button>
-        </li>
-      {/each}
-    </ul>
+    <div class="table-box list">
+      <table class="table">
+        <tbody>
+          {#each contacts as contact (contact.publicKey)}
+            {@const taken = takenKeys.has(contact.publicKey)}
+            <tr>
+              <td class="label">{contact.name}</td>
+              <td><code title={contact.publicKey}>{contact.publicKey.slice(0, 12)}…</code></td>
+              <td class="action">
+                {#if taken}
+                  <span class="chip">{t("register.picker.taken")}</span>
+                {:else}
+                  <button
+                    type="button"
+                    class="btn btn-quiet btn-compact"
+                    onclick={() => onpick(contact)}
+                  >
+                    {t("register.picker.pick")}
+                  </button>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
-
-  <button type="button" class="secondary" onclick={onclose}>{t("register.picker.close")}</button>
 </section>
 
 <style>
+  /* Layout only: a compact card under the field, the list scrolling in its box. */
   .picker {
-    margin: 0.5rem 0 1rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: var(--surface);
+    margin-top: var(--s-2);
+    padding: var(--s-3) var(--s-4);
   }
 
-  h3 {
-    font-size: 1rem;
-    margin: 0 0 0.5rem;
+  .picker .card-title {
+    margin-bottom: var(--s-2);
   }
 
-  ul {
-    list-style: none;
-    margin: 0 0 0.75rem;
-    padding: 0;
+  .list {
+    max-height: 14rem;
   }
 
-  li + li {
-    margin-top: 0.25rem;
+  .action {
+    width: 1px;
+    white-space: nowrap;
+    text-align: right;
   }
 
-  .contact {
-    display: flex;
-    gap: 0.75rem;
-    align-items: baseline;
-    width: 100%;
-    text-align: left;
-    background: var(--light);
-    color: var(--ink);
-    border-color: var(--line);
-  }
-
-  .contact:disabled {
-    opacity: 0.6;
-  }
-
-  .name {
-    font-weight: 600;
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
-  .error {
-    color: var(--error);
+  .msg {
+    margin: 0;
   }
 </style>
