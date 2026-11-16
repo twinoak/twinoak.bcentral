@@ -75,7 +75,20 @@ operator.
 **Phase 2 walkthrough:** the phase-1 walkthrough again, by someone who has not seen the app
 before, with one question at the end: "what needed you, and how did you know?"
 
-## Phase 3 — the hub
+## Phase 3 — workflow streamlining
+
+Started 2026-11-16 from use of the finished phase-2 app: the places where the operator's
+hands do more than they should. Tasks are added as the findings come in.
+
+| Task | Delivers | Depends on |
+| --- | --- | --- |
+| P3-01 | Two compose tabs with one job each: "New record" (note, incoming, outgoing — by hand, non-radio) first, "MeshCore" (radio send only, no transport choice) second; Reply and handover actions rerouted accordingly | P2-05 |
+| P3-02 | Correct by editing: one prefilled box; the row shows the corrected text with a "corrected" chip, the original in history; model unchanged | P3-01 |
+| P3-03 | Status as a fixed column of three symbol slots (sent · delivered · confirmed), no times in the list; counts in the slots for batch rows | P3-02 |
+| P3-04 | Click a row to open it: history and actions in one place, one row open at a time, nothing on hover, no history toggle | P3-03 |
+| P3-05 | Points: open / close (with reason) / reopen a follow-up from any line; a Points card in the journal and a first list on the handover page; new `point` entry type in the contract | P3-04 |
+
+## Phase 4 — the hub
 
 Self-hosted C#/ASP.NET Core in Docker. Receives journal envelopes from any number of apps,
 merges by ULID union, dedupes `message_in` by key, shows a read-only merged journal. Sync is

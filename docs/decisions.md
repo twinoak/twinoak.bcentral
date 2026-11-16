@@ -4,6 +4,10 @@ Newest first. One line per decision, with the reason. Reversals get a new row, n
 
 | Date | Decision | Why |
 | --- | --- | --- |
+| 2026-11-16 | New entry type `point` (da *punkt*): a follow-up opened from any line, closed with a reason, reopenable; one per origin entry | The staff need a to-do list that comes out of the journal itself; the light answer to several things going on in one journal. |
+| 2026-11-16 | No backward compatibility with earlier journals or schema versions until the first real deployment | Nobody uses the system yet; no migrations, no tolerance code for old shapes. |
+| 2026-11-16 | Compose card: tab 1 "New record" (*Opret registrering*: note / incoming / outgoing by hand, non-radio transports only), tab 2 "MeshCore" (radio send only, no *Via* choice) | One job per tab; the same thing was possible from two places and neither name said what the tab was for. |
+| 2026-11-16 | Phase 3 is workflow streamlining from use; the hub moves to phase 4 | Findings from real use first. |
 | 2026-10-31 | Phase 2 is a design sprint on `docs/design.md`; the hub moves to phase 3 | After phase 1 every feature had added its own coloured band; the screens need one system before more features. |
 | 2026-10-31 | Design language: a calm operations desk — Inter bundled, one accent (navy), colour only as status pairs, one 56 px bar with status chips and popovers instead of bands, no home page | Operators must see what needs them in one glance; nothing decorative; works in black and white. |
 | 2026-10-31 | Base font size back to 16 px (large 18, largest 21); the setting is where readability lives | P1-09's 18 px default made every screen look oversized; the three-size setting stays. |

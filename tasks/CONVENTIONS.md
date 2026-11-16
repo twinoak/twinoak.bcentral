@@ -36,6 +36,9 @@ Short, because they are read before every task.
   "done". A commit that writes or edits task files, roadmap or follow-ups says `tasks: …`
   and never starts with an id.
 - `contract/` is changed only when a task says so, and the change is named in the report.
+- Until the first real deployment (decided 2026-11-16) there is no backward compatibility:
+  no migrations, no code that tolerates earlier entry shapes or old `pending` entries. A
+  contract change simply changes the contract.
 - Reports and follow-ups are part of the repo; they are not cleaned up.
 - No files outside `app/`, `tasks/`, `spec/` and `docs/` in phase 0, except P0-09's
   `.github/workflows/` and its note in `deploy/README.md`.

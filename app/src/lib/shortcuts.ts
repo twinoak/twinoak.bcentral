@@ -64,7 +64,6 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
   { action: "cancel", keys: ["Esc"], inTextField: true },
   { action: "goJournal", keys: ["G", "J"], inTextField: false },
   { action: "goRegister", keys: ["G", "R"], inTextField: false },
-  { action: "goHandover", keys: ["G", "H"], inTextField: false },
   { action: "goSettings", keys: ["G", "S"], inTextField: false },
   { action: "help", keys: ["?"], inTextField: false },
 ];
@@ -72,7 +71,6 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
 const GO_TARGETS: Readonly<Record<string, ShortcutAction>> = {
   j: "goJournal",
   r: "goRegister",
-  h: "goHandover",
   s: "goSettings",
 };
 

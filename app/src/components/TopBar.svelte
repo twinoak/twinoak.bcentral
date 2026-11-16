@@ -14,7 +14,9 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import StatusChips from "./StatusChips.svelte";
 
-  const NAV = ["journal", "handover", "queue", "register", "settings"] as const;
+  // Handover and Send to all are hidden from the bar for now (2026-11-16, Thomas): the pages
+  // and their routes stay and are reachable by URL; only the links and the G H chord are off.
+  const NAV = ["journal", "register", "settings"] as const;
 </script>
 
 <!-- `no-print`: the print views print the page alone (styles/base.css). -->
@@ -41,8 +43,8 @@
     </nav>
 
     <div class="shell-end">
-      <!-- The operator: the name, and the handover page on click (the next operator's first
-         screen); without a name, the journal, where the setup card asks for it (P2-03). -->
+      <!-- The operator: the name, and the settings page on click (the handover page is hidden
+         for now); without a name, the journal, where the setup card asks for it (P2-03). -->
       <button
         type="button"
         class="chip"
@@ -50,7 +52,7 @@
         title={hasOperatorName()
           ? t("topbar.operator", { name: settings.operatorName })
           : t("topbar.noOperator")}
-        onclick={() => navigate(hasOperatorName() ? "handover" : "journal")}
+        onclick={() => navigate(hasOperatorName() ? "settings" : "journal")}
       >
         <span class="chip-label">
           {hasOperatorName() ? settings.operatorName : t("topbar.noOperator")}

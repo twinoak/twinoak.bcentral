@@ -97,10 +97,10 @@ describe("the two keys that also work inside a text field", () => {
 });
 
 describe("the G chords", () => {
-  it("G J / G R / G H / G S go to Journal / Register / Handover / Settings", () => {
+  it("G J / G R / G S go to Journal / Register / Settings; G H is off while handover is hidden", () => {
     expect(chord("j")).toBe("goJournal");
     expect(chord("r")).toBe("goRegister");
-    expect(chord("h")).toBe("goHandover");
+    expect(chord("h")).toBeNull();
     expect(chord("s")).toBe("goSettings");
     expect(chord("S")).toBe("goSettings");
   });
@@ -175,7 +175,6 @@ describe("the documented set", () => {
       "cancel",
       "goJournal",
       "goRegister",
-      "goHandover",
       "goSettings",
       "help",
     ]);
