@@ -20,6 +20,8 @@ import {
   findRow,
   isDrillText,
   lastHeardFrom,
+  lateRogerIds,
+  lateRogersOf,
   openItems,
   openPoints,
   pointOf,
@@ -809,6 +811,7 @@ describe("send-to-all as one row (P1-01)", () => {
       delivered: 23,
       roger: 18,
       givenUp: 1,
+      closed: 0,
     });
     expect(batch.status).toBe("given_up");
     // Expanding lists every recipient's own row with its own strip, in storage order.
@@ -853,6 +856,7 @@ describe("send-to-all as one row (P1-01)", () => {
         history: [],
         corrections: [],
         answers: null,
+        lateRogers: [],
       }));
     expect(slowestStatus(views(["roger", "roger"]))).toBe("roger");
     expect(slowestStatus(views(["roger", "delivered"]))).toBe("delivered");
@@ -886,7 +890,35 @@ describe("send-to-all as one row (P1-01)", () => {
       delivered: 0,
       roger: 0,
       givenUp: 1,
+      closed: 0,
     });
+  });
+
+  it("counts the recipients the staff closed under closed (P3-09); they stay in the batch's row", () => {
+    const [first, second] = messages as [JournalEntry, JournalEntry];
+    const views = buildTimeline([
+      first,
+      second,
+      statusChange({ refersTo: first.id, to: "sent", at: at(2) }),
+      statusChange({ refersTo: first.id, to: "closed", at: at(3), text: "" }),
+      statusChange({ refersTo: second.id, to: "sent", at: at(2) }),
+      statusChange({ refersTo: second.id, to: "given_up", at: at(3), text: "no ack" }),
+    ]);
+    const batch = views.find((row) => row.kind === "batch");
+    if (batch?.kind !== "batch") {
+      throw new Error("expected a batch row");
+    }
+    expect(batch.counters).toEqual({
+      total: 2,
+      pending: 0,
+      sent: 2,
+      delivered: 0,
+      roger: 0,
+      givenUp: 1,
+      closed: 1,
+    });
+    expect(batch.messages.map((view) => view.status)).toEqual(["closed", "given_up"]);
+    expect(batch.status).toBe("given_up");
   });
 
   it("the batch row is positioned by its first message, newest first among the rows", () => {
@@ -999,6 +1031,100 @@ describe("open items per register entry", () => {
     expect([...groups.keys()]).toEqual([HANS, peter]);
     expect(groups.get(HANS)?.map((item) => item.message.id)).toEqual([order2.id, toHansLater.id]);
     expect(groups.get(peter)?.[0]?.status).toBe("pending");
+  });
+});
+
+describe("a radio message the staff closed (P3-09)", () => {
+  // #2 to Hans, sent and delivered, no R; the staff close it at 20:40 with a note.
+  const order2 = messageOut({ counterpartyId: HANS, seqNo: 2, body: "Kør til nr 4", at: at(10) });
+  const chain = [
+    statusChange({ refersTo: order2.id, to: "sent", at: at(10, 2) }),
+    statusChange({ refersTo: order2.id, to: "delivered", at: at(10, 9) }),
+  ];
+  const closed = statusChange({
+    refersTo: order2.id,
+    to: "closed",
+    at: at(40),
+    text: "Hans er kørt, ingen R",
+    operator: "Anne",
+  });
+  const entries = [...walkthrough.entries, order2, ...chain, closed];
+
+  it("has status closed, the close as the last strip item with its note, the close in its history", () => {
+    const view = messageRow(buildTimeline(entries), order2.id);
+    expect(view.status).toBe("closed");
+    expect(strip(view)).toEqual([
+      `sent ${at(10, 2)}`,
+      `delivered ${at(10, 9)}`,
+      `closed ${at(40)}`,
+    ]);
+    expect(view.strip.at(-1)).toMatchObject({ kind: "closed", text: "Hans er kørt, ingen R" });
+    expect(view.history.map((item) => item.entry.newStatus)).toEqual([
+      "sent",
+      "delivered",
+      "closed",
+    ]);
+    expect(view.history.at(-1)?.entry.operator).toBe("Anne");
+    expect(view.lateRogers).toEqual([]);
+  });
+
+  it("a close without a note stores an empty text, which the strip reads as none", () => {
+    const bare = statusChange({ refersTo: order2.id, to: "closed", at: at(40), text: "" });
+    const view = messageRow(
+      buildTimeline([...walkthrough.entries, order2, ...chain, bare]),
+      order2.id,
+    );
+    expect(view.status).toBe("closed");
+    expect(view.strip.at(-1)).toEqual({ kind: "closed", at: at(40), attempt: null, text: null });
+  });
+
+  it("leaves the open items: closed is final, like roger; derived live", () => {
+    expect(openItems([...walkthrough.entries, order2, ...chain]).get(HANS)).toHaveLength(1);
+    expect(openItems(entries).get(HANS)).toBeUndefined();
+    expect(openItems(entries)).toEqual(new Map());
+  });
+
+  it("a late Rn for it is an ordinary incoming row, listed on the closed message as a late roger by the exact match", () => {
+    const lateR2 = messageIn({ counterpartyId: HANS, text: "R2", at: at(45) });
+    const rows = buildTimeline([...entries, lateR2]);
+    // Its own row, like any incoming message; no status change refers to it.
+    expect(rowFor(rows, lateR2.id).kind).toBe("entry");
+    const view = messageRow(rows, order2.id);
+    expect(view.status).toBe("closed");
+    expect(view.lateRogers.map((entry) => entry.id)).toEqual([lateR2.id]);
+    expect(findRow(rows, lateR2.id)?.id).toBe(lateR2.id);
+    expect(lateRogerIds([...entries, lateR2])).toEqual(new Set([lateR2.id]));
+  });
+
+  it("the match is exact: the right number, the same counterparty, after the close — a bare R, another number, a text with R2 in it, an earlier R2 or another radio's R2 are not late rogers", () => {
+    const peter = "01JB8ZK3QX9V2M4N6P8R0T2W70";
+    const candidates = [
+      messageIn({ counterpartyId: HANS, text: " r2 \n", at: at(45) }),
+      messageIn({ counterpartyId: HANS, text: "R", at: at(46) }),
+      messageIn({ counterpartyId: HANS, text: "R3", at: at(47) }),
+      messageIn({ counterpartyId: HANS, text: "R2 tak", at: at(48) }),
+      messageIn({ counterpartyId: HANS, text: "R2", at: at(39) }),
+      messageIn({ counterpartyId: peter, text: "R2", at: at(49) }),
+    ];
+    const incoming = [...walkthrough.entries, ...candidates].filter((e) => e.type === "message_in");
+    const late = lateRogersOf(order2, [...chain, closed], incoming);
+    expect(late.map((entry) => entry.text)).toEqual([" r2 \n"]);
+    // Not closed: nothing is a late roger, whatever came in.
+    expect(lateRogersOf(order2, chain, incoming)).toEqual([]);
+    // Two late R2s, oldest first.
+    const again = messageIn({ counterpartyId: HANS, text: "R2", at: at(50) });
+    expect(
+      lateRogersOf(order2, [...chain, closed], [...incoming, again]).map((entry) => entry.text),
+    ).toEqual([" r2 \n", "R2"]);
+  });
+
+  it("a closed message is never a row of the open or the given-up lists, and a stray status change after the close does not reopen it", () => {
+    // The store refuses anything after closed (closeByHand, recordManualStatus); were a
+    // later `sent` in the data, status.ts reads the latest, as always — this is not a
+    // rule about reopening, just the derivation.
+    const view = messageRow(buildTimeline(entries), order2.id);
+    expect(view.status).toBe("closed");
+    expect(slowestStatus([view])).toBe("closed");
   });
 });
 

@@ -193,7 +193,7 @@ describe("the journal screen", () => {
     // The forms replace the action row while they are open (the two point forms of P3-05
     // after the Mark and Correct forms).
     expect(timeline).toMatch(
-      /\{#if changingStatus === entry\.id\}\s*\{@render statusForm\(entry\)\}\s*\{:else if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}\s*\{:else if pointing === entry\.id\}\s*\{@render pointForm\(entry\)\}\s*\{:else if closingPoint === entry\.id && point !== undefined\}\s*\{@render closePointForm\(point\)\}\s*\{:else\}\s*<div class="row-actions">/,
+      /\{#if closing === entry\.id\}\s*\{@render closeForm\(entry\)\}\s*\{:else if changingStatus === entry\.id\}\s*\{@render statusForm\(entry\)\}\s*\{:else if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}\s*\{:else if pointing === entry\.id\}\s*\{@render pointForm\(entry\)\}\s*\{:else if closingPoint === entry\.id && point !== undefined\}\s*\{@render closePointForm\(point\)\}\s*\{:else\}\s*<div class="row-actions">/,
     );
     // The reply links sit in the area, not on the line.
     expect(timeline.match(/<p class="row-links">/g)).toHaveLength(2);
@@ -351,12 +351,12 @@ describe("the journal screen", () => {
     for (const use of slots.matchAll(/\b(slotText|countSlotText)\(/g)) {
       expect(slots.slice(Math.max(0, use.index - 24), use.index)).toMatch(/\{@const text = $/);
     }
-    expect(slots.match(/title=\{text\}\s*aria-label=\{text\}/g)).toHaveLength(3);
+    expect(slots.match(/title=\{text\}\s*aria-label=\{text\}/g)).toHaveLength(4);
     expect(slots).not.toContain("tabindex");
-    // Five shapes, drawn, not tinted apart: a hollow and a filled circle, the check, the
-    // clock, the cross.
+    // Six shapes, drawn, not tinted apart: a hollow and a filled circle, the check, the
+    // clock, the cross, the dash (P3-09).
     const symbol = read("components/SlotSymbol.svelte");
-    for (const shape of ["hollow", "filled", "check", "clock", "cross"]) {
+    for (const shape of ["hollow", "filled", "check", "clock", "cross", "dash"]) {
       expect(symbol).toContain(`"${shape}"`);
     }
     expect(symbol).toContain('aria-hidden="true"');
@@ -501,8 +501,8 @@ describe("the journal screen", () => {
     expect(timeline).not.toContain("manualStatusesFor");
     // Mark comes from the pure rule, which offers it on a radio message only.
     const actions = read("lib/rowActions.ts");
-    expect(actions).toContain('input.transport === "mesh" &&');
-    expect(actions).toContain("input.status !== null &&");
+    expect(actions).toContain('const radio = input.transport === "mesh" && input.status !== null;');
+    expect(actions).toContain("if (radio && !isFinal(input.status)");
     // The New record tab: one button, "Add to journal", no #n preview and no byte counter.
     const record = read("components/ManualEntryForm.svelte");
     expect(record).toContain('{t("journal.add.save")}');
@@ -545,7 +545,9 @@ describe("the journal screen", () => {
     const actions = read("lib/rowActions.ts");
     expect(actions).toContain("sendState: SendState;");
     expect(actions).toContain('input.sendState !== "transmitting"');
-    expect(actions).toContain("input.canRetry && input.sendState === null");
+    expect(actions).toContain(
+      "input.canRetry && !isFinal(input.status) && input.sendState === null",
+    );
     expect(actions).not.toContain("inflight");
     const state = read("lib/sendState.ts");
     expect(state).toContain('export type SendState = "transmitting" | "waiting" | null;');
@@ -555,19 +557,21 @@ describe("the journal screen", () => {
     );
     // The timeline feeds the rule from the page's sendState; the column keeps its words.
     const timeline = read("components/Timeline.svelte");
-    expect(timeline).toContain("sendState: sendState(entry.id),");
+    expect(timeline).toContain("sendState: sendState(view.entry.id),");
     expect(timeline).not.toContain("inflight: inflightText !== null");
     expect(timeline).toContain("sendState(view.entry.id) === null");
     for (const page of ["pages/JournalPage.svelte", "pages/HandoverPage.svelte"]) {
       const text = read(page);
       expect(text, page).toContain("sendStateOf(messageId, {");
-      // Every manual status and every send goes through the send actions, which take the
-      // message out of the queue first (or put a send without a radio into it).
-      expect(text, page).toContain("sendActions.markByHand(");
+      // Every manual status, every close and every send goes through the send actions,
+      // which take the message out of the queue first (or put a send without a radio into
+      // it). The handover's one manual write is the Close (P3-09); the journal's Mark stays.
+      expect(text, page).toMatch(/sendActions\.(markByHand|closeByHand)\(/);
       expect(text, page).toContain("await sendActions.send(message)");
       expect(text, page).not.toContain("recordManualStatus");
       expect(text, page).not.toContain("outbox.send(");
     }
+    expect(read("pages/JournalPage.svelte")).toContain("sendActions.markByHand(");
     expect(read("components/ManualEntryForm.svelte")).toContain("sendActions.resendByHand(");
     expect(read("store/index.ts")).not.toMatch(
       /export async function (recordManualStatus|resendByHand)/,
@@ -597,6 +601,121 @@ describe("the journal screen", () => {
     expect(da["journal.open.paused"]).toContain("{n} venter");
     expect(en["send.error.transmitting"]).toBeDefined();
     expect(da["send.error.transmitting"]).toBeDefined();
+  });
+
+  it("an unconfirmed radio message is closed with one click and an optional note; closed is final and honest (P3-09)", () => {
+    const en = JSON.parse(read("i18n/en.json")) as Record<string, string>;
+    const da = JSON.parse(read("i18n/da.json")) as Record<string, string>;
+    // The row rule: Close first on a closable status, never while transmitting; closed is
+    // final like roger (no Retry, no Mark, no Close).
+    const actions = read("lib/rowActions.ts");
+    expect(actions).toContain('export type RowAction = "close" | "retry"');
+    expect(actions).toContain('actions.push("close");');
+    expect(actions).toContain(
+      'if (radio && isClosable(input.status) && input.sendState !== "transmitting")',
+    );
+    expect(actions).toContain("if (radio && !isFinal(input.status)");
+    expect(actions).toContain('return status === "roger" || status === "closed";');
+    const outgoing = read("store/outgoing.ts");
+    expect(outgoing).toContain(
+      'export const CLOSABLE_STATUSES: readonly Status[] = ["sent", "delivered", "given_up"];',
+    );
+    expect(outgoing).toContain(
+      'await appendStatusChange(store, message, "closed", options.note.trim(), options.operator)',
+    );
+    expect(outgoing).toContain('if (current === "roger" || current === "closed") {');
+    // The timeline: the Close button first after the point action, the form with the one
+    // optional field whose Close is never disabled on an empty note, L on the current row.
+    const timeline = read("components/Timeline.svelte");
+    expect(timeline).toMatch(
+      /\{#if !nested\}\s*\{@render pointButton\(entry\)\}\s*\{\/if\}\s*\{#if actions\.includes\("close"\)\}/,
+    );
+    expect(timeline).toContain(
+      '<form class="row-form" data-close-form onsubmit={(event) => saveClose(entry, event)}>',
+    );
+    expect(timeline).toContain(
+      '<label class="row-meta" for="close-note">{t("journal.close.note")}</label>',
+    );
+    expect(timeline).toMatch(
+      /<button type="submit" class="btn btn-primary" disabled=\{busy\} title=\{t\("journal\.close\.help"\)\}>\s*\{t\("journal\.action\.close"\)\}/,
+    );
+    expect(timeline).toContain('onShortcut("closeMessage", closeMessageCurrent)');
+    expect(timeline).toContain('if (!actionsOf(view).includes("close")) {');
+    expect(timeline).toContain("lateRogers={view.lateRogers}");
+    expect(timeline).toContain("await onclose(message, note);");
+    expect(read("lib/shortcuts.ts")).toContain(
+      '{ action: "closeMessage", keys: ["L"], inTextField: false }',
+    );
+    // The side card: Close directly on each closable row, on a line under the jump button
+    // (a button cannot sit inside a button), the form in its place.
+    const open = read("components/OpenItemsPanel.svelte");
+    expect(open).toContain("{:else if canClose(item)}");
+    expect(open).toContain(
+      '<form class="row-form" data-close-form onsubmit={(event) => close(item, event)}>',
+    );
+    expect(open).toContain('placeholder={t("journal.close.note")}');
+    expect(open).toContain('<button type="submit" class="btn btn-primary" disabled={busy}>');
+    expect(open).toContain("await onclose(item.message, note);");
+    const journal = read("pages/JournalPage.svelte");
+    expect(journal).toContain("await sendActions.closeByHand(message, note);");
+    expect(journal).toContain(
+      'return isClosable(item.status) && sendState(item.message.id) !== "transmitting";',
+    );
+    expect(journal).toContain("canClose={canCloseItem}");
+    // The handover: Close on the open list's rows and the given-up list's rows, writing
+    // closed with the optional note, never roger.
+    const handover = read("pages/HandoverPage.svelte");
+    expect(handover).toContain("await sendActions.closeByHand(view.entry, note);");
+    expect(handover).not.toContain('markByHand(view.entry, "roger"');
+    expect(handover).toContain("openable={historyLines(view) > 0 || canClose(view)}");
+    expect(handover).toContain("return isClosable(view.status) && canMark(view);");
+    expect(handover.match(/\{@render closeButton\(view\)\}/g)).toHaveLength(2);
+    expect(handover.match(/\{@render closeForm\(view\)\}/g)).toHaveLength(2);
+    // The message's Close is never disabled on an empty note; the point's Close keeps its
+    // required reason.
+    expect(handover).not.toMatch(/reason\.trim\(\) === ""[\s\S]{0,160}handover\.givenUp\.close/);
+    expect(handover).toMatch(/reason\.trim\(\) === ""[\s\S]{0,160}journal\.point\.close/);
+    expect(en["handover.givenUp.closeHelp"]).not.toMatch(/roger/i);
+    // The column: the dash in the confirmed slot, ink-2, and a batch's "— n" beside "✕ n"
+    // only when not zero; the history says "closed by the staff" and lists a late Rn.
+    const slots = read("lib/statusSlots.ts");
+    expect(slots).toContain('if (name === "roger" && closed !== undefined) {');
+    expect(slots).toContain('shape: "dash",');
+    expect(slots).toContain('tint: "muted",');
+    expect(read("styles/components.css")).toMatch(
+      /^\.slot\[data-tint="muted"\] \{\s*color: var\(--ink-2\);/m,
+    );
+    const slotsComponent = read("components/StatusSlots.svelte");
+    expect(slotsComponent).toContain("{#if counters.closed > 0}");
+    expect(slotsComponent).toContain('<SlotSymbol shape="dash" />{counters.closed}');
+    const text = read("lib/journalText.ts");
+    expect(text).toContain('if (slot.shape === "dash") {');
+    expect(text).toContain('? t("journal.history.closed")');
+    const history = read("components/RowHistory.svelte");
+    expect(history).toContain("{#each lateRogers as late (late.id)}");
+    expect(history).toContain("{lateRogerText(late)}");
+    expect(read("store/journalView.ts")).toContain(
+      'lateRogers: status === "closed" ? lateRogersOf(message, changes, incoming) : []',
+    );
+    expect(read("store/handoverView.ts")).toContain("!late.has(entry.id)");
+    // The words, in both catalogs.
+    expect(en["journal.action.close"]).toBe("Close");
+    expect(da["journal.action.close"]).toBe("Luk");
+    expect(en["journal.close.note"]).toBe("Note (optional)");
+    expect(da["journal.close.note"]).toBe("Bemærkning (valgfri)");
+    expect(en["journal.slot.closed"]).toBe("Closed by the staff {time}");
+    expect(da["journal.slot.closed"]).toBe("Lukket af staben {time}");
+    expect(en["journal.history.afterClose"]).toBe("{text} received {time}, after close");
+    expect(en["journal.batch.counter.closed"]).toBe("{n} closed");
+    for (const key of [
+      "journal.history.closed",
+      "journal.close.failed",
+      "journal.close.help",
+      "shortcuts.closeMessage",
+    ]) {
+      expect(en[key], key).toBeDefined();
+      expect(da[key], key).toBeDefined();
+    }
   });
 
   it("the side cards are cards with the count in the title", () => {

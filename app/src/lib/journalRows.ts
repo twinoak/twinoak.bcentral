@@ -52,16 +52,17 @@ export function stripChip(kind: StripKind): ChipLook {
 }
 
 export interface CounterChip {
-  key: "pending" | "sent" | "delivered" | "roger" | "given_up";
+  key: "pending" | "sent" | "delivered" | "roger" | "given_up" | "closed";
   n: number;
   look: ChipLook;
 }
 
 // The counters of a batch row as chips, in the order of the chain, zero counters omitted —
-// the same selection lib/journalText.ts's countersText() makes for the print view.
+// the same selection lib/journalText.ts's countersText() makes for the print view. Closed
+// (P3-09) last, grey like the incident's own states: neither reached nor failed.
 export function counterChips(counters: BatchCounters): CounterChip[] {
   const chips: CounterChip[] = [];
-  for (const key of ["pending", "sent", "delivered", "roger", "given_up"] as const) {
+  for (const key of ["pending", "sent", "delivered", "roger", "given_up", "closed"] as const) {
     const n = key === "given_up" ? counters.givenUp : counters[key];
     if (n > 0) {
       chips.push({ key, n, look: statusChip(key) });

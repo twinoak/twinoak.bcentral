@@ -202,6 +202,7 @@ describe("printRows on a send-to-all", () => {
       delivered: 1,
       roger: 0,
       givenUp: 0,
+      closed: 0,
     });
     expect(batch.messages.map((view) => view.entry.id)).toEqual([toHans.id, toPeter.id]);
     expect(rows[rows.length - 1]?.id).toBe(W.incidentClosed);

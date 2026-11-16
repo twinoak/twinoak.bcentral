@@ -1,6 +1,7 @@
 // Outgoing messages above the store (P0-05): the "#n <text>" form and the 160-byte rule from
-// contract/text-protocol.md, composing a mesh message_out with its reserved #n, and the
-// manual status changes the operator records on one. A message_out is stored alone: pending
+// contract/text-protocol.md, composing a mesh message_out with its reserved #n, the manual
+// status changes the operator records on one, and the staff's Close on an unconfirmed one
+// (P3-09: `closed`, terminal, honest about not being a confirmation). A message_out is stored alone: pending
 // is what a mesh message with no status_change is (status.ts), so none is written (P1-01).
 // In a drill incident (P1-05) a radio message's text is "ØVELSE #n <text>"; the prefix is
 // part of the stored text, so the journal shows exactly what went on the air.
@@ -373,8 +374,9 @@ export async function appendStatusChange(
 // The statuses the operator may set by hand, on a mesh message: sent and delivered come
 // from the radio only, but the operator may give up (a message stuck at sent after a reload
 // mid-flight has no other way out) and record a roger that reached the staff another way (a
-// phone call). roger is final, so nothing may be set after it. A message by phone, courier
-// or verbal has no status to set (P3-07); the Mark action is not offered on it.
+// phone call). roger and closed are final, so nothing may be set after them. A message by
+// phone, courier or verbal has no status to set (P3-07); the Mark action is not offered on
+// it. Stopping to wait without knowing is not a mark but Close (closeByHand, P3-09).
 export const MANUAL_STATUSES: readonly Status[] = ["roger", "given_up"];
 
 export class ManualStatusError extends Error {
@@ -408,8 +410,50 @@ export async function recordManualStatus(
     throw new ManualStatusError("a manual status change needs a reason");
   }
   const current = await store.statusOf(message.id);
-  if (current === "roger") {
-    throw new ManualStatusError("roger is final");
+  if (current === "roger" || current === "closed") {
+    throw new ManualStatusError(`${current} is final`);
   }
   return await appendStatusChange(store, message, newStatus, text, options.operator);
+}
+
+// --- close (P3-09) ----------------------------------------------------------------------------
+
+// The statuses the staff may close from: an unconfirmed radio message the radio has handed
+// over (sent, delivered) or given up on. A pending message has not gone anywhere — it is
+// sent, marked or left; a confirmed or closed one is final (text-protocol.md).
+export const CLOSABLE_STATUSES: readonly Status[] = ["sent", "delivered", "given_up"];
+
+export function isClosable(status: Status | null): boolean {
+  return status !== null && CLOSABLE_STATUSES.includes(status);
+}
+
+export class CloseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CloseError";
+  }
+}
+
+// "Close" on an unconfirmed radio message (P3-09; text-protocol.md, `closed`): the staff
+// stop waiting for a confirmation that is not coming. One status_change `closed` with the
+// note as its text — empty allowed, stored as "" — and the operator who closed it. It is
+// not a confirmation and never claims one: roger stays the field's word (or the operator's
+// with a reason, recordManualStatus). Refused, nothing written, on a message without a
+// chain, on one that is pending, and on one that is already final.
+export async function closeByHand(
+  store: JournalStore,
+  message: JournalEntry,
+  options: { operator: string; note: string },
+): Promise<JournalEntry> {
+  if (message.type !== "message_out") {
+    throw new CloseError(`entry ${message.id} is a ${message.type}, not a message_out`);
+  }
+  if (!hasStatusChain(message)) {
+    throw new CloseError(`a ${message.transport} message has no status; there is nothing to close`);
+  }
+  const current = await store.statusOf(message.id);
+  if (!isClosable(current)) {
+    throw new CloseError(`a ${current} message cannot be closed`);
+  }
+  return await appendStatusChange(store, message, "closed", options.note.trim(), options.operator);
 }

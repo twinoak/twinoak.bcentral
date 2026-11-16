@@ -41,6 +41,7 @@ describe("single keys outside a text field, silent inside one", () => {
     ["n", "newMessage"],
     ["r", "reply"],
     ["p", "point"],
+    ["l", "closeMessage"],
     ["a", "addNote"],
     ["j", "nextRow"],
     ["k", "previousRow"],
@@ -170,6 +171,7 @@ describe("the documented set", () => {
       "newMessage",
       "reply",
       "point",
+      "closeMessage",
       "addNote",
       "nextRow",
       "previousRow",
@@ -205,6 +207,14 @@ describe("the documented set", () => {
     expect(point).toEqual({ action: "point", keys: ["P"], inTextField: false });
     expect(en["shortcuts.point"]).toMatch(/point/i);
     expect(da["shortcuts.point"]).toMatch(/punkt/i);
+  });
+
+  it("L closes the current unconfirmed radio message (P3-09)", () => {
+    const close = SHORTCUTS.find((shortcut) => shortcut.action === "closeMessage");
+    expect(close).toEqual({ action: "closeMessage", keys: ["L"], inTextField: false });
+    expect(en["shortcuts.closeMessage"]).toMatch(/close/i);
+    expect(da["shortcuts.closeMessage"]).toMatch(/luk/i);
+    expect(resolve(press("L")).action).toBe("closeMessage");
   });
 });
 

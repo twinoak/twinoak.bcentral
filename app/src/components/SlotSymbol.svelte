@@ -1,7 +1,8 @@
 <script lang="ts">
   // One symbol of the status column's set (P3-03, lib/statusSlots.ts): a hollow circle, a
-  // filled circle, a filled circle with a check, a hollow circle with a clock, a cross —
-  // five shapes, so colour is never the only cue. Drawn on the icon set's 20 px grid with
+  // filled circle, a filled circle with a check, a hollow circle with a clock, a cross, and
+  // a short dash (closed by the staff, P3-09) — six shapes, so colour is never the only
+  // cue. Drawn on the icon set's 20 px grid with
   // its 1.75 px stroke in currentColor (the slot's tint is on the element around it); the
   // check is cut out of the filled circle in the surface colour. Hidden from assistive
   // technology: the slot that holds it carries the sentence.
@@ -45,5 +46,7 @@
     <path d="M6.6 10.3l2.3 2.3 4.5-4.8" class="slot-cutout" />
   {:else if shape === "cross"}
     <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" />
+  {:else if shape === "dash"}
+    <path d="M6.5 10h7" />
   {/if}
 </svg>

@@ -19,27 +19,32 @@
   // "answers" / "answered" links of a reply (P1-02), the point line when the entry has a
   // point (P3-05), and the action row — quiet buttons for exactly the actions that apply
   // (lib/rowActions.ts): the point action first (Open point, Close point or Reopen point by
-  // the point's state), then Retry or Send, Mark, Correct on a radio message — Mark and
-  // Correct while it waits in a queue, Correct alone while the radio is transmitting it
-  // (P3-08) — Correct alone
-  // on an outgoing message by hand (no history, no Mark: it has no chain), Reply and
-  // Correct on an incoming one, Correct on a note; a send-to-all row opens into one row per
-  // recipient, each with its own actions, and "Retry all given up" when any can be; its
-  // point is its first message's. One row is open at a time (lib/rowOpen.ts): opening
-  // another closes the first, the open row's own line closes it, Esc closes. The Mark form
-  // (a manual roger or given-up with a required reason), the Correct form (one box with the current
-  // text, the "#n " of a message fixed in front of it, lib/correctionForm.ts, P3-02), the
-  // Open point form (one box with the title, prefilled from the text, lib/pointTitle.ts) and
-  // the Close point form (a required reason) replace the action row while they are open;
-  // cancelling brings it back. A line that has a point shows a small glyph after the time
-  // (filled and accent while open, hollow and ink-2 once closed) with the title as its
-  // tooltip. Nothing appears on hover, and there is no history toggle: the click is the
-  // whole interface.
+  // the point's state), then Close on an unconfirmed radio message (P3-09: sent, delivered
+  // or given up — the routine way out when the confirmation is not coming), Retry or Send,
+  // Mark, Correct on a radio message — Mark and Correct while it waits in a queue, Correct
+  // alone while the radio is transmitting it (P3-08) or once it is confirmed or closed —
+  // Correct alone on an outgoing message by hand (no history, no Mark: it has no chain),
+  // Reply and Correct on an incoming one, Correct on a note; a send-to-all row opens into
+  // one row per recipient, each with its own actions, and "Retry all given up" when any can
+  // be; its point is its first message's. One row is open at a time (lib/rowOpen.ts):
+  // opening another closes the first, the open row's own line closes it, Esc closes. The
+  // Close form (one field, "Note (optional)", Close and Cancel: Close without typing closes
+  // at once), the Mark form (a manual roger or given-up with a required reason), the
+  // Correct form (one box with the current text, the "#n " of a message fixed in front of
+  // it, lib/correctionForm.ts, P3-02), the Open point form (one box with the title,
+  // prefilled from the text, lib/pointTitle.ts) and the Close point form (a required
+  // reason) replace the action row while they are open; cancelling brings it back. A line
+  // that has a point shows a small glyph after the time (filled and accent while open,
+  // hollow and ink-2 once closed) with the title as its tooltip. A closed radio message
+  // keeps its row with a dash in the confirmed slot; a late `Rn` for it is in its history
+  // (RowHistory.svelte). Nothing appears on hover, and there is no history toggle: the
+  // click is the whole interface.
   //
   // Keyboard (P1-09): one row is the current row (accent-weak); J / K move it (and the
   // focus) down and up, Enter or Space opens or closes it (Row.svelte), R replies to it when
   // it is incoming, P does the row's point action (the row opens on the form when one is
-  // needed), Esc closes a form, then the open row. The rows are one tab stop (roving
+  // needed), L opens the Close form on an unconfirmed radio message (P3-09, the row opens
+  // first), Esc closes a form, then the open row. The rows are one tab stop (roving
   // tabindex): Tab lands on the current row, J / K walk. The look is components.css's
   // `.rows`; this file lays nothing out of its own.
   import { tick } from "svelte";
@@ -53,7 +58,13 @@
   import { DIRECTION_GLYPH, POINT_GLYPH } from "../lib/journalRows.ts";
   import { batchText, formatShortTime, formatTime, recordedBy } from "../lib/journalText.ts";
   import { suggestedTitle } from "../lib/pointTitle.ts";
-  import { batchActions, entryActions, messageActions, pointAction } from "../lib/rowActions.ts";
+  import {
+    batchActions,
+    entryActions,
+    messageActions,
+    pointAction,
+    type RowAction,
+  } from "../lib/rowActions.ts";
   import type { SendState } from "../lib/sendState.ts";
   import {
     CLOSED,
@@ -102,6 +113,8 @@
     canRetry: (message: JournalEntry) => boolean;
     onretry: (message: JournalEntry) => void;
     onmanual: (message: JournalEntry, status: Status, reason: string) => Promise<void>;
+    // Close an unconfirmed radio message with an optional note (P3-09).
+    onclose: (message: JournalEntry, note: string) => Promise<void>;
     // A correction of `entry` (always the original entry of a row) with the whole corrected
     // text.
     oncorrect: (entry: JournalEntry, text: string) => Promise<void>;
@@ -123,6 +136,7 @@
     canRetry,
     onretry,
     onmanual,
+    onclose,
     oncorrect,
     onreply,
     onopenpoint,
@@ -152,6 +166,10 @@
   let correctionField: HTMLTextAreaElement | undefined = $state(undefined);
   let changingStatus: string | null = $state(null);
   let reason = $state("");
+  // The radio message whose Close form is open, and the note typed in it (P3-09).
+  let closing: string | null = $state(null);
+  let note = $state("");
+  let noteField: HTMLInputElement | undefined = $state(undefined);
   // The row (its origin entry's id) whose Open point form or Close point form is open, and
   // what is typed in it (P3-05).
   let pointing: string | null = $state(null);
@@ -313,6 +331,52 @@
     return rows.find((row) => row.id === id)?.entry ?? byId.get(id);
   }
 
+  // The view of a radio message by its id: its own row, or a recipient of a batch.
+  function viewOf(id: string): MessageView | undefined {
+    for (const row of rows) {
+      if (row.kind === "message" && row.id === id) {
+        return row.message;
+      }
+      if (row.kind === "batch") {
+        const view = row.messages.find((candidate) => candidate.entry.id === id);
+        if (view !== undefined) {
+          return view;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  // The action set of a radio message's row, from the rule.
+  function actionsOf(view: MessageView): RowAction[] {
+    return messageActions({
+      transport: view.entry.transport,
+      status: view.status,
+      canRetry: canRetry(view.entry),
+      sendState: sendState(view.entry.id),
+    });
+  }
+
+  // L: the Close form on the current row when it is an unconfirmed radio message (P3-09) —
+  // the row opens first when it is closed, so the form has a place; any other row is left
+  // alone.
+  function closeMessageCurrent(): boolean {
+    const id = currentRowId();
+    const view = id === null ? undefined : viewOf(id);
+    const place = id === null ? undefined : places.get(id);
+    if (id === null || view === undefined || place === undefined) {
+      return false;
+    }
+    if (!actionsOf(view).includes("close")) {
+      return false;
+    }
+    if (!isRowOpen(id)) {
+      opened = toggleRow(opened, id, place);
+    }
+    void startClose(view.entry);
+    return true;
+  }
+
   // P: the current row's one point action (lib/rowActions.ts pointAction) — the row opens
   // when it is closed, so the form has a place; a row that cannot carry a point (the
   // incident's own status rows) is left alone.
@@ -346,6 +410,7 @@
     if (
       correcting !== null ||
       changingStatus !== null ||
+      closing !== null ||
       pointing !== null ||
       closingPoint !== null
     ) {
@@ -367,6 +432,7 @@
       onShortcut("previousRow", () => move(-1)),
       onShortcut("reply", replyCurrent),
       onShortcut("point", pointCurrent),
+      onShortcut("closeMessage", closeMessageCurrent),
       onShortcut("cancel", closeCurrent),
     ];
     return () => {
@@ -414,11 +480,22 @@
     reason = "";
   }
 
+  // Close (P3-09): the one field for the note, the cursor in it; Close without typing
+  // closes at once.
+  async function startClose(entry: JournalEntry) {
+    resetForms();
+    closing = entry.id;
+    note = "";
+    await tick();
+    noteField?.focus();
+  }
+
   // The forms go when the row they sit in opens or closes.
   function resetForms() {
     correcting = null;
     correction = null;
     changingStatus = null;
+    closing = null;
     pointing = null;
     closingPoint = null;
     error = null;
@@ -426,7 +503,7 @@
 
   // Cancel in a form: back to the action row, the focus on the row's line.
   function cancelForms() {
-    const rowId = correcting ?? changingStatus ?? pointing ?? closingPoint;
+    const rowId = correcting ?? changingStatus ?? closing ?? pointing ?? closingPoint;
     resetForms();
     if (rowId !== null) {
       void tick().then(() => focusRow(rowId));
@@ -469,6 +546,28 @@
       focusRow(message.id);
     } catch (failure) {
       error = t("send.manual.failed", { error: describe(failure) });
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Close with the note as typed, empty allowed: the status_change closed is written, the
+  // message leaves the unconfirmed lists, the focus goes back to the row's line.
+  async function saveClose(message: JournalEntry, event: SubmitEvent) {
+    event.preventDefault();
+    if (busy) {
+      return;
+    }
+    busy = true;
+    error = null;
+    try {
+      await onclose(message, note);
+      closing = null;
+      note = "";
+      await tick();
+      focusRow(message.id);
+    } catch (failure) {
+      error = t("journal.close.failed", { error: describe(failure) });
     } finally {
       busy = false;
     }
@@ -762,6 +861,25 @@
   {/if}
 {/snippet}
 
+<!-- The Close form of an unconfirmed radio message (P3-09): one small field for the note,
+     optional, Close (enabled with the field empty: one click closes) and Cancel; Enter in
+     the field is Close. -->
+{#snippet closeForm(entry: JournalEntry)}
+  <form class="row-form" data-close-form onsubmit={(event) => saveClose(entry, event)}>
+    <label class="row-meta" for="close-note">{t("journal.close.note")}</label>
+    <div class="field field-grow">
+      <input id="close-note" type="text" bind:this={noteField} bind:value={note} />
+    </div>
+    <button type="submit" class="btn btn-primary" disabled={busy} title={t("journal.close.help")}>
+      {t("journal.action.close")}
+    </button>
+    <button type="button" class="btn" onclick={cancelForms}>{t("journal.action.cancel")}</button>
+    {#if error}
+      <span class="field-error" role="alert"><Icon name="warning" />{error}</span>
+    {/if}
+  </form>
+{/snippet}
+
 <!-- The Mark form of a radio message: the reason, one button per status the operator may set
      by hand (roger, given up), Cancel. -->
 {#snippet statusForm(entry: JournalEntry)}
@@ -802,12 +920,7 @@
   {@const entry = view.entry}
   {@const inflightText = inflight(entry.id)}
   {@const point = nested ? undefined : points.get(entry.id)}
-  {@const actions = messageActions({
-    transport: entry.transport,
-    status: view.status,
-    canRetry: canRetry(entry),
-    sendState: sendState(entry.id),
-  })}
+  {@const actions = actionsOf(view)}
   <Row
     id={entry.id}
     type="message_out"
@@ -832,6 +945,7 @@
       <RowHistory
         {entry}
         history={view.history}
+        lateRogers={view.lateRogers}
         corrections={view.corrections}
         {byId}
         onjump={scrollToEntry}
@@ -852,7 +966,9 @@
       {#if point !== undefined}
         {@render pointLine(point)}
       {/if}
-      {#if changingStatus === entry.id}
+      {#if closing === entry.id}
+        {@render closeForm(entry)}
+      {:else if changingStatus === entry.id}
         {@render statusForm(entry)}
       {:else if correcting === entry.id}
         {@render correctionForm()}
@@ -864,6 +980,17 @@
         <div class="row-actions">
           {#if !nested}
             {@render pointButton(entry)}
+          {/if}
+          {#if actions.includes("close")}
+            <button
+              type="button"
+              class="btn btn-quiet"
+              data-action="close"
+              title={t("journal.close.help")}
+              onclick={() => startClose(entry)}
+            >
+              {t("journal.action.close")}
+            </button>
           {/if}
           {#if actions.includes("retry") || actions.includes("send")}
             <button type="button" class="btn btn-quiet" onclick={() => onretry(entry)}>

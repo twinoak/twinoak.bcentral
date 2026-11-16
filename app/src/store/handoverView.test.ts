@@ -298,6 +298,40 @@ describe("the handover lists over the walkthrough plus extras", () => {
     expect(afterClose.open.map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id]);
   });
 
+  it("a close by the staff takes the order out of both lists (P3-09), and a late Rn for it is not an unanswered incoming message", () => {
+    const closedOpen = statusChange({
+      refersTo: toPeter2.id,
+      to: "closed",
+      at: "2026-10-28T20:00:00Z",
+      text: "",
+    });
+    const closedGivenUp = statusChange({
+      refersTo: toPeter1.id,
+      to: "closed",
+      at: "2026-10-28T20:00:01Z",
+      text: "Peter er kørt",
+    });
+    const after = buildHandover([...entries, closedOpen, closedGivenUp]);
+    expect(after.open.map((view) => view.entry.id)).toEqual([toHans3.id]);
+    expect(after.givenUp).toEqual([]);
+    // The field's late R2 for Peter's #2: an ordinary incoming entry, but the closed
+    // message's answer, so not something the next operator has to answer.
+    const lateR2 = messageIn({
+      counterpartyId: PETER,
+      text: "R2",
+      at: "2026-10-28T20:05:00Z",
+      transport: "mesh",
+    });
+    const withLate = buildHandover([...entries, closedOpen, closedGivenUp, lateR2]);
+    expect(withLate.unanswered.map((entry) => entry.id)).toEqual([W.freeTextIn, fromPeter.id]);
+    // An R2 before the close, or an R for another number, is as unanswered as any plain text.
+    const earlyR2 = messageIn({ counterpartyId: PETER, text: "R2", at: "2026-10-28T19:58:00Z" });
+    const r9 = messageIn({ counterpartyId: PETER, text: "R9", at: "2026-10-28T20:06:00Z" });
+    expect(
+      unansweredIncoming([...entries, closedOpen, closedGivenUp, earlyR2, r9]).map((e) => e.id),
+    ).toEqual([W.freeTextIn, fromPeter.id, earlyR2.id, r9.id]);
+  });
+
   it("a manual roger's reason is not an entry id and matches no incoming message", () => {
     const closed = statusChange({
       refersTo: toPeter1.id,

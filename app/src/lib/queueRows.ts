@@ -9,8 +9,8 @@ import { statusChip, type ChipLook } from "./journalRows.ts";
 import type { SlotShape } from "./statusSlots.ts";
 
 // Every queued message counted once, by its derived status, in the batch counters' shape so
-// counterChips() renders them. The incident's own statuses (closed, reopened) cannot occur on
-// a message and are not counted.
+// counterChips() renders them. A message the staff closed (P3-09) counts as closed; the
+// incident's and the points' `reopened` cannot occur on a message and is not counted.
 export function queueCounters(statuses: Iterable<Status>): BatchCounters {
   const counters: BatchCounters = {
     total: 0,
@@ -19,6 +19,7 @@ export function queueCounters(statuses: Iterable<Status>): BatchCounters {
     delivered: 0,
     roger: 0,
     givenUp: 0,
+    closed: 0,
   };
   for (const status of statuses) {
     switch (status) {
@@ -37,6 +38,9 @@ export function queueCounters(statuses: Iterable<Status>): BatchCounters {
       case "given_up":
         counters.givenUp += 1;
         break;
+      case "closed":
+        counters.closed += 1;
+        break;
       default:
         continue;
     }
@@ -54,8 +58,8 @@ export function queueRowChip(status: Status | null): ChipLook {
 
 // The symbol in a queue row's state chip, from the status column's set (P3-03) so the queue
 // and the journal draw a state the same way: hollow while pending, filled once sent or
-// delivered, the check on roger, the cross on given up, the clock while the queue or the
-// outbox holds the message.
+// delivered, the check on roger, the cross on given up, the dash on closed by the staff
+// (P3-09), the clock while the queue or the outbox holds the message.
 export function queueRowShape(status: Status | null): SlotShape {
   switch (status) {
     case null:
@@ -67,6 +71,8 @@ export function queueRowShape(status: Status | null): SlotShape {
       return "check";
     case "given_up":
       return "cross";
+    case "closed":
+      return "dash";
     default:
       return "hollow";
   }

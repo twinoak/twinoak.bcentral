@@ -4,6 +4,7 @@
 //   N            new message (the compose text)       J / K   next / previous journal row
 //   R            reply to the current incoming row    Enter / Space   open or close the current row
 //   P            open / close / reopen a point on the current row (P3-05)
+//   L            close the current unconfirmed radio message (P3-09)
 //   A            add a note                           Esc     cancel (forms, the open row, links, overlay)
 //   Ctrl+Enter   send / record the form               ?       this overlay
 //   G then J / R / H / S   go to Journal / Register / Handover / Settings
@@ -19,6 +20,7 @@ export type ShortcutAction =
   | "newMessage"
   | "reply"
   | "point"
+  | "closeMessage"
   | "addNote"
   | "nextRow"
   | "previousRow"
@@ -61,6 +63,7 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
   { action: "newMessage", keys: ["N"], inTextField: false },
   { action: "reply", keys: ["R"], inTextField: false },
   { action: "point", keys: ["P"], inTextField: false },
+  { action: "closeMessage", keys: ["L"], inTextField: false },
   { action: "addNote", keys: ["A"], inTextField: false },
   { action: "nextRow", keys: ["J"], inTextField: false },
   { action: "previousRow", keys: ["K"], inTextField: false },
@@ -83,6 +86,7 @@ const SINGLE_KEYS: Readonly<Record<string, ShortcutAction>> = {
   n: "newMessage",
   r: "reply",
   p: "point",
+  l: "closeMessage",
   a: "addNote",
   j: "nextRow",
   k: "previousRow",

@@ -8,10 +8,12 @@
   // points (P3-05, first of the five and across the width: the to-do list, each with its
   // title, age, origin and Close with a reason), then in a 2 × 2 grid open orders and
   // given-up messages — radio messages only (P3-07): a message by phone, courier or verbal
-  // has no status chain, and its follow-up is a point — the given-up ones with the three
-  // decisions (retry, send by courier, close with a reason; the last two take the message
-  // out of the send queue first and are hidden while the radio is transmitting it, P3-08),
-  // unanswered incoming messages
+  // has no status chain, and its follow-up is a point — the open ones with Close on the
+  // open row once the radio has handed them over (P3-09: one field "Note (optional)", Close
+  // and Cancel; the message is recorded as closed by the staff, not as confirmed, and leaves
+  // both lists), the given-up ones with the three decisions (retry, send by courier, the
+  // same Close; the last two take the message out of the send queue first and are hidden
+  // while the radio is transmitting it, P3-08), unanswered incoming messages
   // with Reply, and quiet radios with "Send status request" ("#n Meld status"). An outgoing
   // row carries the
   // journal's status column (P3-03, StatusSlots.svelte) under the same header labels, and
@@ -64,6 +66,7 @@
     type MessageView,
     type PointView,
   } from "../store/journalView.ts";
+  import { isClosable } from "../store/outgoing.ts";
   import { sortedByLabel } from "../store/register.ts";
   import type { Incident, JournalEntry, RegisterEntry } from "../store/types.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
@@ -104,10 +107,11 @@
   let printedAt = $state("");
   // The one open row across the five lists (P3-04), or null.
   let openRow: string | null = $state(null);
-  // The given-up message, or the point (P3-05), whose close form is open, and the reason
-  // typed in it.
+  // The radio message (P3-09), or the point (P3-05), whose close form is open; the reason
+  // typed for a point (required), the note typed for a message (optional).
   let closing: string | null = $state(null);
   let reason = $state("");
+  let note = $state("");
 
   const incidentId = $derived(currentIncidentId());
   const current = $derived(incidents.find((incident) => incident.id === incidentId) ?? null);
@@ -205,6 +209,7 @@
     openRow = openRow === id ? null : id;
     closing = null;
     reason = "";
+    note = "";
   }
 
   // Esc: the close form first, then the open row.
@@ -305,6 +310,13 @@
     return sendState(view.entry.id) !== "transmitting";
   }
 
+  // Close (P3-09) on an open order: once the radio has handed the message over (sent or
+  // delivered; a pending one is not closed but sent, marked or left), and not while it is
+  // transmitting — the journal's row rule (lib/rowActions.ts).
+  function canClose(view: MessageView): boolean {
+    return isClosable(view.status) && canMark(view);
+  }
+
   async function retry(view: MessageView) {
     actionError = null;
     await transmit(view.entry);
@@ -320,28 +332,32 @@
   function startClose(view: MessageView) {
     actionError = null;
     closing = view.entry.id;
-    reason = "";
+    note = "";
   }
 
   function cancelClose() {
     closing = null;
     reason = "";
+    note = "";
   }
 
+  // Close with the note, empty allowed (P3-09): out of the send queue first, then the
+  // status_change `closed` — the message leaves the open and the given-up list; it is not a
+  // confirmation and is not recorded as one.
   async function close(view: MessageView, event: SubmitEvent) {
     event.preventDefault();
-    if (busy || reason.trim() === "") {
+    if (busy) {
       return;
     }
     busy = true;
     actionError = null;
     try {
-      await sendActions.markByHand(view.entry, "roger", reason);
+      await sendActions.closeByHand(view.entry, note);
       closing = null;
-      reason = "";
+      note = "";
       await changed();
     } catch (failure) {
-      actionError = t("send.manual.failed", { error: describe(failure) });
+      actionError = t("journal.close.failed", { error: describe(failure) });
     } finally {
       busy = false;
     }
@@ -511,6 +527,41 @@
      tooltip while the outbox or the queue holds it. -->
 {#snippet stripCell(view: MessageView)}
   <StatusSlots strip={view.strip} inflightText={inflight(view.entry.id)} />
+{/snippet}
+
+<!-- The Close form of a radio message (P3-09), in place of the row's actions: the note,
+     optional, Close (one click with the field empty), Cancel. -->
+{#snippet closeForm(view: MessageView)}
+  <form class="row-form no-print" data-close-form onsubmit={(event) => close(view, event)}>
+    <div class="field">
+      <input
+        type="text"
+        placeholder={t("journal.close.note")}
+        aria-label={t("journal.close.note")}
+        bind:value={note}
+      />
+    </div>
+    <button type="submit" class="btn btn-primary" disabled={busy}>
+      {t("handover.givenUp.close")}
+    </button>
+    <button type="button" class="btn" onclick={cancelClose}>
+      {t("journal.action.cancel")}
+    </button>
+  </form>
+{/snippet}
+
+<!-- The Close button of a radio message's action row. -->
+{#snippet closeButton(view: MessageView)}
+  <button
+    type="button"
+    class="btn btn-quiet"
+    data-action="close"
+    title={t("handover.givenUp.closeHelp")}
+    disabled={busy}
+    onclick={() => startClose(view)}
+  >
+    {t("handover.givenUp.close")}
+  </button>
 {/snippet}
 
 <!-- The page heading is for assistive technology; the bar's navigation names the screen. -->
@@ -777,7 +828,7 @@
                 <Row
                   id={view.entry.id}
                   type="message_out"
-                  openable={historyLines(view) > 0}
+                  openable={historyLines(view) > 0 || canClose(view)}
                   open={openRow === view.entry.id}
                   ontoggle={() => toggleRow(view.entry.id)}
                 >
@@ -794,6 +845,13 @@
                       corrections={view.corrections}
                       {byId}
                     />
+                    {#if closing === view.entry.id}
+                      {@render closeForm(view)}
+                    {:else if canClose(view)}
+                      <span class="row-actions no-print">
+                        {@render closeButton(view)}
+                      </span>
+                    {/if}
                   {/snippet}
                 </Row>
               {/each}
@@ -840,28 +898,12 @@
                       {byId}
                     />
                     {#if closing === view.entry.id}
-                      <form class="row-form no-print" onsubmit={(event) => close(view, event)}>
-                        <div class="field">
-                          <input
-                            type="text"
-                            placeholder={t("journal.manual.reason")}
-                            aria-label={t("journal.manual.reason")}
-                            bind:value={reason}
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          class="btn btn-primary"
-                          disabled={busy || reason.trim() === ""}
-                        >
-                          {t("handover.givenUp.close")}
-                        </button>
-                        <button type="button" class="btn" onclick={cancelClose}>
-                          {t("journal.action.cancel")}
-                        </button>
-                      </form>
+                      {@render closeForm(view)}
                     {:else}
                       <span class="row-actions no-print">
+                        {#if canMark(view)}
+                          {@render closeButton(view)}
+                        {/if}
                         {#if canRetry(view)}
                           <button
                             type="button"
@@ -881,15 +923,6 @@
                             onclick={() => courier(view)}
                           >
                             <Icon name="send" />{t("handover.givenUp.courier")}
-                          </button>
-                          <button
-                            type="button"
-                            class="btn btn-quiet"
-                            title={t("handover.givenUp.closeHelp")}
-                            disabled={busy}
-                            onclick={() => startClose(view)}
-                          >
-                            <Icon name="check" />{t("handover.givenUp.close")}
                           </button>
                         {/if}
                       </span>

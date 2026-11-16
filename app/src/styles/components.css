@@ -339,13 +339,15 @@ button.chip:hover {
 
 /* --- Status column (journal rows, P3-03; components/StatusSlots.svelte): three fixed slots
    at the right of an outgoing row — sent · delivered · confirmed — one 20 px symbol each
-   (components/SlotSymbol.svelte: hollow, filled, check, clock, cross), always in the same
-   place, so the eye scans the column; no times in the list (they are the slots' tooltips).
-   A slot is `--slot-w` wide: 4 rem in a row list, which holds the 13 px header labels
-   (`.slots-head`, stuck to the top of the box in `.rows-head`); 1.5 rem in the side cards,
-   which have no header. The tint is the state's pair on the symbol alone — not yet rule-2,
-   done ok, the clock warn, the cross danger; a batch's counts ("23/25") are ink-2 until
-   every recipient is there, then ok. High contrast keeps the shapes and drops the tints. */
+   (components/SlotSymbol.svelte: hollow, filled, check, clock, cross, dash), always in the
+   same place, so the eye scans the column; no times in the list (they are the slots'
+   tooltips). A slot is `--slot-w` wide: 4 rem in a row list, which holds the 13 px header
+   labels (`.slots-head`, stuck to the top of the box in `.rows-head`); 1.5 rem in the side
+   cards, which have no header. The tint is the state's pair on the symbol alone — not yet
+   rule-2, done ok, the clock warn, the cross danger, the dash of a message the staff closed
+   ink-2 (P3-09: quieter than a state the radio reached, darker than a slot not reached); a
+   batch's counts ("23/25") are ink-2 until every recipient is there, then ok. High contrast
+   keeps the shapes and drops the tints. */
 .slots {
   display: inline-grid;
   grid-template-columns: repeat(3, var(--slot-w, 4rem));
@@ -380,6 +382,10 @@ button.chip:hover {
   color: var(--danger);
 }
 
+.slot[data-tint="muted"] {
+  color: var(--ink-2);
+}
+
 /* The check is cut out of the filled disc in the surface colour. */
 .slot-cutout {
   stroke: var(--surface);
@@ -395,14 +401,18 @@ button.chip:hover {
   color: var(--ink-2);
 }
 
-/* The given-up count of a batch, under the three counts at the right, only when not zero. */
-.slot-given-up {
+/* The given-up count ("✕ n") and the closed count ("— n", P3-09) of a batch, side by side
+   under the three counts at the right, each only when not zero. */
+.slots-extra {
   grid-column: 1 / -1;
   justify-self: end;
+  display: inline-flex;
+  gap: var(--s-3);
   margin-top: var(--s-1);
 }
 
-.slot-given-up .icon {
+.slot-given-up .icon,
+.slot-closed .icon {
   margin-right: 0.125rem;
 }
 

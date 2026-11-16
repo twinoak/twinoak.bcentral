@@ -7,8 +7,9 @@
   // rest of the viewport and scrolls inside. Reply on a row opens the tab the incoming
   // message's transport decides (lib/composePrefill.ts). The side
   // column holds three cards — points (P3-05: the staff's to-do list, opened from any row),
-  // open items and "last heard from" — each with its count in the title; under 60 rem it
-  // stacks under the main column. On first run (no operator name) a
+  // open items (with Close on each row the staff may close, P3-09) and "last heard from" —
+  // each with its count in the title; under 60 rem it stacks under the main column. On
+  // first run (no operator name) a
   // setup card sits at the top of the main column and goes when the name is saved. The
   // incident itself — picking, creating, closing, export, print — is the switcher in the
   // top bar (P2-02). Everything shown is derived from the incident's entries on every reload
@@ -39,8 +40,10 @@
     openItems,
     pointsFor,
     sortedByLastHeard,
+    type OpenItem,
     type PointView,
   } from "../store/journalView.ts";
+  import { isClosable } from "../store/outgoing.ts";
   import { sortedByLabel } from "../store/register.ts";
   import { statusOf } from "../store/status.ts";
   import type { Incident, JournalEntry, RegisterEntry, Status } from "../store/types.ts";
@@ -206,6 +209,18 @@
     await changed();
   }
 
+  // Close (P3-09): the same path — out of the queue first, then `closed` with the note.
+  async function close(message: JournalEntry, note: string) {
+    await sendActions.closeByHand(message, note);
+    await changed();
+  }
+
+  // Which items of the "Unconfirmed messages" card offer Close: the row rule's status half
+  // (sent, delivered or given up) and not transmitting.
+  function canCloseItem(item: OpenItem): boolean {
+    return isClosable(item.status) && sendState(item.message.id) !== "transmitting";
+  }
+
   async function correct(entry: JournalEntry, text: string) {
     await addCorrection(entry, text);
     await changed();
@@ -348,6 +363,7 @@
           {canRetry}
           onretry={transmit}
           onmanual={manual}
+          onclose={close}
           oncorrect={correct}
           onreply={reply}
           onopenpoint={openPointFrom}
@@ -359,7 +375,14 @@
 
     <aside class="side">
       <PointsPanel {points} {labels} onselect={showEntry} onclose={closePointWith} />
-      <OpenItemsPanel groups={open} {labels} {pausedCount} onselect={showEntry} />
+      <OpenItemsPanel
+        groups={open}
+        {labels}
+        {pausedCount}
+        onselect={showEntry}
+        canClose={canCloseItem}
+        onclose={close}
+      />
       <LastHeardPanel rows={heardRows} />
     </aside>
   </div>

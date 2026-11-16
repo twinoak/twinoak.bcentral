@@ -56,6 +56,7 @@ describe("batch counters as chips", () => {
     delivered: 23,
     roger: 18,
     givenUp: 1,
+    closed: 0,
   };
 
   it("one chip per non-zero counter, in chain order, each with its status's look", () => {
@@ -69,8 +70,25 @@ describe("batch counters as chips", () => {
 
   it("a batch nobody has sent yet is one pending chip", () => {
     expect(
-      counterChips({ total: 3, pending: 3, sent: 0, delivered: 0, roger: 0, givenUp: 0 }),
+      counterChips({
+        total: 3,
+        pending: 3,
+        sent: 0,
+        delivered: 0,
+        roger: 0,
+        givenUp: 0,
+        closed: 0,
+      }),
     ).toEqual([{ key: "pending", n: 3, look: statusChip("pending") }]);
+  });
+
+  it("recipients the staff closed are a grey chip last (P3-09), only when any", () => {
+    expect(counterChips({ ...counters, closed: 2 }).at(-1)).toEqual({
+      key: "closed",
+      n: 2,
+      look: { tint: "neutral", dot: "filled" },
+    });
+    expect(counterChips(counters).some((chip) => chip.key === "closed")).toBe(false);
   });
 });
 

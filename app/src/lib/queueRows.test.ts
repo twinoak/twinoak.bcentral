@@ -12,14 +12,16 @@ describe("queueCounters", () => {
       "roger",
       "given_up",
       "roger",
+      "closed",
     ]);
     expect(counters).toEqual({
-      total: 7,
+      total: 8,
       pending: 1,
       sent: 2,
       delivered: 1,
       roger: 2,
       givenUp: 1,
+      closed: 1,
     });
   });
 
@@ -31,9 +33,10 @@ describe("queueCounters", () => {
     ]);
   });
 
-  it("ignores the incident's own statuses and an empty queue is all zeros", () => {
-    expect(queueCounters(["closed", "reopened"]).total).toBe(0);
+  it("ignores reopened (never on a message) and an empty queue is all zeros; closed by the staff counts (P3-09)", () => {
+    expect(queueCounters(["reopened"]).total).toBe(0);
     expect(queueCounters([]).total).toBe(0);
+    expect(queueCounters(["closed"])).toMatchObject({ total: 1, closed: 1 });
   });
 });
 
@@ -56,6 +59,7 @@ describe("queueRowShape (P3-03)", () => {
     expect(queueRowShape("delivered")).toBe("filled");
     expect(queueRowShape("roger")).toBe("check");
     expect(queueRowShape("given_up")).toBe("cross");
+    expect(queueRowShape("closed")).toBe("dash");
     expect(queueRowShape(null)).toBe("clock");
   });
 });

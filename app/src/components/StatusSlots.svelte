@@ -5,7 +5,8 @@
   // slot's tooltip (the time, "not yet", the attempt, the reason) are lib/journalText.ts's
   // and go into `title` and `aria-label` only: no time is shown in the list. A batch row
   // shows a count per slot instead ("23/25") and, under them, the given-up count with a
-  // cross when it is not zero. The slots are not focusable; the row is. components.css lays
+  // cross and the closed count with a dash (P3-09), each only when it is not zero. The
+  // slots are not focusable; the row is. components.css lays
   // the column out (`.slots`) and tints the symbols; incoming rows, notes, corrections and
   // outgoing messages by phone, courier or verbal (P3-07: no chain) render nothing here, so
   // their column is empty.
@@ -44,16 +45,31 @@
         role="img">{slot.n}/{slot.total}</span
       >
     {/each}
-    {#if counters.givenUp > 0}
-      {@const text = t("journal.batch.counter.given_up", { n: counters.givenUp })}
-      <span
-        class="slot slot-given-up"
-        data-slot="given_up"
-        data-tint="danger"
-        title={text}
-        aria-label={text}
-        role="img"><SlotSymbol shape="cross" />{counters.givenUp}</span
-      >
+    {#if counters.givenUp > 0 || counters.closed > 0}
+      <span class="slots-extra">
+        {#if counters.givenUp > 0}
+          {@const text = t("journal.batch.counter.given_up", { n: counters.givenUp })}
+          <span
+            class="slot slot-given-up"
+            data-slot="given_up"
+            data-tint="danger"
+            title={text}
+            aria-label={text}
+            role="img"><SlotSymbol shape="cross" />{counters.givenUp}</span
+          >
+        {/if}
+        {#if counters.closed > 0}
+          {@const text = t("journal.batch.counter.closed", { n: counters.closed })}
+          <span
+            class="slot slot-closed"
+            data-slot="closed"
+            data-tint="muted"
+            title={text}
+            aria-label={text}
+            role="img"><SlotSymbol shape="dash" />{counters.closed}</span
+          >
+        {/if}
+      </span>
     {/if}
   </span>
 {:else if strip !== undefined}

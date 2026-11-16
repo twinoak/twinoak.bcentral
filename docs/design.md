@@ -98,11 +98,13 @@ component defines its own colours or sizes; a component `<style>` block may only
 - **Status column** (journal rows, P3-03; replaces the status strip): a fixed-width column
   at the right of every row — three slots, `sent · delivered · confirmed`, one 20 px symbol
   each, always in the same place, no times in the list (they are the slots' tooltips and
-  the row's history). Five shapes: hollow circle `--rule-2` (not yet), filled circle `--ok`
+  the row's history). Six shapes: hollow circle `--rule-2` (not yet), filled circle `--ok`
   (done; confirmed with a check), hollow circle with a clock `--warn` (sent, the receipt
   still out), `✕` `--danger` (given up, in the first slot not reached; the slots before it
-  stay filled). A batch row shows a count per slot (`23/25`, `--ok` once all are there)
-  and `✕ n` under them when n > 0. The header is three 13 px labels over the slots, stuck
+  stay filled), a short dash `--ink-2` in the confirmed slot (closed by the staff, P3-09:
+  not a confirmation, so not the check; the slots before it stay as the radio left them).
+  A batch row shows a count per slot (`23/25`, `--ok` once all are there) and `✕ n` and
+  `— n` under them, each when n > 0. The header is three 13 px labels over the slots, stuck
   to the top of the list. Incoming rows, notes, corrections and outgoing messages by phone,
   courier or verbal (P3-07: `#n` and the chain are the radio's; a message by hand is a
   plain record) leave the column empty. High contrast keeps the shapes and drops the tints.
@@ -291,6 +293,21 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   waits in the paused queue, and the form's "no radio" line is a warning saying so, not an
   error — because the operator is never to be left with a radio message they can neither
   send, confirm nor give up.
+- An unconfirmed radio message is closed with one click (P3-09): people in the field forget
+  to send `R`, and the staff must be able to stop waiting without claiming a confirmation
+  they do not have. Close — first on the open row's action line, directly on each row of
+  the "Unconfirmed messages" card (on a line under the jump button, as the Points card's
+  Close: a button cannot sit inside a button) and on the handover's open and given-up rows,
+  and on `L` — opens one small field "Note (optional)" with Close and Cancel, and Close
+  without typing closes at once. The message leaves the unconfirmed lists as `closed`, a
+  terminal status: a short `--ink-2` dash in the confirmed slot (not the `--ok` check — it
+  is not a confirmation, and not the `--danger` cross — nothing failed), "closed by the
+  staff · the note" in the history and "closed 14.40" on paper. Mark keeps roger and given
+  up with a required reason for the cases where the staff do know. A late `R` is an
+  ordinary incoming message by the protocol and changes nothing; the closed row's history
+  lists it as "R12 received 15.02, after close" by the exact `Rn` match, and the handover's
+  unanswered list leaves it out for the same reason. The handover's old Close, which
+  recorded a roger with a required reason, is this Close now.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
   queued and reopens from the queue's title; the handover's row actions were always shown

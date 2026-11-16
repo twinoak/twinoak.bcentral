@@ -3,6 +3,8 @@ import { openTestStore, uniqueDatabaseName } from "../test-support/testStore.ts"
 import { MAX_TEXT_LEN } from "../radio/serial.ts";
 import {
   BatchComposeError,
+  CLOSABLE_STATUSES,
+  CloseError,
   DRILL_PREFIX,
   EmptyMessageError,
   MANUAL_STATUSES,
@@ -16,10 +18,12 @@ import {
   appendStatusChange,
   batchPreview,
   byteLength,
+  closeByHand,
   composeBatch,
   composeMeshMessage,
   composeMessage,
   composeText,
+  isClosable,
   messagePrefix,
   plainText,
   previewText,
@@ -735,6 +739,116 @@ describe("status changes", () => {
       ManualStatusError,
     );
     expect(await store.statusOf(radio.message.id)).toBe("pending");
+    store.close();
+  });
+});
+
+describe("close an unconfirmed radio message (P3-09)", () => {
+  it("closes a delivered message with a note: one status_change closed, the note as its text, the operator", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "Kør til nr 4");
+    await appendStatusChange(store, message, "sent");
+    await appendStatusChange(store, message, "delivered");
+    const closed = await closeByHand(store, message, { operator: "Anne", note: "  Hans er kørt, ingen R  " });
+    expect(closed).toMatchObject({
+      type: "status_change",
+      refersTo: message.id,
+      newStatus: "closed",
+      text: "Hans er kørt, ingen R",
+      operator: "Anne",
+      incidentId: INCIDENT,
+    });
+    expect(closed.counterpartyId).toBeUndefined();
+    expect(await store.statusOf(message.id)).toBe("closed");
+    // The one write, after sent and delivered.
+    const chain = (await store.entriesReferringTo(message.id)).map((e) => e.newStatus);
+    expect(chain).toEqual(["sent", "delivered", "closed"]);
+    store.close();
+  });
+
+  it("closes without a note: the text is empty, stored as such", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x");
+    await appendStatusChange(store, message, "sent");
+    const closed = await closeByHand(store, message, { operator: "Anne", note: "" });
+    expect(closed.text).toBe("");
+    expect(await store.statusOf(message.id)).toBe("closed");
+    const blank = await compose(store, "y");
+    await appendStatusChange(store, blank.message, "sent");
+    expect((await closeByHand(store, blank.message, { operator: "Anne", note: " \n " })).text).toBe("");
+    store.close();
+  });
+
+  it("closes a given-up message too, and a sent one whose receipt is still out", async () => {
+    const store = await openTestStore();
+    expect(CLOSABLE_STATUSES).toEqual(["sent", "delivered", "given_up"]);
+    const givenUp = await compose(store, "x");
+    await appendStatusChange(store, givenUp.message, "sent");
+    await appendStatusChange(store, givenUp.message, "given_up", "no ack after 3 attempts");
+    await closeByHand(store, givenUp.message, { operator: "Anne", note: "" });
+    expect(await store.statusOf(givenUp.message.id)).toBe("closed");
+    const sent = await compose(store, "y");
+    await appendStatusChange(store, sent.message, "sent");
+    await closeByHand(store, sent.message, { operator: "Anne", note: "" });
+    expect(await store.statusOf(sent.message.id)).toBe("closed");
+    for (const status of ["sent", "delivered", "given_up"] as const) {
+      expect(isClosable(status)).toBe(true);
+    }
+    for (const status of ["pending", "roger", "closed", "reopened", null] as const) {
+      expect(isClosable(status)).toBe(false);
+    }
+    store.close();
+  });
+
+  it("refuses a pending message (nothing was sent: send it, mark it or leave it), nothing written", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x");
+    const before = await store.lastDeviceSeq();
+    await expect(closeByHand(store, message, { operator: "Anne", note: "n" })).rejects.toBeInstanceOf(
+      CloseError,
+    );
+    expect(await store.statusOf(message.id)).toBe("pending");
+    expect(await store.lastDeviceSeq()).toBe(before);
+    store.close();
+  });
+
+  it("closed is final: no close, no mark after it; roger is final for a close too", async () => {
+    const store = await openTestStore();
+    const { message } = await compose(store, "x");
+    await appendStatusChange(store, message, "sent");
+    await closeByHand(store, message, { operator: "Anne", note: "" });
+    const before = await store.lastDeviceSeq();
+    await expect(closeByHand(store, message, { operator: "Anne", note: "again" })).rejects.toBeInstanceOf(
+      CloseError,
+    );
+    for (const status of ["roger", "given_up"] as const) {
+      await expect(
+        recordManualStatus(store, message, status, { operator: "Anne", text: "r" }),
+      ).rejects.toBeInstanceOf(ManualStatusError);
+    }
+    expect(await store.lastDeviceSeq()).toBe(before);
+    expect(await store.statusOf(message.id)).toBe("closed");
+
+    const confirmed = await compose(store, "y");
+    await appendStatusChange(store, confirmed.message, "sent");
+    await appendStatusChange(store, confirmed.message, "roger", "r");
+    await expect(closeByHand(store, confirmed.message, { operator: "Anne", note: "" })).rejects.toBeInstanceOf(
+      CloseError,
+    );
+    expect(await store.statusOf(confirmed.message.id)).toBe("roger");
+    store.close();
+  });
+
+  it("refuses a message by phone, courier or verbal (no status to close) and anything that is not a message_out", async () => {
+    const store = await openTestStore();
+    const byCourier = await compose(store, "Pumpe på vej", HANS, "courier");
+    await expect(closeByHand(store, byCourier.message, { operator: "Anne", note: "" })).rejects.toBeInstanceOf(
+      CloseError,
+    );
+    expect(await store.statusOf(byCourier.message.id)).toBeNull();
+    const note = await store.appendEntry({ incidentId: INCIDENT, operator: "Anne", type: "note", text: "n" });
+    await expect(closeByHand(store, note, { operator: "Anne", note: "" })).rejects.toBeInstanceOf(CloseError);
+    expect(await store.entriesReferringTo(note.id)).toEqual([]);
     store.close();
   });
 });

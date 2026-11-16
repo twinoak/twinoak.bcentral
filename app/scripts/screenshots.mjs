@@ -13,6 +13,9 @@
 // history and no Mark, only its point and Correct; the seed also holds a reply by phone),
 // with a pending recipient of the send-to-all open while it waits in the paused queue
 // (P3-08: Mark and Correct, no Send, and the side card's "n waiting — no radio" line),
+// with the message the staff closed open on its history — the close with its note, the
+// field's late R1 — and the dash in its confirmed slot, and with a delivered row open on
+// the Close form (P3-09; the side card carries Close on each row it may close),
 // the handover with a given-up row open, the register as its list, with the Add contact
 // form open and filtered to the contacts without a radio (P3-06), the journal at the largest
 // size and in high contrast, the two long pages whole, the three print pages as A4 PDFs too. The files
@@ -269,7 +272,10 @@ function seedEnvelope() {
   const id = idAfter;
   out(real.id, id, "Peter", at("19:12:00"), "Meld status for Søndergade", ["sent", "delivered"]);
   out(real.id, id, "Lise", at("19:14:00"), "Er der strøm i nr 12?", ["sent"]);
-  out(real.id, id, "Ole", at("19:15:00"), "Kør til Nørregade 4 med pumpen", ["sent", "delivered"]);
+  const toOle = out(real.id, id, "Ole", at("19:15:00"), "Kør til Nørregade 4 med pumpen", [
+    "sent",
+    "delivered",
+  ]);
   out(real.id, id, "Eva", at("19:16:00"), "Meld status", ["sent", "given_up"]);
   out(real.id, id, "Kurt", at("19:18:00"), "Hent nøglen hos Peter", ["sent", "given_up"]);
   const fromLise = inbound(
@@ -327,6 +333,21 @@ function seedEnvelope() {
     type: "note",
     text: "Vagtskifte planlagt 22:00, Mette tager over",
   });
+  // Ole's #1, delivered, never confirmed: the staff close it with a note (P3-09), and his
+  // R1 comes in later — an ordinary incoming message by the protocol, listed on the closed
+  // row as a late roger.
+  add({
+    id: id(),
+    incidentId: real.id,
+    timestamp: at("19:35:00"),
+    type: "status_change",
+    refersTo: toOle.id,
+    newStatus: "closed",
+    text: "Ole er kørt, ingen R",
+  });
+  // Ole's late R1: after the close, so no status change — stored as it came (and before
+  // the phone call, which stays the newest incoming row for the P3-05 capture).
+  inbound(real.id, id, "Ole", at("19:39:00"), "R1");
 
   // Send to all, half drained: three roger, five delivered, four sent, thirteen pending —
   // the pending ones come back as a restored batch in the queue after a reload.
@@ -662,6 +683,41 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor({
     state: "hidden",
   });
+
+  // The message the staff closed (P3-09): Ole's #1 open on its history — sent, delivered,
+  // "lukket af staben · Ole er kørt, ingen R", then his late R1 — with the dash in its
+  // confirmed slot and Åbn punkt · Ret alone (no Retry, no Mark, no Close).
+  await page.locator(".rows-box").evaluate((box) => box.scrollTo(0, 0));
+  const closedRow = page
+    .locator('.rows-box .rows > li[data-type="message_out"]:has(.slot[data-shape="dash"])')
+    .first();
+  await closedRow.scrollIntoViewIfNeeded();
+  await line(closedRow).click();
+  await closedRow.locator("[data-late-roger]").waitFor();
+  await shot("journal-closed");
+  await page.keyboard.press("Escape");
+  await closedRow.locator(".row-area").waitFor({ state: "hidden" });
+  // A delivered message with no R open on its Close form (P3-09): the one field "Bemærkning
+  // (valgfri)", Luk and Annullér; the side card's rows carry Luk as well.
+  const deliveredRow = page
+    .locator(
+      '.rows-box .rows > li[data-type="message_out"]:not([data-nested]):has(.slot[data-slot="delivered"][data-shape="filled"]):has(.slot[data-slot="roger"][data-shape="hollow"])',
+    )
+    .first();
+  await deliveredRow.scrollIntoViewIfNeeded();
+  await line(deliveredRow).click();
+  await deliveredRow.locator('[data-action="close"]').click();
+  await deliveredRow.locator("[data-close-form]").waitFor();
+  // The side card scrolled to its first Close (the pending recipients of the send-to-all
+  // at its top have none: pending is not closed, it is sent, marked or left).
+  const cardClose = page.locator('[data-open-items] [data-action="close"]').first();
+  await cardClose.waitFor();
+  await cardClose.scrollIntoViewIfNeeded();
+  await shot("journal-close");
+  await page.keyboard.press("Escape");
+  await deliveredRow.locator("[data-close-form]").waitFor({ state: "hidden" });
+  await page.keyboard.press("Escape");
+  await deliveredRow.locator(".row-area").waitFor({ state: "hidden" });
 
   // A message by hand (P3-07): the walkthrough's courier record open — no status column, no
   // history, no Mark; its point line (closed) and Reopen point · Correct.

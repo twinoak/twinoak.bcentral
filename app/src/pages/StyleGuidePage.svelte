@@ -90,6 +90,10 @@
       key: "manual_roger",
       strip: [item("sent"), item("delivered"), item("roger", "Hans rang: modtaget")],
     },
+    {
+      key: "closed",
+      strip: [item("sent"), item("delivered"), item("closed", "Ole er kørt, ingen R")],
+    },
   ];
   const SAMPLE_COUNTERS: BatchCounters = {
     total: 25,
@@ -98,6 +102,7 @@
     delivered: 23,
     roger: 18,
     givenUp: 1,
+    closed: 2,
   };
 
   let activeTab = $state(0);
@@ -324,7 +329,8 @@
 
 <!-- The status column: the three slots of a radio message's row under the header's labels,
      in every state — pending, sent and waiting, delivered, confirmed, given up, a roger
-     recorded by hand — and a batch's counts. Hover a slot for its sentence. -->
+     recorded by hand, closed by the staff (P3-09) — and a batch's counts. Hover a slot for
+     its sentence. -->
 <section class="card">
   <h2 class="card-title"><code>.slots</code></h2>
   <div class="rows-box">

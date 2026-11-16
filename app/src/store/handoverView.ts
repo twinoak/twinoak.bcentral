@@ -12,8 +12,10 @@
 //   givenUp     radio message_out entries whose status is given_up: the ones that need a
 //               decision
 //   unanswered  message_in entries nobody has answered: no message_out carries their id as
-//               refersTo (a reply, P1-02), and no roger was recorded from them (the roger's
-//               status_change carries the incoming entry's id as its text, P0-06)
+//               refersTo (a reply, P1-02), no roger was recorded from them (the roger's
+//               status_change carries the incoming entry's id as its text, P0-06), and they
+//               are not a late `Rn` for a message the staff closed (P3-09: the field's
+//               answer, arrived after the close; journalView.ts lateRogerIds)
 //   quiet       contacts with a radio not heard from within the blind time, quietest first
 //               (P3-06: a person without a radio cannot be quiet on the radio)
 
@@ -21,6 +23,7 @@ import {
   OPEN_STATUSES,
   buildTimeline,
   compareEntries,
+  lateRogerIds,
   openPoints,
   pointsFor,
   sortedByLastHeard,
@@ -51,7 +54,8 @@ function oldestFirst(views: readonly MessageView[]): MessageView[] {
 }
 
 // Not yet roger: pending, sent or delivered. Given up is a list of its own. A view with no
-// status (null: a message by phone, courier or verbal, P3-07) is in neither.
+// status (null: a message by phone, courier or verbal, P3-07) is in neither, and neither is
+// a closed one (P3-09: final, like roger).
 export function openOrders(views: readonly MessageView[]): MessageView[] {
   return oldestFirst(
     views.filter((view) => view.status !== null && OPEN_STATUSES.includes(view.status)),
@@ -89,9 +93,14 @@ function answeredIds(entries: readonly JournalEntry[]): Set<string> {
 export function unansweredIncoming(entries: readonly JournalEntry[]): JournalEntry[] {
   const answered = answeredIds(entries);
   const rogers = rogerSources(entries);
+  const late = lateRogerIds(entries);
   return entries
     .filter(
-      (entry) => entry.type === "message_in" && !answered.has(entry.id) && !rogers.has(entry.id),
+      (entry) =>
+        entry.type === "message_in" &&
+        !answered.has(entry.id) &&
+        !rogers.has(entry.id) &&
+        !late.has(entry.id),
     )
     .sort(compareEntries);
 }
