@@ -3,6 +3,7 @@
 //
 //   N            new message (the compose text)       J / K   next / previous journal row
 //   R            reply to the current incoming row    Enter / Space   open or close the current row
+//   P            open / close / reopen a point on the current row (P3-05)
 //   A            add a note                           Esc     cancel (forms, the open row, links, overlay)
 //   Ctrl+Enter   send / record the form               ?       this overlay
 //   G then J / R / H / S   go to Journal / Register / Handover / Settings
@@ -17,6 +18,7 @@
 export type ShortcutAction =
   | "newMessage"
   | "reply"
+  | "point"
   | "addNote"
   | "nextRow"
   | "previousRow"
@@ -58,6 +60,7 @@ export interface ShortcutDoc {
 export const SHORTCUTS: readonly ShortcutDoc[] = [
   { action: "newMessage", keys: ["N"], inTextField: false },
   { action: "reply", keys: ["R"], inTextField: false },
+  { action: "point", keys: ["P"], inTextField: false },
   { action: "addNote", keys: ["A"], inTextField: false },
   { action: "nextRow", keys: ["J"], inTextField: false },
   { action: "previousRow", keys: ["K"], inTextField: false },
@@ -79,6 +82,7 @@ const GO_TARGETS: Readonly<Record<string, ShortcutAction>> = {
 const SINGLE_KEYS: Readonly<Record<string, ShortcutAction>> = {
   n: "newMessage",
   r: "reply",
+  p: "point",
   a: "addNote",
   j: "nextRow",
   k: "previousRow",

@@ -17,9 +17,12 @@
 // A message_out whose refersTo is a message_in answers it (Reply from the row, P1-02): the
 // message row says which incoming message it answers, the incoming row which messages answer
 // it; both are read off refersTo every time, nothing is stored on either entry.
+// A point (P3-05) is never a row: its origin line carries a glyph, the Points card and the
+// handover list it, the print block lists it at the end; its state (open / closed) is the
+// latest closed / reopened status_change that refers to it, derived like a message's status.
 
 import { DRILL_PREFIX, messagePrefix } from "./outgoing.ts";
-import { isLater, statusOf } from "./status.ts";
+import { isLater, latestStatusChange, statusOf } from "./status.ts";
 import type { JournalEntry, RegisterEntry, Status } from "./types.ts";
 
 // Oldest first: the ordering status.ts uses to pick the latest status change: timestamp,
@@ -355,6 +358,11 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
           plain.push(entry);
         }
         break;
+      case "point":
+        // A point is not a row (P3-05): its origin line shows it, the Points card lists it;
+        // the closed / reopened status changes referring to it are dropped above with the
+        // rest of the status changes that refer to no message.
+        break;
       default:
         plain.push(entry);
     }
@@ -504,6 +512,96 @@ export function openItems(entries: readonly JournalEntry[]): Map<string, OpenIte
     groups.set(entry.counterpartyId, items);
   }
   return groups;
+}
+
+// --- points (P3-05) ---------------------------------------------------------------------------
+
+export type PointState = "open" | "closed";
+
+// A point as the screens show it: the point entry, the entry it was opened from, and its
+// state read off the closed / reopened status changes that refer to it — open when none.
+export interface PointView {
+  point: JournalEntry;
+  // The point's title as it reads now (currentText: a correction of the point corrects the
+  // title).
+  title: string;
+  // The entry the point was opened from (its refersTo), when it is in the list.
+  origin: JournalEntry | undefined;
+  state: PointState;
+  // When the point became open: the latest `reopened` when it was reopened and is open now,
+  // else the point's own timestamp. What the age on the cards counts from.
+  openedAt: string;
+  // The latest `closed` when the point is closed now; null while open.
+  closedAt: string | null;
+  // Who closed it, and why (the closing status change's operator and text); null while open.
+  closedBy: string | null;
+  reason: string | null;
+  // The newest timestamp among the point and every status change referring to it: what
+  // "since last print" compares (printView.ts).
+  changedAt: string;
+}
+
+function latestOf(timestamps: readonly string[]): string {
+  let latest = "";
+  for (const timestamp of timestamps) {
+    if (latest === "" || Date.parse(timestamp) > Date.parse(latest)) {
+      latest = timestamp;
+    }
+  }
+  return latest;
+}
+
+// Every point of the list, oldest first (the point's own position), each with its origin
+// and its state. The state is the latest status_change referring to the point (status.ts's
+// ordering: timestamp, deviceSeq, id); only closed and reopened are read, anything else
+// referring to a point is ignored.
+export function pointsFor(entries: readonly JournalEntry[]): PointView[] {
+  const byId = entriesById(entries);
+  const corrections = correctionsByTarget(entries);
+  const views: PointView[] = [];
+  for (const point of sortedOldestFirst(entries)) {
+    if (point.type !== "point" || point.refersTo === undefined) {
+      continue;
+    }
+    const changes = entries.filter(
+      (entry) =>
+        entry.type === "status_change" &&
+        entry.refersTo === point.id &&
+        (entry.newStatus === "closed" || entry.newStatus === "reopened"),
+    );
+    const latest = latestStatusChange(changes, point.id);
+    const closed = latest?.newStatus === "closed" ? latest : undefined;
+    views.push({
+      point,
+      title: currentText(point, corrections.get(point.id) ?? []),
+      origin: byId.get(point.refersTo),
+      state: closed === undefined ? "open" : "closed",
+      openedAt: latest?.newStatus === "reopened" ? latest.timestamp : point.timestamp,
+      closedAt: closed?.timestamp ?? null,
+      closedBy: closed?.operator ?? null,
+      reason: closed?.text ?? null,
+      changedAt: latestOf([point.timestamp, ...changes.map((change) => change.timestamp)]),
+    });
+  }
+  return views;
+}
+
+// The point opened from an entry, when there is one (one point per origin entry: the first
+// by the list's order wins should a journal ever carry two).
+export function pointOf(points: readonly PointView[], entryId: string): PointView | undefined {
+  return points.find((view) => view.point.refersTo === entryId);
+}
+
+// The open points oldest first (the one that has waited longest on top: the to-do list).
+export function openPoints(points: readonly PointView[]): PointView[] {
+  return points.filter((view) => view.state === "open");
+}
+
+// The closed points newest closed first.
+export function closedPoints(points: readonly PointView[]): PointView[] {
+  return points
+    .filter((view) => view.state === "closed")
+    .sort((a, b) => Date.parse(b.closedAt ?? "") - Date.parse(a.closedAt ?? ""));
 }
 
 // --- last heard from --------------------------------------------------------------------------

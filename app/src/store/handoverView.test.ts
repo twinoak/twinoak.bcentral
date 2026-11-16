@@ -328,7 +328,45 @@ describe("the handover lists over the walkthrough plus extras", () => {
   });
 
   it("an empty incident has empty lists", () => {
-    expect(buildHandover([])).toEqual({ open: [], givenUp: [], unanswered: [] });
+    expect(buildHandover([])).toEqual({ points: [], open: [], givenUp: [], unanswered: [] });
+  });
+
+  it("the open points are the first list, oldest first; a closed point leaves it and a reopened one is back (P3-05)", () => {
+    const point = (refersTo: string, text: string, at: string): JournalEntry => ({
+      ...stamp(at),
+      type: "point",
+      refersTo,
+      text,
+    });
+    const later = point(fromPeter.id, "Hent Peter ved nr 4", "2026-10-28T19:35:00Z");
+    const earlier = point(W.freeTextIn, "Kælder i nr 4: pumpe", "2026-10-28T19:06:30Z");
+    const withPoints = [...entries, later, earlier];
+    expect(buildHandover(withPoints).points.map((view) => view.title)).toEqual([
+      "Kælder i nr 4: pumpe",
+      "Hent Peter ved nr 4",
+    ]);
+    expect(buildHandover(withPoints).points[0]?.origin?.id).toBe(W.freeTextIn);
+    const closed = statusChange({
+      refersTo: earlier.id,
+      to: "closed",
+      at: "2026-10-28T19:45:00Z",
+      text: "Pumpen er fremme",
+    });
+    expect(buildHandover([...withPoints, closed]).points.map((view) => view.title)).toEqual([
+      "Hent Peter ved nr 4",
+    ]);
+    const reopened = statusChange({
+      refersTo: earlier.id,
+      to: "reopened",
+      at: "2026-10-28T19:50:00Z",
+    });
+    expect(
+      buildHandover([...withPoints, closed, reopened]).points.map((view) => view.title),
+    ).toEqual(["Kælder i nr 4: pumpe", "Hent Peter ved nr 4"]);
+    // The other lists do not move: a point is not a message and answers nothing.
+    const lists = buildHandover([...withPoints, closed, reopened]);
+    expect(lists.open.map((view) => view.entry.id)).toEqual([W.courier2, toPeter2.id, toHans3.id]);
+    expect(lists.unanswered.map((entry) => entry.id)).toEqual([W.freeTextIn, fromPeter.id]);
   });
 });
 

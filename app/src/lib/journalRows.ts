@@ -4,7 +4,7 @@
 // never the only difference), a batch is a run of counter chips, and a message row says
 // which way it went with a glyph before the counterparty.
 
-import type { BatchCounters, StripKind } from "../store/journalView.ts";
+import type { BatchCounters, PointState, StripKind } from "../store/journalView.ts";
 import type { JournalEntry, Status } from "../store/types.ts";
 
 // The four looks a chip can have; `neutral` is the grey default of `.chip`.
@@ -87,3 +87,8 @@ export function directionOf(entry: Pick<JournalEntry, "type">): Direction | null
 // The glyph before the counterparty: an arrow out of the desk, an arrow into it. Plain
 // characters, not icons: an icon is an action or a state, and this is neither.
 export const DIRECTION_GLYPH: Readonly<Record<Direction, string>> = { out: "→", in: "←" };
+
+// The glyph after the time of a line that has a point (P3-05): a filled diamond while the
+// point is open, a hollow one once it is closed — two shapes, so the tint (accent / ink-2,
+// components.css `.row-point`) is never the only cue. A plain character, like the arrows.
+export const POINT_GLYPH: Readonly<Record<PointState, string>> = { open: "◆", closed: "◇" };

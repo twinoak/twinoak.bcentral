@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { loadWalkthrough } from "../test-support/walkthrough.ts";
 import { buildTimeline } from "./journalView.ts";
-import { isSince, latestTimestampOf, operatorsOf, printRows } from "./printView.ts";
+import { isSince, latestTimestampOf, operatorsOf, printPoints, printRows } from "./printView.ts";
 import type { Incident, JournalEntry } from "./types.ts";
 
 const walkthrough = loadWalkthrough();
@@ -216,5 +216,53 @@ describe("printRows on a send-to-all", () => {
     const batch = buildTimeline(entries).find((row) => row.id === batchId);
     expect(batch !== undefined && latestTimestampOf(batch)).toBe("2026-10-28T20:30:00Z");
     expect(batch !== undefined && isSince(batch, "2026-10-28T20:30:00Z")).toBe(true);
+  });
+});
+
+describe("printPoints (P3-05)", () => {
+  const point = (refersTo: string, text: string, timestamp: string): JournalEntry =>
+    entry({ type: "point", refersTo, text, timestamp });
+  const open = point(W.freeTextIn, "Kælder i nr 4: pumpe", "2026-10-28T19:06:30Z");
+  const closedPoint = point(W.note, "Ring til forsyningen igen", "2026-10-28T19:07:00Z");
+  const closed = entry({
+    type: "status_change",
+    refersTo: closedPoint.id,
+    newStatus: "closed",
+    text: "Kommunens vagt ringede",
+    timestamp: "2026-10-28T19:45:00Z",
+  });
+  const entries = [...walkthrough.entries, open, closedPoint, closed];
+
+  it("the whole journal: the open points, then the closed ones with their reason and origin", () => {
+    const points = printPoints(entries, null);
+    expect(points.open.map((view) => view.title)).toEqual(["Kælder i nr 4: pumpe"]);
+    expect(points.open[0]?.origin?.id).toBe(W.freeTextIn);
+    expect(points.closed.map((view) => view.title)).toEqual(["Ring til forsyningen igen"]);
+    expect(points.closed[0]).toMatchObject({
+      reason: "Kommunens vagt ringede",
+      closedAt: "2026-10-28T19:45:00Z",
+      closedBy: "Thomas",
+    });
+    expect(points.closed[0]?.origin?.id).toBe(W.note);
+  });
+
+  it("since last print: only the points opened, closed or reopened since", () => {
+    const since = printPoints(entries, "2026-10-28T19:30:00Z");
+    expect(since.open).toEqual([]);
+    expect(since.closed.map((view) => view.title)).toEqual(["Ring til forsyningen igen"]);
+    expect(printPoints(entries, "2026-10-28T19:45:00Z").closed).toHaveLength(1);
+    expect(printPoints(entries, "2026-10-28T19:45:01Z").closed).toEqual([]);
+    const both = printPoints(entries, "2026-10-28T19:00:00Z");
+    expect(both.open).toHaveLength(1);
+    expect(both.closed).toHaveLength(1);
+  });
+
+  it("a point is never a row of the printed journal, nor are its status changes", () => {
+    const rows = printRows(entries, { since: null, oldestFirst: true });
+    expect(rows.some((row) => row.id === open.id || row.id === closedPoint.id)).toBe(false);
+    expect(rows.some((row) => row.id === closed.id)).toBe(false);
+    expect(rows).toHaveLength(
+      printRows(walkthrough.entries, { since: null, oldestFirst: true }).length,
+    );
   });
 });

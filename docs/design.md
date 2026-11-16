@@ -121,7 +121,18 @@ component defines its own colours or sizes; a component `<style>` block may only
   times and operators, its reply links, and the action row — `.btn-quiet` buttons for exactly
   the actions that apply, with the Mark and Correct forms taking the action row's place while
   open. One row is open at a time; the open row's own line, another row or `Esc` closes it.
-  No history toggle anywhere.
+  No history toggle anywhere. A line that has a point (P3-05) shows a small glyph after the
+  time — `◆` in `--accent` while the point is open, `◇` in `--ink-2` once closed, the title
+  as its tooltip — at the time's size, so the line's height is what it was; the open row's
+  area adds the point line (title, when, by whom, the reason once closed) over the action
+  row, whose first button is the row's one point action: Open point, Close point or Reopen
+  point.
+- **Points card** (the journal's side column above Open items, P3-05): "Points (n open)",
+  a `.rows-2` list with a jump button per open point — the title, its age, the line it was
+  opened from — oldest first, Close with the reason field in place under the row, and a
+  "Show closed" toggle for the closed ones with their reason and time. The handover page
+  carries the same open points as its first list, across the grid's width, each row opening
+  on Close.
 - **Popover** `.popover`: surface, `--r-2`, the floating shadow, max 360 px, a title line,
   a sentence, one action button. Opened from a status chip; `Esc` closes.
 - **Toast** `.toast`: bottom-left, one at a time, 4 s, neutral surface with the floating
@@ -244,6 +255,18 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   it jumps to. A send-to-all row opens into its recipient rows, which open inside it without
   closing it (the one exception to "one row open"), with "Retry all given up" as its own
   action row when any recipient can be retried.
+- Points (P3-05): a point is never a row of the journal or of the print — a correction is
+  not one either — so the list stays one line per slip; the origin line carries the glyph
+  and the open row the point line and the action. The glyph is a plain character in the
+  time cell, like the direction arrows (an icon is an action or a state the bar names), with
+  two shapes so the state survives black and white. The Points card sits above Open items
+  because it is the staff's to-do list, and its rows are jump buttons like the open items'
+  with Close on a line under the row (a button cannot sit inside a button); the handover's
+  points list is on the journal's `Row` and opens on its Close, spanning the width above the
+  2 × 2 grid with its height capped, so the four cards keep their room. `P` on a focused row
+  runs the row's one point action and opens the row first when a form is needed. The print
+  block is a three-column table at the end of the document (title, state with the time and
+  reason, the origin line), left out of a "since last print" that has no changed point.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
   queued and reopens from the queue's title; the handover's row actions were always shown

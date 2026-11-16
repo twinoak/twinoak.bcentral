@@ -8,10 +8,26 @@
 //   a send-to-all row            Retry all given up (when any can be retried)
 //
 // The incident's own status rows and an orphan correction offer nothing and do not open.
+//
+// Every row that opens also offers one point action (P3-05, pointAction below), first on the
+// action line: Open point while the entry has no point, Close point while its point is open,
+// Reopen point while its point is closed. A send-to-all row's point is its first message's.
 
+import type { PointState } from "../store/journalView.ts";
 import type { EntryType, Status, Transport } from "../store/types.ts";
 
 export type RowAction = "retry" | "send" | "mark" | "correct" | "reply" | "retryAll";
+
+export type PointAction = "openPoint" | "closePoint" | "reopenPoint";
+
+// The one point action of a row from the state of its point: none → Open point, open → Close
+// point, closed → Reopen point. Also what `P` on a focused row does.
+export function pointAction(state: PointState | undefined): PointAction {
+  if (state === undefined) {
+    return "openPoint";
+  }
+  return state === "open" ? "closePoint" : "reopenPoint";
+}
 
 export interface MessageActionInput {
   transport: Transport | undefined;

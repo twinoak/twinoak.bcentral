@@ -11,6 +11,7 @@ import {
   batchCounters,
   bodyOf,
   buildTimeline,
+  closedPoints,
   compareEntries,
   correctionsByTarget,
   countNewRows,
@@ -20,6 +21,9 @@ import {
   isDrillText,
   lastHeardFrom,
   openItems,
+  openPoints,
+  pointOf,
+  pointsFor,
   slowestStatus,
   sortedByLastHeard,
   sortedNewestFirst,
@@ -155,6 +159,22 @@ function note(options: { text: string; at: string; refersTo?: string }): Journal
     clockTrust: "manual",
     operator: "Thomas",
     type: "note",
+    refersTo: options.refersTo,
+    text: options.text,
+  };
+}
+
+function point(options: { refersTo: string; text: string; at: string }): JournalEntry {
+  seq += 1;
+  return {
+    id: id(seq),
+    incidentId: INCIDENT,
+    deviceId: DEVICE,
+    deviceSeq: seq,
+    timestamp: options.at,
+    clockTrust: "manual",
+    operator: "Thomas",
+    type: "point",
     refersTo: options.refersTo,
     text: options.text,
   };
@@ -882,6 +902,141 @@ describe("open items per register entry", () => {
     expect([...groups.keys()]).toEqual([HANS, peter]);
     expect(groups.get(HANS)?.map((item) => item.message.id)).toEqual([toHansLater.id, W.courier2]);
     expect(groups.get(peter)?.[0]?.status).toBe("pending");
+  });
+});
+
+describe("points (P3-05)", () => {
+  // The walkthrough plus two points: one on the free-text reply, open; one on the note,
+  // closed with a reason.
+  const onReply = point({
+    refersTo: W.freeTextIn,
+    text: "Kælder i nr 4: pumpe",
+    at: "2026-10-28T19:06:30Z",
+  });
+  const onNote = point({
+    refersTo: W.note,
+    text: "Ring til forsyningen igen",
+    at: "2026-10-28T19:07:00Z",
+  });
+  const closed = statusChange({
+    refersTo: onNote.id,
+    to: "closed",
+    at: "2026-10-28T19:45:00Z",
+    text: "Kommunens vagt ringede",
+    operator: "Anne",
+  });
+  const entries = [...walkthrough.entries, onNote, closed, onReply];
+
+  it("pointsFor: every point oldest first with its origin, state, times and reason", () => {
+    const views = pointsFor([...entries].reverse());
+    expect(views.map((view) => view.point.id)).toEqual([onReply.id, onNote.id]);
+    expect(views[0]).toMatchObject({
+      title: "Kælder i nr 4: pumpe",
+      state: "open",
+      openedAt: "2026-10-28T19:06:30Z",
+      closedAt: null,
+      closedBy: null,
+      reason: null,
+      changedAt: "2026-10-28T19:06:30Z",
+    });
+    expect(views[0]?.origin?.id).toBe(W.freeTextIn);
+    expect(views[1]).toMatchObject({
+      title: "Ring til forsyningen igen",
+      state: "closed",
+      openedAt: "2026-10-28T19:07:00Z",
+      closedAt: "2026-10-28T19:45:00Z",
+      closedBy: "Anne",
+      reason: "Kommunens vagt ringede",
+      changedAt: "2026-10-28T19:45:00Z",
+    });
+    expect(views[1]?.origin?.id).toBe(W.note);
+  });
+
+  it("pointOf finds the point of an origin entry; an entry without one has none", () => {
+    const views = pointsFor(entries);
+    expect(pointOf(views, W.note)?.point.id).toBe(onNote.id);
+    expect(pointOf(views, W.freeTextIn)?.point.id).toBe(onReply.id);
+    expect(pointOf(views, W.order1)).toBeUndefined();
+    expect(pointOf(views, onNote.id)).toBeUndefined();
+  });
+
+  it("open points oldest first, closed points newest closed first", () => {
+    const another = point({ refersTo: W.order1, text: "Følg op på #1", at: at(5) });
+    const anotherClosed = statusChange({
+      refersTo: another.id,
+      to: "closed",
+      at: at(20),
+      text: "Hans meldte ok",
+    });
+    const views = pointsFor([...entries, another, anotherClosed]);
+    expect(openPoints(views).map((view) => view.title)).toEqual(["Kælder i nr 4: pumpe"]);
+    expect(closedPoints(views).map((view) => view.title)).toEqual([
+      "Følg op på #1",
+      "Ring til forsyningen igen",
+    ]);
+  });
+
+  it("is derived live: reopened makes the point open again from the reopening's time; a later close wins", () => {
+    const reopened = statusChange({
+      refersTo: onNote.id,
+      to: "reopened",
+      at: "2026-10-28T19:50:00Z",
+      operator: "Bo",
+    });
+    const views = pointsFor([...entries, reopened]);
+    expect(pointOf(views, W.note)).toMatchObject({
+      state: "open",
+      openedAt: "2026-10-28T19:50:00Z",
+      closedAt: null,
+      reason: null,
+      changedAt: "2026-10-28T19:50:00Z",
+    });
+    const closedAgain = statusChange({
+      refersTo: onNote.id,
+      to: "closed",
+      at: "2026-10-28T19:55:00Z",
+      text: "ok nu",
+    });
+    expect(pointOf(pointsFor([...entries, reopened, closedAgain]), W.note)).toMatchObject({
+      state: "closed",
+      reason: "ok nu",
+      closedAt: "2026-10-28T19:55:00Z",
+    });
+    // A status change of another kind referring to a point is not read.
+    const stray = statusChange({ refersTo: onReply.id, to: "sent", at: at(30) });
+    expect(pointOf(pointsFor([...entries, stray]), W.freeTextIn)?.state).toBe("open");
+  });
+
+  it("a corrected title reads its correction", () => {
+    const correction: JournalEntry = {
+      ...note({ text: "Ring til kommunens vagt igen", at: at(40) }),
+      type: "correction",
+      refersTo: onNote.id,
+    };
+    expect(pointOf(pointsFor([...entries, correction]), W.note)?.title).toBe(
+      "Ring til kommunens vagt igen",
+    );
+  });
+
+  it("a point and its status changes are never rows of the timeline, and nothing else moves", () => {
+    const rows = buildTimeline(entries);
+    expect(rows.map((row) => row.id)).toEqual(
+      buildTimeline(walkthrough.entries).map((row) => row.id),
+    );
+    expect(findRow(rows, onNote.id)).toBeUndefined();
+    expect(findRow(rows, closed.id)).toBeUndefined();
+    expect(findRow(rows, W.note)?.id).toBe(W.note);
+    // A point's origin keeps its own corrections and nothing of the point.
+    const noteRow = rowFor(rows, W.note);
+    expect(noteRow.kind === "entry" && noteRow.corrections.map((c) => c.id)).toEqual([
+      W.noteCorrection,
+    ]);
+    expect(openItems(entries)).toEqual(openItems(walkthrough.entries));
+  });
+
+  it("an incident without points has none", () => {
+    expect(pointsFor(walkthrough.entries)).toEqual([]);
+    expect(pointsFor([])).toEqual([]);
   });
 });
 

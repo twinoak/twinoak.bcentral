@@ -5,9 +5,11 @@
 // every route at 1280 × 720 and 1440 × 900 at the normal text size, the journal also with
 // its compose card on each tab (P3-01), with a corrected row open on its history, with the
 // correction form open (P3-02), with a given-up row open on its history and actions and
-// with the send-to-all row open on its recipients (P3-04), the handover with a given-up row
-// open, the journal at the largest size and in high contrast, the two long pages whole, the
-// three print pages as A4 PDFs too. The files go to tasks/phase-2/reports/screens/ and are
+// with the send-to-all row open on its recipients (P3-04), with a row open on its point and
+// with the Open point form open (P3-05; the seed holds one open and one closed point, so the
+// Points card, the handover's first list and the print block show them), the handover with
+// a given-up row open, the journal at the largest size and in high contrast, the two long
+// pages whole, the three print pages as A4 PDFs too. The files go to tasks/phase-2/reports/screens/ and are
 // committed, so the reviewer can look at every screen without running the app. On the way
 // every row of the seeded journal is measured at rest, hovered and focused (P3-04: a row's
 // height never changes under the pointer); a difference fails the run like a page error.
@@ -238,7 +240,31 @@ function seedEnvelope() {
   out(real.id, id, "Ole", at("19:15:00"), "Kør til Nørregade 4 med pumpen", ["sent", "delivered"]);
   out(real.id, id, "Eva", at("19:16:00"), "Meld status", ["sent", "given_up"]);
   out(real.id, id, "Kurt", at("19:18:00"), "Hent nøglen hos Peter", ["sent", "given_up"]);
-  inbound(real.id, id, "Lise", at("19:20:00"), "Vi mangler lys i nr 12, kan I sende lygter");
+  const fromLise = inbound(
+    real.id,
+    id,
+    "Lise",
+    at("19:20:00"),
+    "Vi mangler lys i nr 12, kan I sende lygter",
+  );
+  // A point opened from Lise's message (P3-05), closed with a reason at 19:38.
+  const lightsPoint = add({
+    id: id(),
+    incidentId: real.id,
+    timestamp: at("19:21:00"),
+    type: "point",
+    refersTo: fromLise.id,
+    text: "Lygter til nr 12",
+  });
+  add({
+    id: id(),
+    incidentId: real.id,
+    timestamp: at("19:38:00"),
+    type: "status_change",
+    refersTo: lightsPoint.id,
+    newStatus: "closed",
+    text: "Lygter sendt med Peter",
+  });
   const fromAnne = inbound(
     real.id,
     id,
@@ -288,7 +314,7 @@ function seedEnvelope() {
       roger(real.id, id, message, entry.label, at(`19:41:${String(10 + i * 7).padStart(2, "0")}`));
     }
   });
-  add({
+  const phoneCall = add({
     id: id(),
     incidentId: real.id,
     timestamp: at("19:43:00"),
@@ -296,6 +322,15 @@ function seedEnvelope() {
     transport: "phone",
     counterpartyId: hansId,
     text: "Kommunens vagt ringede: pumpen er fremme 20:30",
+  });
+  // The open point (P3-05): the phone call means something has to be done.
+  add({
+    id: id(),
+    incidentId: real.id,
+    timestamp: at("19:44:00"),
+    type: "point",
+    refersTo: phoneCall.id,
+    text: "Tjek kælderen i nr 4, når pumpen er fremme 20:30",
   });
 
   return {
@@ -560,6 +595,24 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor({
     state: "hidden",
   });
+
+  // Points (P3-05): the phone call (the newest incoming row) open on its point line and
+  // "Luk punkt"; then the newest note open on the Open point form, the title prefilled.
+  await page.locator(".rows-box").evaluate((box) => box.scrollTo(0, 0));
+  const phoneCall = page.locator('.rows-box .rows > li[data-type="message_in"]').first();
+  await line(phoneCall).click();
+  await phoneCall.locator('[data-point-action="closePoint"]').waitFor();
+  await shot("journal-point");
+  await page.keyboard.press("Escape");
+  await phoneCall.locator(".row-area").waitFor({ state: "hidden" });
+  await line(newestNote).click();
+  await newestNote.getByRole("button", { name: da["journal.point.open"] }).click();
+  await page.locator("#point-title").waitFor();
+  await shot("journal-point-form");
+  await page.keyboard.press("Escape");
+  await page.locator("#point-title").waitFor({ state: "hidden" });
+  await page.keyboard.press("Escape");
+  await newestNote.locator(".row-area").waitFor({ state: "hidden" });
 
   // Every row is one line at rest and stays one line hovered and focused (P3-04). Last on
   // this page: the focus walks the rows, and the cursor it leaves goes with the navigation.

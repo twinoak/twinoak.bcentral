@@ -4,7 +4,8 @@
 // so, an incoming message is unanswered when no entry refers to it, a radio is quiet when
 // the journal has nothing from it within the blind time.
 //
-// The four lists, each oldest first (the overdue one on top; this screen exists to find it):
+// The five lists, each oldest first (the overdue one on top; this screen exists to find it):
+//   points      open points (P3-05): the staff's to-do list, first of the five
 //   open        message_out entries not yet roger and not given up (pending / sent / delivered)
 //   givenUp     message_out entries whose status is given_up: the ones that need a decision
 //   unanswered  message_in entries nobody has answered: no message_out carries their id as
@@ -16,9 +17,12 @@ import {
   OPEN_STATUSES,
   buildTimeline,
   compareEntries,
+  openPoints,
+  pointsFor,
   sortedByLastHeard,
   type LastHeard,
   type MessageView,
+  type PointView,
   type TimelineRow,
 } from "./journalView.ts";
 import type { JournalEntry, RegisterEntry } from "./types.ts";
@@ -85,6 +89,9 @@ export function unansweredIncoming(entries: readonly JournalEntry[]): JournalEnt
 }
 
 export interface HandoverLists {
+  // The open points, oldest first (journalView.ts pointsFor: a point's position is its own
+  // timestamp, not its latest reopening).
+  points: PointView[];
   open: MessageView[];
   givenUp: MessageView[];
   unanswered: JournalEntry[];
@@ -93,6 +100,7 @@ export interface HandoverLists {
 export function buildHandover(entries: readonly JournalEntry[]): HandoverLists {
   const views = messageViews(buildTimeline(entries));
   return {
+    points: openPoints(pointsFor(entries)),
     open: openOrders(views),
     givenUp: givenUpOrders(views),
     unanswered: unansweredIncoming(entries),
