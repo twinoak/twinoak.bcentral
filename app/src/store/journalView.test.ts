@@ -12,8 +12,10 @@ import {
   bodyOf,
   buildTimeline,
   compareEntries,
+  correctionsByTarget,
   countNewRows,
   currentRun,
+  currentText,
   findRow,
   isDrillText,
   lastHeardFrom,
@@ -22,7 +24,9 @@ import {
   sortedByLastHeard,
   sortedNewestFirst,
   sortedOldestFirst,
+  splitPrefix,
   statusStrip,
+  textVersions,
   type MessageView,
   type TimelineRow,
 } from "./journalView.ts";
@@ -261,13 +265,19 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     ]);
   });
 
-  it("a correction never changes the original row's text; it shows under it", () => {
+  it("a correction never changes the original entry; the row reads the correction's text as its current one (P3-02)", () => {
     const noteRow = rowFor(rows, W.note);
     expect(noteRow.kind).toBe("entry");
     expect(noteRow.entry.text).toBe("Ringede til forsyningen, kø, ingen svar");
     if (noteRow.kind === "entry") {
       expect(noteRow.corrections.map((c) => c.id)).toEqual([W.noteCorrection]);
-      expect(noteRow.corrections[0]?.text).toBe("Det var kommunens vagt, ikke forsyningen");
+      expect(currentText(noteRow.entry, noteRow.corrections)).toBe(
+        "Det var kommunens vagt, ikke forsyningen",
+      );
+      expect(textVersions(noteRow.entry, noteRow.corrections).map((v) => v.id)).toEqual([
+        W.note,
+        W.noteCorrection,
+      ]);
     }
     expect(entry(W.note).text).toBe("Ringede til forsyningen, kø, ingen svar");
   });
@@ -325,6 +335,86 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     expect(findRow(buildTimeline([...walkthrough.entries, correction]), correction.id)?.id).toBe(
       W.courier2,
     );
+  });
+});
+
+describe("the current text of a corrected entry (P3-02)", () => {
+  const noteEntry = entry(W.note);
+  const first = entry(W.noteCorrection);
+  // A second correction minted later (a higher ULID) but stamped earlier: a clock set back.
+  const second: JournalEntry = {
+    ...first,
+    id: "01JB8ZK3QX9V2M4N6P8R0T2W99",
+    deviceSeq: 14,
+    timestamp: "2026-10-28T19:30:00Z",
+    text: "Det var kommunens vagt",
+  };
+
+  it("is the entry's own text, with no versions, when it was never corrected", () => {
+    expect(currentText(noteEntry, [])).toBe("Ringede til forsyningen, kø, ingen svar");
+    expect(textVersions(noteEntry, [])).toEqual([]);
+    expect(currentText({ ...noteEntry, text: undefined }, [])).toBe("");
+  });
+
+  it("picks the latest correction by ULID, not by timestamp or list order", () => {
+    expect(currentText(noteEntry, [first, second])).toBe("Det var kommunens vagt");
+    expect(currentText(noteEntry, [second, first])).toBe("Det var kommunens vagt");
+    expect(textVersions(noteEntry, [second, first]).map((v) => v.id)).toEqual([
+      W.note,
+      W.noteCorrection,
+      second.id,
+    ]);
+  });
+
+  it("correctionsByTarget files every correction under the entry it refers to", () => {
+    const map = correctionsByTarget([...walkthrough.entries, second]);
+    expect([...map.keys()]).toEqual([W.note]);
+    expect(map.get(W.note)?.map((c) => c.id)).toEqual([W.noteCorrection, second.id]);
+    expect(correctionsByTarget([noteEntry])).toEqual(new Map());
+  });
+
+  it("splits a message's text into its fixed prefix and the body, on any text", () => {
+    const order = entry(W.order1);
+    expect(splitPrefix(order, "#1 Meld status")).toEqual({ prefix: "#1 ", body: "Meld status" });
+    expect(splitPrefix(order, "ØVELSE #1 Meld status")).toEqual({
+      prefix: "ØVELSE #1 ",
+      body: "Meld status",
+    });
+    expect(splitPrefix(order, "#2 Meld status")).toEqual({ prefix: "", body: "#2 Meld status" });
+    expect(splitPrefix(noteEntry, "#1 x")).toEqual({ prefix: "", body: "#1 x" });
+  });
+
+  it("a timeline built live after a correction reads the new text and keeps the row where it was", () => {
+    const corrected = buildTimeline([...walkthrough.entries, second]);
+    expect(corrected.map((row) => row.id)).toEqual(
+      buildTimeline(walkthrough.entries).map((r) => r.id),
+    );
+    const noteRow = rowFor(corrected, W.note);
+    expect(noteRow.kind === "entry" && currentText(noteRow.entry, noteRow.corrections)).toBe(
+      "Det var kommunens vagt",
+    );
+    expect(findRow(corrected, second.id)?.id).toBe(W.note);
+  });
+
+  it("an open item carries the message's corrected text", () => {
+    const courier = entry(W.courier2);
+    const correction: JournalEntry = {
+      ...first,
+      id: "01JB8ZK3QX9V2M4N6P8R0T2W97",
+      deviceSeq: 15,
+      refersTo: courier.id,
+      text: "#2 Pumpe til Nørregade 4, afleveres til Hans",
+    };
+    expect(
+      openItems(walkthrough.entries)
+        .get(HANS)
+        ?.map((item) => item.text),
+    ).toEqual([courier.text]);
+    expect(
+      openItems([...walkthrough.entries, correction])
+        .get(HANS)
+        ?.map((item) => item.text),
+    ).toEqual(["#2 Pumpe til Nørregade 4, afleveres til Hans"]);
   });
 });
 

@@ -1,4 +1,4 @@
-// The icon set (docs/design.md §Components, P2-01): sixteen stroke icons, drawn on a 20 × 20
+// The icon set (docs/design.md §Components, P2-01): seventeen stroke icons, drawn on a 20 × 20
 // grid so a 1.75 unit stroke is 1.75 px at the 20 px size, in currentColor. Each icon is a
 // list of SVG path data; components/Icon.svelte draws them (aria-hidden unless given a
 // label). No icon font, no emoji; an icon is an action or a state, never decoration.
@@ -19,7 +19,8 @@ export type IconName =
   | "close"
   | "check"
   | "warning"
-  | "chevron";
+  | "chevron"
+  | "edit";
 
 export const ICON_SIZE = 20;
 export const ICON_STROKE = 1.75;
@@ -66,6 +67,8 @@ export const ICONS: Record<IconName, readonly string[]> = {
   check: ["M3.5 10.5l4 4 9-9"],
   warning: ["M10 3L2.5 16h15z", "M10 8v3.5", "M10 14v0.01"],
   chevron: ["M6 8l4 4 4-4"],
+  // A pencil: the text was corrected (the "corrected" chip on a journal row, P3-02).
+  edit: ["M3.5 16.5l1-4L13 4l3 3-8.5 8.5-4 1z", "M11.5 5.5l3 3"],
 };
 
 export const ICON_NAMES = Object.keys(ICONS) as IconName[];

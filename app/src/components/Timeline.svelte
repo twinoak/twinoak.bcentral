@@ -6,16 +6,20 @@
   // but a history the operator opens on the row (a 14 px list under it). Incoming and
   // outgoing are told apart by the glyph before the counterparty (→ out, ← in) and by the
   // counterparty itself. The messages of one send-to-all are one row with counter chips
-  // that opens into one row per recipient. A correction is a 14 px line under the entry it
-  // corrects. The view stays at the top unless the operator scrolled down; then new rows
-  // arrive above without moving the viewport and a "N new" chip, stuck to the top of the
-  // box, jumps back up.
+  // that opens into one row per recipient. A corrected entry reads its latest correction's
+  // text as its text, with a "corrected" chip after the time; its history lists the original
+  // and every correction (P3-02). The view stays at the top unless the operator scrolled
+  // down; then new rows arrive above without moving the viewport and a "N new" chip, stuck
+  // to the top of the box, jumps back up.
   //
   // Row actions — Reply on an incoming message (P1-02), Retry / Send for a mesh message
   // nobody is sending, Mark (a manual status with a required reason), History, Correct —
   // are quiet buttons on a line under the row, shown while the pointer or the focus is on
   // the row and always on an expanded row. A reply carries "↳ answers ‹time›" after its
-  // text and the incoming row "answered ‹time›", each a link to the other row.
+  // text and the incoming row "answered ‹time›", each a link to the other row. Correct
+  // (P3-02) hides the row's text and opens one box under the row holding the current text
+  // (the "#n " of a message fixed in front of it); Save appends a correction referring to
+  // the original entry (lib/correctionForm.ts), and the row shows the corrected text.
   //
   // Keyboard (P1-09): one row is the current row (accent-weak); J / K move it (and the
   // focus) down and up, Enter opens or closes it (a batch's recipients, a message's history),
@@ -24,6 +28,12 @@
   // components.css's `.rows`; this file lays nothing out of its own.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
+  import {
+    canSaveCorrection,
+    correctedText,
+    correctionForm as buildCorrectionForm,
+    type CorrectionForm,
+  } from "../lib/correctionForm.ts";
   import { chipClass, counterChips, DIRECTION_GLYPH, stripChip } from "../lib/journalRows.ts";
   import {
     batchText,
@@ -37,7 +47,9 @@
   import { onShortcut } from "../lib/shortcutDispatch.ts";
   import {
     countNewRows,
+    currentText,
     findRow,
+    textVersions,
     type MessageView,
     type TimelineRow,
   } from "../store/journalView.ts";
@@ -57,6 +69,8 @@
     canRetry: (message: JournalEntry) => boolean;
     onretry: (message: JournalEntry) => void;
     onmanual: (message: JournalEntry, status: Status, reason: string) => Promise<void>;
+    // A correction of `entry` (always the original entry of a row) with the whole corrected
+    // text.
     oncorrect: (entry: JournalEntry, text: string) => Promise<void>;
     // Reply to an incoming message: the parent hands it to the compose form.
     onreply: (entry: JournalEntry) => void;
@@ -69,15 +83,19 @@
   let stickToTop = $state(true);
   // The row ids on the timeline when the operator scrolled down; rows not in it are new.
   let seen: ReadonlySet<string> | null = $state.raw(null);
-  // Which batch rows show their recipients and which messages show their history.
+  // Which batch rows show their recipients and which rows show their history.
   let expanded: Record<string, boolean> = $state({});
   // The current row for the keyboard (an entry id, or a batch id), or null before J / K, a
   // focus or a jump from a side card set one.
   let cursor: string | null = $state(null);
 
   // Which row has its correction form or its status form open, and the texts typed in them.
+  // The correction form: what the box opened with (the prefix and the current text) and the
+  // body as typed.
   let correcting: string | null = $state(null);
-  let correctionText = $state("");
+  let correction: CorrectionForm | null = $state.raw(null);
+  let correctionBody = $state("");
+  let correctionField: HTMLTextAreaElement | undefined = $state(undefined);
   let changingStatus: string | null = $state(null);
   let reason = $state("");
   let error: string | null = $state(null);
@@ -86,19 +104,26 @@
   const AT_TOP_SLACK_PX = 8;
 
   const newCount = $derived(seen === null ? 0 : countNewRows(rows, seen));
+  // Save is disabled while the text is unchanged or empty.
+  const canSave = $derived(correction !== null && canSaveCorrection(correction, correctionBody));
 
-  // The rows Enter can open or close: a batch (its recipients) and a message with a history.
+  // The rows Enter can open or close: a batch (its recipients), a message with a history and
+  // any row with corrections (its versions).
   const toggleable = $derived.by(() => {
     const ids = new Set<string>();
     for (const row of rows) {
       if (row.kind === "batch") {
         ids.add(row.id);
         for (const view of row.messages) {
-          if (view.history.length > 0) {
+          if (view.history.length > 0 || view.corrections.length > 0) {
             ids.add(view.entry.id);
           }
         }
-      } else if (row.kind === "message" && row.message.history.length > 0) {
+      } else if (row.kind === "message") {
+        if (row.message.history.length > 0 || row.message.corrections.length > 0) {
+          ids.add(row.id);
+        }
+      } else if (row.corrections.length > 0) {
         ids.add(row.id);
       }
     }
@@ -126,6 +151,10 @@
     }
   }
 
+  function focusRow(id: string) {
+    box?.querySelector<HTMLElement>(`li[data-entry-id="${id}"]`)?.focus({ preventScroll: true });
+  }
+
   // A jump from a side card or a reply mark: the row that shows the entry becomes the
   // current row (opened when it is a batch) and the entry is scrolled into the middle.
   export async function scrollToEntry(id: string): Promise<void> {
@@ -140,9 +169,7 @@
     await tick();
     const target = box?.querySelector<HTMLElement>(`[data-entry-id="${id}"]`);
     target?.scrollIntoView({ block: "center" });
-    box
-      ?.querySelector<HTMLElement>(`li[data-entry-id="${row.id}"]`)
-      ?.focus({ preventScroll: true });
+    focusRow(row.id);
   }
 
   function toggle(id: string) {
@@ -258,37 +285,70 @@
     return labels.get(entry.counterpartyId ?? "") ?? "";
   }
 
-  function startCorrection(entry: JournalEntry) {
+  // The entries whose text can be corrected: a note, an incoming and an outgoing message.
+  function correctable(entry: JournalEntry): boolean {
+    return entry.type === "note" || entry.type === "message_in" || entry.type === "message_out";
+  }
+
+  // The latest correction of an entry, for the chip's tooltip; undefined when none.
+  function latestCorrection(
+    entry: JournalEntry,
+    corrections: readonly JournalEntry[],
+  ): JournalEntry | undefined {
+    const versions = textVersions(entry, corrections);
+    return versions.length > 1 ? versions[versions.length - 1] : undefined;
+  }
+
+  // Correct: the row's text becomes the box, prefilled with the current text, the cursor at
+  // its end. The row's own entry is the target, also when it was corrected before.
+  async function startCorrection(entry: JournalEntry, corrections: readonly JournalEntry[]) {
     error = null;
     changingStatus = null;
+    correction = buildCorrectionForm(entry, corrections);
+    correctionBody = correction.body;
     correcting = entry.id;
-    correctionText = "";
+    await tick();
+    const field = correctionField;
+    if (field !== undefined) {
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    }
   }
 
   function startStatus(entry: JournalEntry) {
     error = null;
     correcting = null;
+    correction = null;
     changingStatus = entry.id;
     reason = "";
   }
 
   function cancelForms() {
+    const rowId = correcting ?? changingStatus;
     correcting = null;
+    correction = null;
     changingStatus = null;
     error = null;
+    if (rowId !== null) {
+      void tick().then(() => focusRow(rowId));
+    }
   }
 
-  async function saveCorrection(entry: JournalEntry, event: SubmitEvent) {
+  async function saveCorrection(event: SubmitEvent) {
     event.preventDefault();
-    if (correctionText.trim() === "" || busy) {
+    const form = correction;
+    if (form === null || !canSave || busy) {
       return;
     }
     busy = true;
     error = null;
     try {
-      await oncorrect(entry, correctionText);
+      await oncorrect(form.target, correctedText(form, correctionBody));
       correcting = null;
-      correctionText = "";
+      correction = null;
+      correctionBody = "";
+      await tick();
+      focusRow(form.target.id);
     } catch (failure) {
       error = t("journal.correction.failed", { error: describe(failure) });
     } finally {
@@ -323,14 +383,23 @@
 </script>
 
 <!-- The time, with the clock-trust mark: a "?" for unknown, a "✓" for manual, nothing for
-     ntp; the sentence from the settings as its tooltip. -->
-{#snippet timeCell(entry: JournalEntry)}
+     ntp; the sentence from the settings as its tooltip. After it, on a corrected entry, the
+     "corrected" chip with the latest correction's time and operator as its tooltip. -->
+{#snippet timeCell(entry: JournalEntry, corrections: readonly JournalEntry[])}
+  {@const latest = latestCorrection(entry, corrections)}
   <span class="row-time" title={recordedBy(entry)}>
     {formatTime(entry.timestamp)}{#if entry.clockTrust !== "ntp"}<abbr
         class="row-trust"
         data-trust={entry.clockTrust}
         title={t(`settings.clockTrust.${entry.clockTrust}`)}
         >{t(`journal.trust.${entry.clockTrust}`)}</abbr
+      >{/if}{#if latest !== undefined}<span
+        class="chip"
+        data-corrected={latest.id}
+        title={t("journal.correction.correctedBy", {
+          time: formatShortTime(latest.timestamp),
+          operator: latest.operator,
+        })}><Icon name="edit" />{t("journal.correction.corrected")}</span
       >{/if}
   </span>
 {/snippet}
@@ -349,24 +418,39 @@
   </span>
 {/snippet}
 
-{#snippet correctButton(entry: JournalEntry)}
-  <button type="button" class="btn btn-quiet" onclick={() => startCorrection(entry)}>
-    {t("journal.action.correct")}
-  </button>
+{#snippet correctButton(entry: JournalEntry, corrections: readonly JournalEntry[])}
+  {#if correctable(entry)}
+    <button
+      type="button"
+      class="btn btn-quiet"
+      aria-expanded={correcting === entry.id}
+      onclick={() => startCorrection(entry, corrections)}
+    >
+      {t("journal.action.correct")}
+    </button>
+  {/if}
 {/snippet}
 
-{#snippet correctionForm(entry: JournalEntry)}
-  {#if correcting === entry.id}
-    <form class="row-form" onsubmit={(event) => saveCorrection(entry, event)}>
-      <div class="field">
-        <input
-          type="text"
-          placeholder={t("journal.correction.text")}
-          aria-label={t("journal.correction.text")}
-          bind:value={correctionText}
-        />
+<!-- The correction form, on the line under the row while the row's own text is hidden (one
+     copy on screen): the label, the fixed "#n " of a message, the one box with the current
+     text taking the width, Save (disabled while the text is unchanged or empty), Cancel;
+     Esc cancels. -->
+{#snippet correctionForm()}
+  {#if correction !== null}
+    <form class="row-form" onsubmit={saveCorrection}>
+      <label class="row-meta" for="correction-text">{t("journal.correction.text")}</label>
+      {#if correction.prefix !== ""}
+        <span data-prefix>{correction.prefix.trimEnd()}</span>
+      {/if}
+      <div class="field field-grow">
+        <textarea
+          id="correction-text"
+          rows="1"
+          bind:this={correctionField}
+          bind:value={correctionBody}
+        ></textarea>
       </div>
-      <button type="submit" class="btn btn-primary" disabled={busy || correctionText.trim() === ""}>
+      <button type="submit" class="btn btn-primary" disabled={busy || !canSave}>
         {t("journal.action.save")}
       </button>
       <button type="button" class="btn" onclick={cancelForms}>{t("journal.action.cancel")}</button>
@@ -377,24 +461,33 @@
   {/if}
 {/snippet}
 
-<!-- A correction under the entry it corrects: a 14 px neutral line. -->
-{#snippet correctionLines(corrections: readonly JournalEntry[])}
-  {#each corrections as correction (correction.id)}
-    <p class="msg row-note" data-entry-id={correction.id} title={recordedBy(correction)}>
-      <span class="row-meta"
-        >{t("journal.type.correction")} {formatShortTime(correction.timestamp)}</span
+<!-- The versions of a corrected entry's text in a row's history: the original, then every
+     correction, each with its time and operator. Nothing when the entry was never corrected. -->
+{#snippet versionLines(entry: JournalEntry, corrections: readonly JournalEntry[])}
+  {#each textVersions(entry, corrections) as version, index (version.id)}
+    <li
+      data-entry-id={index === 0 ? undefined : version.id}
+      data-version={index === 0 ? "original" : "correction"}
+      title={recordedBy(version)}
+    >
+      <span class="row-time">{formatTime(version.timestamp)}</span>
+      <span
+        >{index === 0 ? t("journal.correction.original") : t("journal.type.correction")}: {version.text ??
+          ""}</span
       >
-      {correction.text ?? ""}
-    </p>
+      <span class="row-meta">{version.operator}</span>
+    </li>
   {/each}
 {/snippet}
 
-<!-- An outgoing message: the row with its strip, its actions, its forms, its history when
-     open and its corrections. `nested` marks a recipient row inside a batch. -->
+<!-- An outgoing message: the row with its strip, its actions, its forms and its history
+     (the transitions, then the text's versions) when open. `nested` marks a recipient row
+     inside a batch. -->
 {#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
   {@const inflightText = inflight(entry.id)}
   {@const open = expanded[entry.id] === true}
+  {@const lines = view.history.length + textVersions(entry, view.corrections).length}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <li
     data-type="message_out"
@@ -405,22 +498,24 @@
     tabindex={rowTabIndex(entry.id)}
     onfocus={() => (cursor = entry.id)}
   >
-    {@render timeCell(entry)}
+    {@render timeCell(entry, view.corrections)}
     {@render whoCell(entry, "out", label(entry))}
-    <span class="row-body">
-      {entry.text ?? ""}
-      {#if view.answers !== null}
-        {@const answers = view.answers}
-        <button
-          type="button"
-          class="btn-link"
-          title={answers.text ?? ""}
-          onclick={() => scrollToEntry(answers.id)}
-        >
-          {t("journal.reply.answers", { time: formatShortTime(answers.timestamp) })}
-        </button>
+    <div class="row-body">
+      {#if correcting !== entry.id}
+        {currentText(entry, view.corrections)}
+        {#if view.answers !== null}
+          {@const answers = view.answers}
+          <button
+            type="button"
+            class="btn-link"
+            title={answers.text ?? ""}
+            onclick={() => scrollToEntry(answers.id)}
+          >
+            {t("journal.reply.answers", { time: formatShortTime(answers.timestamp) })}
+          </button>
+        {/if}
       {/if}
-    </span>
+    </div>
     <span class="row-strip strip">
       {#each view.strip as item, index (index)}
         {@const look = stripChip(item.kind)}
@@ -447,7 +542,7 @@
           <Icon name="check" />{t("journal.action.status")}
         </button>
       {/if}
-      {#if view.history.length > 0}
+      {#if lines > 0}
         <button
           type="button"
           class="btn btn-quiet"
@@ -456,10 +551,10 @@
         >
           <Icon name="history" />{open
             ? t("journal.action.hideHistory")
-            : t("journal.action.history", { count: view.history.length })}
+            : t("journal.action.history", { count: lines })}
         </button>
       {/if}
-      {@render correctButton(entry)}
+      {@render correctButton(entry, view.corrections)}
     </span>
 
     {#if changingStatus === entry.id && entry.transport !== undefined}
@@ -490,7 +585,9 @@
         {/if}
       </div>
     {/if}
-    {@render correctionForm(entry)}
+    {#if correcting === entry.id}
+      {@render correctionForm()}
+    {/if}
 
     {#if open}
       <div class="row-detail">
@@ -511,18 +608,18 @@
               </span>
               <span class="row-meta">{item.entry.operator}</span>
             </li>
-            {#each item.corrections as correction (correction.id)}
-              <li data-entry-id={correction.id} title={recordedBy(correction)}>
-                <span class="row-time">{formatTime(correction.timestamp)}</span>
-                <span>{t("journal.type.correction")}: {correction.text ?? ""}</span>
-                <span class="row-meta">{correction.operator}</span>
+            {#each item.corrections as correctionOfItem (correctionOfItem.id)}
+              <li data-entry-id={correctionOfItem.id} title={recordedBy(correctionOfItem)}>
+                <span class="row-time">{formatTime(correctionOfItem.timestamp)}</span>
+                <span>{t("journal.type.correction")}: {correctionOfItem.text ?? ""}</span>
+                <span class="row-meta">{correctionOfItem.operator}</span>
               </li>
             {/each}
           {/each}
+          {@render versionLines(entry, view.corrections)}
         </ul>
       </div>
     {/if}
-    {@render correctionLines(view.corrections)}
   </li>
 {/snippet}
 
@@ -552,7 +649,7 @@
             tabindex={rowTabIndex(row.id)}
             onfocus={() => (cursor = row.id)}
           >
-            {@render timeCell(row.entry)}
+            {@render timeCell(row.entry, [])}
             {@render whoCell(
               row.entry,
               "out",
@@ -588,28 +685,33 @@
         {:else}
           {@const entry = row.entry}
           {@const incoming = entry.type === "message_in"}
+          {@const open = expanded[entry.id] === true}
+          {@const lines = textVersions(entry, row.corrections).length}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <li
             data-type={entry.type}
             data-entry-id={entry.id}
+            data-expanded={open ? "true" : undefined}
             aria-current={cursor === entry.id ? "true" : undefined}
             tabindex={rowTabIndex(entry.id)}
             onfocus={() => (cursor = entry.id)}
           >
-            {@render timeCell(entry)}
+            {@render timeCell(entry, row.corrections)}
             {#if incoming}
               {@render whoCell(entry, "in", label(entry))}
             {:else}
               <span class="row-who">{entry.operator}</span>
             {/if}
-            <span class="row-body">
-              {#if entry.type === "status_change"}
-                {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
-                  · {entry.text}{/if}
-              {:else}
-                {entry.text ?? ""}
+            <div class="row-body">
+              {#if correcting !== entry.id}
+                {#if entry.type === "status_change"}
+                  {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
+                    · {currentText(entry, row.corrections)}{/if}
+                {:else}
+                  {currentText(entry, row.corrections)}
+                {/if}
               {/if}
-            </span>
+            </div>
             <span class="row-strip strip">
               {#if entry.type === "status_change"}
                 <span class="chip" data-kind={entry.newStatus}
@@ -637,10 +739,30 @@
                   <Icon name="reply" />{t("journal.action.reply")}
                 </button>
               {/if}
-              {@render correctButton(entry)}
+              {#if lines > 0}
+                <button
+                  type="button"
+                  class="btn btn-quiet"
+                  aria-expanded={open}
+                  onclick={() => toggle(entry.id)}
+                >
+                  <Icon name="history" />{open
+                    ? t("journal.action.hideHistory")
+                    : t("journal.action.history", { count: lines })}
+                </button>
+              {/if}
+              {@render correctButton(entry, row.corrections)}
             </span>
-            {@render correctionForm(entry)}
-            {@render correctionLines(row.corrections)}
+            {#if correcting === entry.id}
+              {@render correctionForm()}
+            {/if}
+            {#if open}
+              <div class="row-detail">
+                <ul>
+                  {@render versionLines(entry, row.corrections)}
+                </ul>
+              </div>
+            {/if}
           </li>
         {/if}
       {/each}

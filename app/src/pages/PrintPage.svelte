@@ -1,8 +1,10 @@
 <script lang="ts">
   // The print view (P1-04; on the design language in P2-05): the current incident's journal
   // as a document for the browser's print dialog. One line per message with its status
-  // strip, a batch as one block with its counters and one line per recipient, corrections
-  // under what they correct, oldest first by default (a printed journal reads top-down).
+  // strip, a batch as one block with its counters and one line per recipient, a corrected
+  // entry with its corrected text marked "(corrected ‹time› · ‹operator›)" and the earlier
+  // versions as footnote lines beneath (P3-02), oldest first by default (a printed journal
+  // reads top-down).
   // "Since last print" prints only the rows with something newer than the previous print's
   // time (store/printView.ts) and is the routine: on by default when there was a previous
   // print. The controls are a no-print toolbar on the components; the document is `.doc`
@@ -36,7 +38,7 @@
     listRegister,
     recordPrint,
   } from "../store/index.ts";
-  import type { MessageView } from "../store/journalView.ts";
+  import { currentText, textVersions, type MessageView } from "../store/journalView.ts";
   import { operatorsOf, printRows } from "../store/printView.ts";
   import type { Incident, JournalEntry } from "../store/types.ts";
   import Icon from "../components/Icon.svelte";
@@ -139,21 +141,29 @@
   </td>
 {/snippet}
 
-{#snippet correctionRows(corrections: readonly JournalEntry[])}
-  {#each corrections as correction (correction.id)}
-    <tr data-nested="true" data-type="correction">
-      {@render timeCell(correction)}
-      <td>{correction.operator}</td>
-      <td>{t("journal.type.correction")}</td>
-      <td></td>
-      <td class="doc-text doc-indent">{correction.text ?? ""}</td>
-      <td></td>
-    </tr>
-  {/each}
+<!-- An entry's text as it reads now: the latest correction's when it was corrected, marked
+     with the correction's time and operator, and the earlier versions (the original, then
+     any superseded correction) as footnote lines beneath, each with its time and operator. -->
+{#snippet docText(entry: JournalEntry, corrections: readonly JournalEntry[])}
+  {@const versions = textVersions(entry, corrections)}
+  {@const latest = versions[versions.length - 1]}
+  {currentText(entry, corrections)}
+  {#if latest !== undefined}
+    <span class="doc-meta" data-corrected={latest.id}>
+      {t("print.corrected", { time: formatRowTime(latest.timestamp), operator: latest.operator })}
+    </span>
+    {#each versions.slice(0, -1) as version, index (version.id)}
+      <div class="doc-meta" data-version={index === 0 ? "original" : "correction"}>
+        {index === 0 ? t("journal.correction.original") : t("journal.type.correction")}
+        {formatRowTime(version.timestamp)} · {version.operator}: {version.text ?? ""}
+      </div>
+    {/each}
+  {/if}
 {/snippet}
 
 <!-- An outgoing message: one line with its strip; a recipient inside a batch is indented and
-     shows the label and the strip only (the text is the batch's). -->
+     shows the label and the strip only (the text is the batch's), unless its own record was
+     corrected. -->
 {#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
   <tr data-nested={nested ? "true" : undefined} data-type="message_out">
@@ -167,16 +177,15 @@
     </td>
     <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
     <td class="doc-text" class:doc-indent={nested}>
-      {#if nested}
+      {#if nested && view.corrections.length === 0}
         <span class="doc-meta">{stripLine(view)}</span>
       {:else}
-        {entry.text ?? ""}
+        {@render docText(entry, view.corrections)}
         <div class="doc-meta">{stripLine(view)}</div>
       {/if}
     </td>
     <td class="doc-status">{t(`journal.status.${view.status}`)}</td>
   </tr>
-  {@render correctionRows(view.corrections)}
 {/snippet}
 
 <div class="toolbar controls no-print">
@@ -289,14 +298,13 @@
                 <td class="doc-text">
                   {#if entry.type === "status_change"}
                     {t(`journal.status.${entry.newStatus ?? "pending"}`)}{#if entry.text}
-                      · {entry.text}{/if}
+                      · {@render docText(entry, row.corrections)}{/if}
                   {:else}
-                    {entry.text ?? ""}
+                    {@render docText(entry, row.corrections)}
                   {/if}
                 </td>
                 <td></td>
               </tr>
-              {@render correctionRows(row.corrections)}
             {/if}
           {/each}
         </tbody>

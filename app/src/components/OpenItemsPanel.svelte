@@ -3,7 +3,8 @@
   // given-up ones flagged. Newest first (P1-01): the groups in the order of their newest
   // item, as openItems() hands them over, and the items within a group newest first.
   // A card with the count in its title (P2-03); each group a row list in 14 / 16 px, each row
-  // a button that scrolls the timeline to the message.
+  // a button that scrolls the timeline to the message. The text is the message's current
+  // one (its latest correction's when corrected, P3-02), as openItems() hands it over.
   import { t, language } from "../i18n/index.svelte.ts";
   import { chipClass, statusChip } from "../lib/journalRows.ts";
   import type { OpenItem } from "../store/journalView.ts";
@@ -45,7 +46,7 @@
           <li>
             <button type="button" class="row-button" onclick={() => onselect(item.message.id)}>
               <span class="row-time">{formatTime(item.message.timestamp)}</span>
-              <span class="row-body text">{item.message.text ?? ""}</span>
+              <span class="row-body text">{item.text}</span>
               <span class="row-strip chip {chipClass(look.tint)}">
                 <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{t(
                   `journal.status.${item.status}`,

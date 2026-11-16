@@ -196,7 +196,11 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   controls, not a one-sentence popover.
 - The journal: the row list is a subgrid with the strip column capped at a third, so the
   columns line up and the body keeps its width; row actions are a line under the row on
-  hover, focus or expansion, not an overlay; corrections are 14 px lines, not rows; the
+  hover, focus or expansion, not an overlay; a corrected entry reads its latest correction's
+  text with a neutral "corrected" chip (the pencil icon) after the time, the original and
+  every correction in its history, and Correct is one prefilled box on the line under the
+  row while the row's text is hidden (P3-02) — a correction is never a row or a line of its
+  own; the
   compose card is padded `--s-4` vertically so ten one-line rows fit under it at 720 px;
   `pending` is a warn state.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and

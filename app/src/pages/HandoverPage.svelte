@@ -16,7 +16,8 @@
   // outbox or the queue writes, and after every write from here. The handover done, a
   // courier copy and a status request are toasts; errors stay inline. Print handover prints
   // this page: the lists as they are under a header with the handover time and both names
-  // (the bar and the controls are no-print).
+  // (the bar and the controls are no-print). Every text shown is the entry's current one —
+  // its latest correction's when it was corrected (store/journalView.ts currentText, P3-02).
   import { tick } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import { clockTrust, now, setClockConfirmed } from "../lib/clock.svelte.ts";
@@ -42,7 +43,7 @@
     recordManualStatus,
     sendStatusRequest,
   } from "../store/index.ts";
-  import type { MessageView } from "../store/journalView.ts";
+  import { correctionsByTarget, currentText, type MessageView } from "../store/journalView.ts";
   import { sortedByLabel } from "../store/register.ts";
   import type { Incident, JournalEntry, RegisterEntry } from "../store/types.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
@@ -88,6 +89,8 @@
   const labels = $derived(new Map(register.map((entry) => [entry.id, entry.label])));
   const sortedRegister = $derived(sortedByLabel(register, language()));
   const lists = $derived(buildHandover(entries));
+  // Every correction by the entry it corrects: a row's text is its current one (P3-02).
+  const corrections = $derived(correctionsByTarget(entries));
   const blindAfterMs = $derived(settings.blindAfterMinutes * 60_000);
   const quiet = $derived(quietRadios(register, heard, { nowMs, blindAfterMs }));
   const radioState = $derived(radio.state());
@@ -352,6 +355,11 @@
   function label(entry: JournalEntry): string {
     return labels.get(entry.counterpartyId ?? "") ?? "";
   }
+
+  // What an entry says now: the latest correction's text when it was corrected.
+  function text(entry: JournalEntry): string {
+    return currentText(entry, corrections.get(entry.id) ?? []);
+  }
 </script>
 
 <!-- The time of an entry, and the counterparty with the direction glyph and the transport
@@ -582,7 +590,7 @@
                 <li data-entry-id={view.entry.id}>
                   {@render timeCell(view.entry)}
                   {@render whoCell(view.entry, "out")}
-                  <span class="row-body">{view.entry.text ?? ""}</span>
+                  <span class="row-body">{currentText(view.entry, view.corrections)}</span>
                   {@render stripCell(view)}
                 </li>
               {/each}
@@ -610,7 +618,7 @@
                 <li data-entry-id={view.entry.id} data-status="given_up">
                   {@render timeCell(view.entry)}
                   {@render whoCell(view.entry, "out")}
-                  <span class="row-body">{view.entry.text ?? ""}</span>
+                  <span class="row-body">{currentText(view.entry, view.corrections)}</span>
                   {@render stripCell(view)}
                   <span class="row-actions no-print">
                     {#if canRetry(view)}
@@ -696,7 +704,7 @@
                 <li data-entry-id={entry.id} data-type="message_in">
                   {@render timeCell(entry)}
                   {@render whoCell(entry, "in")}
-                  <span class="row-body">{entry.text ?? ""}</span>
+                  <span class="row-body">{text(entry)}</span>
                   <span class="row-strip strip">
                     <span class="row-time age" title={t("handover.column.age")}
                       >{age(entry.timestamp)}</span

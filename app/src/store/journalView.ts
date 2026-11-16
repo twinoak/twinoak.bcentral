@@ -9,7 +9,8 @@
 // 14:35") derived from the status_change entries that refer to it; those entries, and the
 // old resend notes, are never rows of their own but the row's history, shown when the row is
 // expanded. The messages of one send-to-all (one batchId) fold into one row with counters.
-// A correction stays visible under the entry it corrects; a status_change that refers to the
+// A corrected entry shows its latest correction's text as its text (currentText, P3-02), with
+// the original and every correction one click away; a status_change that refers to the
 // incident (closed / reopened) is a row, because it is an event of the incident itself.
 // A message_out whose refersTo is a message_in answers it (Reply from the row, P1-02): the
 // message row says which incoming message it answers, the incoming row which messages answer
@@ -39,6 +40,61 @@ export function sortedNewestFirst(entries: readonly JournalEntry[]): JournalEntr
 
 export function entriesById(entries: readonly JournalEntry[]): Map<string, JournalEntry> {
   return new Map(entries.map((entry) => [entry.id, entry]));
+}
+
+// --- the current text of an entry (P3-02) ---------------------------------------------------
+
+// Every correction by the id of the entry it corrects (its refersTo), in the order given.
+export function correctionsByTarget(entries: readonly JournalEntry[]): Map<string, JournalEntry[]> {
+  const map = new Map<string, JournalEntry[]>();
+  for (const entry of entries) {
+    if (entry.type !== "correction" || entry.refersTo === undefined) {
+      continue;
+    }
+    const list = map.get(entry.refersTo) ?? [];
+    list.push(entry);
+    map.set(entry.refersTo, list);
+  }
+  return map;
+}
+
+// The versions of an entry's text, oldest first: the entry itself, then its corrections in
+// ULID order (a ULID is minted at creation and time-ordered, so the highest is the latest
+// correction, whatever the clock said). Empty when the entry was never corrected: a row
+// without corrections has no history of versions to show.
+export function textVersions(
+  entry: JournalEntry,
+  corrections: readonly JournalEntry[],
+): JournalEntry[] {
+  if (corrections.length === 0) {
+    return [];
+  }
+  const sorted = [...corrections].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [entry, ...sorted];
+}
+
+// What an entry says now: the latest correction's text when it has corrections, else its own.
+// The one place every screen (timeline, open items, handover, print) reads a text from, so
+// a corrected entry reads the same everywhere. `corrections` is the list of corrections
+// referring to the entry (buildTimeline's, or correctionsByTarget's).
+export function currentText(entry: JournalEntry, corrections: readonly JournalEntry[]): string {
+  const versions = textVersions(entry, corrections);
+  const latest = versions[versions.length - 1] ?? entry;
+  return latest.text ?? "";
+}
+
+// A text of an outgoing message split into the fixed "#n " (or "ØVELSE #n ") prefix the
+// text protocol put there and the operator's body; the prefix is empty when the text does
+// not start with the message's own prefix (an entry that is not a message_out, or imported
+// data). The prefix is not the operator's to edit: a correction keeps it (P3-02).
+export function splitPrefix(message: JournalEntry, text: string): { prefix: string; body: string } {
+  if (message.seqNo === undefined) {
+    return { prefix: "", body: text };
+  }
+  const prefix = messagePrefix(message.seqNo, text.startsWith(DRILL_PREFIX));
+  return text.startsWith(prefix)
+    ? { prefix, body: text.slice(prefix.length) }
+    : { prefix: "", body: text };
 }
 
 // --- the status strip ----------------------------------------------------------------------
@@ -187,12 +243,7 @@ export function isDrillText(message: JournalEntry): boolean {
 // The "#n " prefix off a message's text (text-protocol.md: the text is exactly "#<n> <text>",
 // or "ØVELSE #<n> <text>" in a drill).
 export function bodyOf(message: JournalEntry): string {
-  const text = message.text ?? "";
-  if (message.seqNo === undefined) {
-    return text;
-  }
-  const prefix = messagePrefix(message.seqNo, text.startsWith(DRILL_PREFIX));
-  return text.startsWith(prefix) ? text.slice(prefix.length) : text;
+  return splitPrefix(message, message.text ?? "").body;
 }
 
 // Least advanced first; given_up before everything, since it needs a hand.
@@ -396,6 +447,8 @@ export const OPEN_STATUSES: readonly Status[] = ["pending", "sent", "delivered"]
 
 export interface OpenItem {
   message: JournalEntry;
+  // The message's text as it reads now (currentText): the latest correction's, or its own.
+  text: string;
   status: Status;
   givenUp: boolean;
 }
@@ -405,6 +458,7 @@ export interface OpenItem {
 // cannot occur for a message_out (the schema requires it) and are skipped.
 export function openItems(entries: readonly JournalEntry[]): Map<string, OpenItem[]> {
   const groups = new Map<string, OpenItem[]>();
+  const corrections = correctionsByTarget(entries);
   for (const entry of sortedNewestFirst(entries)) {
     if (entry.type !== "message_out" || entry.counterpartyId === undefined) {
       continue;
@@ -415,7 +469,12 @@ export function openItems(entries: readonly JournalEntry[]): Map<string, OpenIte
       continue;
     }
     const items = groups.get(entry.counterpartyId) ?? [];
-    items.push({ message: entry, status, givenUp });
+    items.push({
+      message: entry,
+      text: currentText(entry, corrections.get(entry.id) ?? []),
+      status,
+      givenUp,
+    });
     groups.set(entry.counterpartyId, items);
   }
   return groups;

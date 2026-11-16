@@ -64,9 +64,59 @@ describe("the journal screen", () => {
     expect(timeline).toContain("stripChip(item.kind)");
     expect(timeline).toContain("counterChips(row.counters)");
     expect(timeline).toContain('class="rows-top"');
-    expect(timeline).toContain('class="msg row-note"');
     expect(timeline).toContain('class="row-detail"');
     expect(timeline).toContain("DIRECTION_GLYPH[direction]");
+  });
+
+  it("Correct is one box with the current text under the row, its text hidden; the row reads the corrected text with a chip (P3-02)", () => {
+    const timeline = read("components/Timeline.svelte");
+    // The form: prefilled off the row's corrections, the target the row's own entry, Save on
+    // the pure rule, the stored text with the fixed prefix put back.
+    expect(timeline).toContain("buildCorrectionForm(entry, corrections)");
+    expect(timeline).toContain("canSaveCorrection(correction, correctionBody)");
+    expect(timeline).toContain("oncorrect(form.target, correctedText(form, correctionBody))");
+    expect(timeline).toContain("field.setSelectionRange(field.value.length, field.value.length)");
+    expect(timeline).toContain('<textarea\n          id="correction-text"');
+    expect(timeline).toContain(
+      '<label class="row-meta" for="correction-text">{t("journal.correction.text")}</label>',
+    );
+    expect(timeline).toContain("<span data-prefix>{correction.prefix.trimEnd()}</span>");
+    expect(timeline).not.toContain('placeholder={t("journal.correction.text")}');
+    // The row's own text is hidden while the form is open under the row: one copy on screen.
+    expect(
+      timeline.match(/<div class="row-body">\s*\{#if correcting !== entry\.id\}/g),
+    ).toHaveLength(2);
+    expect(
+      timeline.match(/\{#if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}/g),
+    ).toHaveLength(2);
+    expect(timeline).toContain("{currentText(entry, view.corrections)}");
+    expect(timeline).toContain("{currentText(entry, row.corrections)}");
+    expect(timeline).not.toContain('{entry.text ?? ""}');
+    // The chip after the time, the versions in the history, the 14 px line gone.
+    expect(timeline).toContain("data-corrected={latest.id}");
+    expect(timeline).toContain('<Icon name="edit" />{t("journal.correction.corrected")}');
+    expect(timeline).toContain(
+      "{#snippet versionLines(entry: JournalEntry, corrections: readonly JournalEntry[])}",
+    );
+    expect(timeline.match(/@render versionLines\(/g)).toHaveLength(2);
+    expect(timeline).not.toContain("row-note");
+    expect(read("styles/components.css")).not.toContain(".row-note");
+    // Esc cancels through the shortcut dispatcher, like every row form.
+    expect(timeline).toContain('onShortcut("cancel"');
+    // Only a note, an incoming and an outgoing message are correctable.
+    expect(timeline).toContain(
+      'entry.type === "note" || entry.type === "message_in" || entry.type === "message_out"',
+    );
+  });
+
+  it("every screen reads a text through currentText (P3-02)", () => {
+    expect(read("components/OpenItemsPanel.svelte")).toContain("{item.text}");
+    expect(read("components/OpenItemsPanel.svelte")).not.toContain("item.message.text");
+    const handover = read("pages/HandoverPage.svelte");
+    expect(handover.match(/currentText\(view\.entry, view\.corrections\)/g)).toHaveLength(2);
+    expect(handover).toContain("correctionsByTarget(entries)");
+    expect(handover).toContain('<span class="row-body">{text(entry)}</span>');
+    expect(handover).not.toContain('entry.text ?? ""}</span>');
   });
 
   it("the compose card is one card with two tabs keyed on aria-selected", () => {
