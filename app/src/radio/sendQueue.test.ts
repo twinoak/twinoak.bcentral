@@ -178,7 +178,7 @@ describe("send queue (send to all, P0-08)", () => {
 
     expect(companion.sends).toHaveLength(25);
     expect(companion.sends.map((s) => s.keyPrefix)).toEqual(
-      register.map((entry) => entry.publicKey.slice(0, 12)),
+      register.map((entry) => (entry.publicKey ?? "").slice(0, 12)),
     );
     expect(companion.sends.every((s) => s.text === "#1 Meld status")).toBe(true);
     const expected = messages.map((_, i) => (i === 7 ? "given_up" : "delivered"));

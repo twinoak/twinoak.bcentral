@@ -39,18 +39,26 @@ export interface Incident {
   drill?: boolean;
 }
 
+// A contact: a person the staff talk to (P3-06). Some have a radio — publicKey set, and with
+// it origin, which the schema requires exactly then — and some are reached by phone, courier
+// or in person and have neither.
 export interface RegisterEntry {
   id: string;
-  publicKey: string;
+  publicKey?: string;
   label: string;
   person?: string;
+  phone?: string;
   street?: string;
   role?: string;
-  origin: RegisterOrigin;
+  origin?: RegisterOrigin;
   notes?: string;
   createdAt: string;
   createdOnDevice: string;
 }
+
+// A contact with a radio: what the MeshCore tab, the send-to-all form, the status request and
+// the outbox take. `hasRadio` (register.ts) narrows to it.
+export type RadioContact = RegisterEntry & { publicKey: string; origin: RegisterOrigin };
 
 export interface JournalEntry {
   id: string;
@@ -94,14 +102,6 @@ export interface NewMessageOut {
 export type NewIncident = Omit<Incident, "id" | "createdAt" | "clockTrust" | "createdOnDevice">;
 
 export type NewRegisterEntry = Omit<RegisterEntry, "id" | "createdAt" | "createdOnDevice">;
-
-// A register row imported from a CSV file without a public key (P1-06). The schema requires
-// a key, so it is not a registerEntry yet: it waits in `meta` until a key is bound to it, and
-// then becomes a registerEntry with the same id and stamps. Not part of the contract; never
-// exported in the envelope, never mirrored.
-export type PendingRegisterRow = Omit<RegisterEntry, "publicKey">;
-
-export type NewPendingRegisterRow = Omit<PendingRegisterRow, "id" | "createdAt" | "createdOnDevice">;
 
 // The export file and the sync batch.
 export interface Envelope {

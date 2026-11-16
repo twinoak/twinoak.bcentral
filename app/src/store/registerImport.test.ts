@@ -7,15 +7,11 @@ import {
   KEY_C,
   KEY_D,
   MISSING_KEYS,
+  MIXED,
   SEMICOLON_BOM_CRLF,
 } from "../test-support/registerCsvFixtures.ts";
 import { openTestStore, TEST_DEVICE_ID, uniqueDatabaseName } from "../test-support/testStore.ts";
-import {
-  DuplicatePublicKeyError,
-  NoPendingRowError,
-  type JournalStore,
-  type Written,
-} from "./journalStore.ts";
+import { DuplicatePublicKeyError, type JournalStore, type Written } from "./journalStore.ts";
 import { previewRegisterImport, registerCsv } from "./registerCsv.ts";
 import {
   importNoteText,
@@ -23,9 +19,9 @@ import {
   RegisterImportError,
   registerCsvFilename,
 } from "./registerImport.ts";
-import { sortedByLabel } from "./register.ts";
+import { hasRadio, sortedByLabel } from "./register.ts";
 import { ValidationError } from "./schema.ts";
-import type { NewRegisterEntry, PendingRegisterRow, RegisterEntry } from "./types.ts";
+import type { NewRegisterEntry, RegisterEntry } from "./types.ts";
 
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
@@ -33,20 +29,15 @@ beforeAll(() => {
   setLanguage("en");
 });
 
-function fieldsOf(entry: RegisterEntry | PendingRegisterRow): Omit<
-  NewRegisterEntry,
-  "publicKey"
-> & {
-  publicKey: string;
-} {
+function fieldsOf(entry: RegisterEntry): NewRegisterEntry {
   return {
     label: entry.label,
     person: entry.person,
+    phone: entry.phone,
     street: entry.street,
     role: entry.role,
-    origin: entry.origin,
     notes: entry.notes,
-    publicKey: "publicKey" in entry ? entry.publicKey : "",
+    ...(entry.publicKey === undefined ? {} : { publicKey: entry.publicKey, origin: entry.origin }),
   };
 }
 
@@ -60,56 +51,83 @@ async function importFile(store: JournalStore, text: string, incidentId: string 
 }
 
 describe("importRegister: the store write", () => {
-  it("stores the rows with a key as entries and the rows without as pending rows", async () => {
+  it("stores every row as a contact, with a radio or without, none pending", async () => {
     const store = await openTestStore();
     const result = await importFile(store, MISSING_KEYS);
-    expect(result.entries.map((entry) => entry.label)).toStrictEqual(["Hans", "Ole"]);
-    expect(result.pending.map((row) => row.label)).toStrictEqual(["Peter", "Lise", "Anna"]);
+    expect(result.entries.map((entry) => entry.label)).toStrictEqual([
+      "Hans",
+      "Peter",
+      "Lise",
+      "Ole",
+      "Anna",
+    ]);
     expect(result.note).toBeNull();
 
     const stored = await store.allRegisterEntries();
-    expect(stored.length).toBe(2);
+    expect(stored.length).toBe(5);
     expect(
       stored.every((entry) => ULID.test(entry.id) && entry.createdOnDevice === TEST_DEVICE_ID),
     ).toBe(true);
+    expect(new Set(stored.map((entry) => entry.id)).size).toBe(5);
     expect(await store.registerEntryByPublicKey(KEY_B)).toMatchObject({
       label: "Ole",
       person: "Ole Madsen",
       street: "Vestergade 3",
       origin: "private",
     });
-
-    const pending = await store.pendingRegisterRows();
-    expect(pending.map((row) => row.label)).toStrictEqual(["Peter", "Lise", "Anna"]);
-    for (const row of pending) {
-      expect(ULID.test(row.id)).toBe(true);
-      expect(row.createdOnDevice).toBe(TEST_DEVICE_ID);
-      expect(row.createdAt).toMatch(/^2026-10-28T19:00:0\d\.000Z$/);
-      expect("publicKey" in row).toBe(false);
+    const withoutRadio = stored.filter((entry) => !hasRadio(entry));
+    expect(withoutRadio.map((entry) => entry.label).sort()).toStrictEqual([
+      "Anna",
+      "Lise",
+      "Peter",
+    ]);
+    for (const entry of withoutRadio) {
+      expect("publicKey" in entry).toBe(false);
+      expect("origin" in entry).toBe(false);
+      expect(entry.createdAt).toMatch(/^2026-10-28T19:00:0\d\.000Z$/);
     }
-    expect(pending[1]).toMatchObject({ label: "Lise", role: "suppleant", notes: "ny beboer" });
-    expect(new Set([...stored, ...pending].map((x) => x.id)).size).toBe(5);
+    const peter = stored.find((entry) => entry.label === "Peter");
+    expect(peter).toMatchObject({ phone: "23 45 67 89", street: "Søndergade 4" });
     store.close();
   });
 
-  it("pending rows are kept across a restart and are not the journal folder", async () => {
+  it("the acceptance file: two rows with keys and one without are three entries, Grethe with her phone", async () => {
+    const store = await openTestStore();
+    const result = await importFile(store, MIXED);
+    expect(result.entries.map((entry) => entry.label)).toStrictEqual(["Hans", "Grethe", "Ole"]);
+    const grethe = result.entries[1];
+    expect(grethe).toMatchObject({
+      label: "Grethe",
+      person: "Grethe Nielsen",
+      street: "Nørregade 12",
+      phone: "12 34 56 78",
+    });
+    expect(grethe?.publicKey).toBeUndefined();
+    expect(grethe?.origin).toBeUndefined();
+    expect((await store.allRegisterEntries()).length).toBe(3);
+    store.close();
+  });
+
+  it("contacts without a radio are kept across a restart and are not the journal folder", async () => {
     const name = uniqueDatabaseName();
     const first = await openTestStore({ name });
     await importFile(first, MISSING_KEYS);
     first.close();
 
     const second = await openTestStore({ name });
-    expect((await second.pendingRegisterRows()).map((row) => row.label)).toStrictEqual([
-      "Peter",
-      "Lise",
+    expect((await second.allRegisterEntries()).map((row) => row.label).sort()).toStrictEqual([
       "Anna",
+      "Hans",
+      "Lise",
+      "Ole",
+      "Peter",
     ]);
     expect(await second.journalFolder()).toBeUndefined();
     expect(await second.lastDeviceSeq()).toBe(0);
     second.close();
   });
 
-  it("is all or nothing: a key the store already holds leaves entries and pending rows unwritten", async () => {
+  it("is all or nothing: a key the store already holds leaves every row unwritten", async () => {
     const store = await openTestStore();
     const existing = await store.createRegisterEntry({
       publicKey: KEY_B,
@@ -127,7 +145,6 @@ describe("importRegister: the store write", () => {
       }),
     ).rejects.toThrow(DuplicatePublicKeyError);
     expect(await store.allRegisterEntries()).toStrictEqual([existing]);
-    expect(await store.pendingRegisterRows()).toStrictEqual([]);
     expect(await store.allEntries()).toStrictEqual([]);
     store.close();
   });
@@ -145,27 +162,34 @@ describe("importRegister: the store write", () => {
       importRegister(store, empty, { operator: "Thomas", incidentId: null, fileName: "x.csv" }),
     ).rejects.toThrow(RegisterImportError);
     expect(await store.allRegisterEntries()).toStrictEqual([]);
-    expect(await store.pendingRegisterRows()).toStrictEqual([]);
     store.close();
   });
 
-  it("a pending row is validated as the entry it will become", async () => {
+  it("a row the schema refuses leaves the whole file unwritten", async () => {
     const store = await openTestStore();
-    await expect(store.importRegister([], [{ label: "", origin: "issued" }])).rejects.toThrow(
-      ValidationError,
-    );
-    expect(await store.pendingRegisterRows()).toStrictEqual([]);
+    await expect(
+      store.createRegisterEntries([
+        { label: "Grethe" },
+        { label: "", publicKey: KEY_A, origin: "issued" },
+      ]),
+    ).rejects.toThrow(ValidationError);
+    expect(await store.allRegisterEntries()).toStrictEqual([]);
     store.close();
   });
 
-  it("notifies onWrite for every entry and for no pending row", async () => {
+  it("notifies onWrite for every contact, with a radio or without", async () => {
     const store = await openTestStore();
     const written: Written[] = [];
     store.onWrite((w) => written.push(w));
-    await importFile(store, MISSING_KEYS);
-    expect(written.map((w) => w.kind)).toStrictEqual(["registerEntry", "registerEntry"]);
+    await importFile(store, MIXED);
+    expect(written.map((w) => w.kind)).toStrictEqual([
+      "registerEntry",
+      "registerEntry",
+      "registerEntry",
+    ]);
     expect(written.map((w) => (w.kind === "registerEntry" ? w.value.label : ""))).toStrictEqual([
       "Hans",
+      "Grethe",
       "Ole",
     ]);
     store.close();
@@ -173,7 +197,7 @@ describe("importRegister: the store write", () => {
 });
 
 describe("importRegister: the note", () => {
-  it("appends one note to an open incident: register: imported N entries from <file>", async () => {
+  it("appends one note to an open incident: register: imported N contacts from <file>, n with a radio", async () => {
     const store = await openTestStore();
     const incident = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
     const result = await importFile(store, SEMICOLON_BOM_CRLF, incident.id);
@@ -181,20 +205,22 @@ describe("importRegister: the note", () => {
       incidentId: incident.id,
       operator: "Thomas",
       type: "note",
-      text: "register: imported 3 entries from beboere.csv",
+      text: "register: imported 3 contacts from beboere.csv, 3 with a radio",
     });
     expect(await store.entriesForIncident(incident.id)).toStrictEqual([result.note]);
     store.close();
   });
 
-  it("says how many rows are not yet bound", async () => {
+  it("counts the contacts with a radio among them", async () => {
     const store = await openTestStore();
     const incident = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
     const result = await importFile(store, MISSING_KEYS, incident.id);
     expect(result.note?.text).toBe(
-      "register: imported 5 entries from beboere.csv, 3 not yet bound to a radio",
+      "register: imported 5 contacts from beboere.csv, 2 with a radio",
     );
-    expect(importNoteText("a.csv", 2, 0)).toBe("register: imported 2 entries from a.csv");
+    expect(importNoteText("a.csv", 2, 0)).toBe(
+      "register: imported 2 contacts from a.csv, 0 with a radio",
+    );
     store.close();
   });
 
@@ -219,117 +245,29 @@ describe("importRegister: the note", () => {
   });
 });
 
-describe("binding a pending row", () => {
-  it("makes it a register entry with the same id and stamps, and takes it off the pending list", async () => {
-    const store = await openTestStore();
-    await importFile(store, MISSING_KEYS);
-    const [peter] = await store.pendingRegisterRows();
-    expect(peter?.label).toBe("Peter");
-    const written: Written[] = [];
-    store.onWrite((w) => written.push(w));
-
-    const bound = await store.bindPendingRegisterRow(peter!.id, {
-      ...fieldsOf(peter!),
-      publicKey: KEY_C,
-    });
-    expect(bound).toStrictEqual({
-      id: peter!.id,
-      createdAt: peter!.createdAt,
-      createdOnDevice: peter!.createdOnDevice,
-      label: "Peter",
-      person: "Peter Sørensen",
-      street: "Søndergade 4",
-      origin: "issued",
-      publicKey: KEY_C,
-    });
-    expect(await store.getRegisterEntry(peter!.id)).toStrictEqual(bound);
-    expect(await store.registerEntryByPublicKey(KEY_C)).toStrictEqual(bound);
-    expect((await store.pendingRegisterRows()).map((row) => row.label)).toStrictEqual([
-      "Lise",
-      "Anna",
-    ]);
-    expect(await store.getPendingRegisterRow(peter!.id)).toBeUndefined();
-    expect(written).toStrictEqual([{ kind: "registerEntry", value: bound }]);
-    store.close();
-  });
-
-  it("the staff may correct the fields while binding", async () => {
-    const store = await openTestStore();
-    await importFile(store, MISSING_KEYS);
-    const lise = (await store.pendingRegisterRows()).find((row) => row.label === "Lise")!;
-    const bound = await store.bindPendingRegisterRow(lise.id, {
-      label: "Lise H.",
-      origin: "private",
-      publicKey: KEY_C,
-    });
-    expect(bound).toStrictEqual({
-      id: lise.id,
-      createdAt: lise.createdAt,
-      createdOnDevice: lise.createdOnDevice,
-      label: "Lise H.",
-      origin: "private",
-      publicKey: KEY_C,
-    });
-    store.close();
-  });
-
-  it("refuses a taken or invalid key and leaves the row pending; refuses a row that is not pending", async () => {
-    const store = await openTestStore();
-    await importFile(store, MISSING_KEYS);
-    const [peter] = await store.pendingRegisterRows();
-    await expect(
-      store.bindPendingRegisterRow(peter!.id, { ...fieldsOf(peter!), publicKey: KEY_A }),
-    ).rejects.toThrow(DuplicatePublicKeyError);
-    await expect(
-      store.bindPendingRegisterRow(peter!.id, { ...fieldsOf(peter!), publicKey: "nope" }),
-    ).rejects.toThrow(ValidationError);
-    expect(await store.getPendingRegisterRow(peter!.id)).toStrictEqual(peter);
-    expect((await store.allRegisterEntries()).length).toBe(2);
-
-    await store.bindPendingRegisterRow(peter!.id, { ...fieldsOf(peter!), publicKey: KEY_C });
-    await expect(
-      store.bindPendingRegisterRow(peter!.id, { ...fieldsOf(peter!), publicKey: KEY_D }),
-    ).rejects.toThrow(NoPendingRowError);
-    await expect(
-      store.bindPendingRegisterRow("01JB8ZK3QX9V2M4N6P8R0T2W99", {
-        label: "x",
-        origin: "issued",
-        publicKey: KEY_D,
-      }),
-    ).rejects.toThrow(NoPendingRowError);
-    expect(await store.registerEntryByPublicKey(KEY_D)).toBeUndefined();
-    store.close();
-  });
-});
-
 describe("export and round trip through the store", () => {
-  it("the export holds every entry and the pending rows with an empty key", async () => {
+  it("the export holds every contact by label, a keyless one with an empty key and origin", async () => {
     const store = await openTestStore();
     await importFile(store, MISSING_KEYS);
-    const text = registerCsv(
-      sortedByLabel(await store.allRegisterEntries(), "da"),
-      sortedByLabel(await store.pendingRegisterRows(), "da"),
-    );
+    const text = registerCsv(sortedByLabel(await store.allRegisterEntries(), "da"));
     const lines = text.split("\r\n");
-    expect(lines[0]).toBe("﻿label;person;street;role;origin;publicKey;notes");
+    expect(lines[0]).toBe("﻿label;person;street;role;phone;origin;publicKey;notes");
     expect(lines.slice(1, 6).map((line) => line.split(";")[0])).toStrictEqual([
-      "Hans",
-      "Ole",
       "Anna",
+      "Hans",
       "Lise",
+      "Ole",
       "Peter",
     ]);
-    expect(lines[3]).toBe("Anna;Anna Berg;Nørregade 9;;issued;;");
+    expect(lines[1]).toBe("Anna;Anna Berg;Nørregade 9;;;;;");
+    expect(lines[5]).toBe("Peter;Peter Sørensen;Søndergade 4;;23 45 67 89;;;");
     store.close();
   });
 
-  it("import → export → import into a fresh store gives identical rows", async () => {
+  it("import → export → import into a fresh store gives identical rows (mixed rows)", async () => {
     const first = await openTestStore();
     await importFile(first, MISSING_KEYS);
-    const text = registerCsv(
-      sortedByLabel(await first.allRegisterEntries(), "da"),
-      sortedByLabel(await first.pendingRegisterRows(), "da"),
-    );
+    const text = registerCsv(sortedByLabel(await first.allRegisterEntries(), "da"));
 
     const second = await openTestStore();
     const preview = previewRegisterImport(text, []);
@@ -340,18 +278,14 @@ describe("export and round trip through the store", () => {
       fileName: "x.csv",
     });
 
-    const rows = async (store: JournalStore) => [
-      ...sortedByLabel(await store.allRegisterEntries(), "da").map(fieldsOf),
-      ...sortedByLabel(await store.pendingRegisterRows(), "da").map(fieldsOf),
-    ];
+    const rows = async (store: JournalStore) =>
+      sortedByLabel(await store.allRegisterEntries(), "da").map(fieldsOf);
     expect(await rows(second)).toStrictEqual(await rows(first));
     expect((await rows(second)).length).toBe(5);
+    expect((await rows(second)).filter((row) => row.publicKey !== undefined).length).toBe(2);
 
     // And once more: the second export is the first, byte for byte.
-    const again = registerCsv(
-      sortedByLabel(await second.allRegisterEntries(), "da"),
-      sortedByLabel(await second.pendingRegisterRows(), "da"),
-    );
+    const again = registerCsv(sortedByLabel(await second.allRegisterEntries(), "da"));
     expect(again).toBe(text);
     first.close();
     second.close();

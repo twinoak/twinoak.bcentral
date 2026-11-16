@@ -16,7 +16,7 @@ import {
 } from "./handover.ts";
 import { bodyOf } from "./journalView.ts";
 import type { JournalStore } from "./journalStore.ts";
-import { composeMessage, appendStatusChange } from "./outgoing.ts";
+import { composeMessage, appendStatusChange, RecipientError } from "./outgoing.ts";
 import type { JournalEntry } from "./types.ts";
 
 const INCIDENT = "01JB8ZK3QX9V2M4N6P8R0T2W4Z";
@@ -146,6 +146,28 @@ describe("the status request", () => {
       counterpartyId: HANS,
     });
     expect(message.text).toBe("ØVELSE #3 Meld status");
+  });
+
+  it("refuses a contact without a radio and an unknown id, and reserves nothing (P3-06)", async () => {
+    const store = await storeWithWalkthrough();
+    const grethe = await store.createRegisterEntry({ label: "Grethe", phone: "12 34 56 78" });
+    const before = await store.lastDeviceSeq();
+    await expect(
+      composeStatusRequest(store, {
+        incidentId: INCIDENT,
+        operator: "Anne",
+        counterpartyId: grethe.id,
+      }),
+    ).rejects.toBeInstanceOf(RecipientError);
+    await expect(
+      composeStatusRequest(store, {
+        incidentId: INCIDENT,
+        operator: "Anne",
+        counterpartyId: "01JB8ZK3QX9V2M4N6P8R0T2X00",
+      }),
+    ).rejects.toBeInstanceOf(RecipientError);
+    expect(await store.lastSeqNo(grethe.id)).toBe(0);
+    expect(await store.lastDeviceSeq()).toBe(before);
   });
 });
 

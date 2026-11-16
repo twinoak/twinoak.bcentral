@@ -1,5 +1,6 @@
 // Every screen as a PNG for review (P2-05): builds the app, serves dist/ locally, fills a
-// fresh browser profile with contract/examples/walkthrough.json plus a register of 25 radios,
+// fresh browser profile with contract/examples/walkthrough.json plus a register of 25 radios
+// and two contacts without one (P3-06: Grethe, reached by phone, who has called in),
 // open orders, given-up messages, unanswered incoming messages, a 25-recipient send-to-all
 // half drained and a drill incident — through the `?seed` hook of src/main.ts — and captures
 // every route at 1280 × 720 and 1440 × 900 at the normal text size, the journal also with
@@ -8,8 +9,10 @@
 // with the send-to-all row open on its recipients (P3-04), with a row open on its point and
 // with the Open point form open (P3-05; the seed holds one open and one closed point, so the
 // Points card, the handover's first list and the print block show them), the handover with
-// a given-up row open, the journal at the largest size and in high contrast, the two long
-// pages whole, the three print pages as A4 PDFs too. The files go to tasks/phase-2/reports/screens/ and are
+// a given-up row open, the register as its list, with the Add contact form open and
+// filtered to the contacts without a radio (P3-06), the journal at the largest size and in
+// high contrast, the two long pages whole, the three print pages as A4 PDFs too. The files
+// go to tasks/phase-2/reports/screens/ and are
 // committed, so the reviewer can look at every screen without running the app. On the way
 // every row of the seeded journal is measured at rest, hovered and focused (P3-04: a row's
 // height never changes under the pointer); a difference fails the run like a page error.
@@ -112,6 +115,29 @@ function seedEnvelope() {
       createdOnDevice: device,
     });
   }
+  // The radios above are the send-to-all's recipients; the two contacts without a radio
+  // (P3-06) come after them and are never on the air.
+  const radios = [...register];
+  register.push(
+    {
+      id: idAfter(),
+      label: "Grethe",
+      person: "Grethe Nielsen",
+      street: "Nørregade 12",
+      phone: "12 34 56 78",
+      createdAt: at("18:06:00"),
+      createdOnDevice: device,
+    },
+    {
+      id: idAfter(),
+      label: "Kommunens vagt",
+      phone: "70 10 20 30",
+      role: "vagthavende",
+      notes: "ringer om pumpen",
+      createdAt: at("18:06:00"),
+      createdOnDevice: device,
+    },
+  );
   const byLabel = (label) => register.find((entry) => entry.label === label).id;
 
   // #n per recipient never resets (text-protocol.md): one counter across both incidents.
@@ -299,7 +325,7 @@ function seedEnvelope() {
   // Send to all, half drained: three roger, five delivered, four sent, thirteen pending —
   // the pending ones come back as a restored batch in the queue after a reload.
   const batchId = id();
-  register.forEach((entry, i) => {
+  radios.forEach((entry, i) => {
     const statuses = i < 8 ? ["sent", "delivered"] : i < 12 ? ["sent"] : [];
     const message = out(
       real.id,
@@ -314,14 +340,24 @@ function seedEnvelope() {
       roger(real.id, id, message, entry.label, at(`19:41:${String(10 + i * 7).padStart(2, "0")}`));
     }
   });
+  // A call from a contact without a radio (P3-06): recorded against her on New record.
+  add({
+    id: id(),
+    incidentId: real.id,
+    timestamp: at("19:42:00"),
+    type: "message_in",
+    transport: "phone",
+    counterpartyId: byLabel("Grethe"),
+    text: "Ringede: der står vand i kælderen i nr 12, kan I komme",
+  });
   const phoneCall = add({
     id: id(),
     incidentId: real.id,
     timestamp: at("19:43:00"),
     type: "message_in",
     transport: "phone",
-    counterpartyId: hansId,
-    text: "Kommunens vagt ringede: pumpen er fremme 20:30",
+    counterpartyId: byLabel("Kommunens vagt"),
+    text: "Ringede: pumpen er fremme 20:30",
   });
   // The open point (P3-05): the phone call means something has to be done.
   add({
@@ -637,10 +673,24 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator(".compose-card").waitFor({ state: "hidden" });
   await shot("queue");
 
+  // The register as a contact list (P3-06): the table with the radio column — Grethe and
+  // the municipal duty officer with a dash — then the Add contact form with its Radio section,
+  // then the list filtered to the contacts without a radio.
   await go("#/register", ".register-box tbody tr");
+  await page.locator('.register-box tbody tr[data-radio="false"]').first().waitFor();
+  await shot("register-list");
   await page.getByRole("button", { name: da["register.add"], exact: true }).click();
   await page.locator("[data-register-form]").waitFor();
   await shot("register");
+  await page.getByRole("button", { name: da["register.cancel"], exact: true }).click();
+  await page.locator("[data-register-form]").waitFor({ state: "hidden" });
+  await page.locator("[data-register-filter]").selectOption("noRadio");
+  await page
+    .locator('.register-box tbody tr[data-radio="true"]')
+    .first()
+    .waitFor({ state: "hidden" });
+  await page.locator('.register-box tbody tr[data-radio="false"]').first().waitFor();
+  await shot("register-no-radio");
 
   await go("#/radio", ".card.state");
   await shot("radio");

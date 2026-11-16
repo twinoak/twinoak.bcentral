@@ -423,4 +423,31 @@ describe("quiet radios", () => {
   it("an empty register is no quiet radios", () => {
     expect(quietRadios([], heard, { nowMs: NOW, blindAfterMs: 15 * MINUTE_MS })).toEqual([]);
   });
+
+  it("a contact without a radio is never quiet, heard from or not (P3-06)", () => {
+    const grethe: RegisterEntry = {
+      id: "01JB8ZK3QX9V2M4N6P8R0T2W72",
+      label: "Grethe",
+      phone: "12 34 56 78",
+      createdAt: "2026-10-28T18:00:00Z",
+      createdOnDevice: DEVICE,
+    };
+    const quiet = quietRadios([...register, grethe], heard, {
+      nowMs: NOW,
+      blindAfterMs: 15 * MINUTE_MS,
+    });
+    expect(quiet.map((row) => row.entry.label)).toEqual(["radio #3", "Hans", "Peter"]);
+    // Her phone call counts as "last heard from" (P0-07), but not here.
+    const call = messageIn({
+      counterpartyId: grethe.id,
+      text: "Der er vand i kælderen",
+      at: "2026-10-28T19:00:00Z",
+      transport: "phone",
+    });
+    const withCall = quietRadios([...register, grethe], lastHeardFrom([...entries, call]), {
+      nowMs: NOW,
+      blindAfterMs: 15 * MINUTE_MS,
+    });
+    expect(withCall.map((row) => row.entry.label)).toEqual(["radio #3", "Hans", "Peter"]);
+  });
 });

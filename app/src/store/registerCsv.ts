@@ -1,32 +1,28 @@
 // The register as a CSV file (P1-06): the association's resident list in, the register out.
-// Pure functions over text; the store write is register.ts's importRegister.
+// Pure functions over text; the store write is registerImport.ts's importRegister.
 //
 // Import: columns matched by header name, case-insensitive, in any order; `label` required,
 // the rest optional. Separator `;` or `,`, decided by the header line; UTF-8 with or without
 // a BOM; CRLF or LF; fields may be quoted the way Excel quotes them ("" for a quote inside).
 // Nothing fuzzy: an unknown header, a bad origin, a bad key, a duplicate key (within the file
-// or against the register) and a wrong field count are each an error naming the line, and
-// nothing is written while there is one. A row without a key is a pending row (kept in meta
-// until a key is bound, journalStore.ts). A line with nothing in it is not a row.
+// or against the register), an origin on a row without a key and a wrong field count are
+// each an error naming the line, and nothing is written while there is one. A row without a
+// key is a contact without a radio (P3-06): `origin` is read only with a `publicKey`, and
+// empty means `issued` then. A line with nothing in it is not a row.
 //
 // Export: the same columns, `;`, a BOM (Danish Excel opens it without a dialog), CRLF, one
-// row per register entry, the pending rows after them with an empty key.
+// row per register entry; a contact without a radio has an empty key and an empty origin.
 
 import { t } from "../i18n/index.svelte.ts";
 import { isValidPublicKey, normalizePublicKey, REGISTER_ORIGINS } from "./register.ts";
-import type {
-  NewPendingRegisterRow,
-  NewRegisterEntry,
-  PendingRegisterRow,
-  RegisterEntry,
-  RegisterOrigin,
-} from "./types.ts";
+import type { NewRegisterEntry, RegisterEntry, RegisterOrigin } from "./types.ts";
 
 export const CSV_COLUMNS = [
   "label",
   "person",
   "street",
   "role",
+  "phone",
   "origin",
   "publicKey",
   "notes",
@@ -49,6 +45,8 @@ export type CsvError =
   | { kind: "fieldCount"; line: number; found: number; expected: number }
   | { kind: "labelMissing"; line: number }
   | { kind: "badOrigin"; line: number; value: string }
+  // An origin on a row without a key: the origin is the radio's (P3-06).
+  | { kind: "originWithoutKey"; line: number; value: string }
   | { kind: "badKey"; line: number; value: string }
   | { kind: "duplicateKeyInFile"; line: number; otherLine: number; publicKey: string }
   | { kind: "duplicateKeyInStore"; line: number; label: string; publicKey: string };
@@ -81,6 +79,11 @@ export function csvErrorText(error: CsvError): string {
       return t("register.import.error.labelMissing", { line: error.line });
     case "badOrigin":
       return t("register.import.error.badOrigin", { line: error.line, value: error.value });
+    case "originWithoutKey":
+      return t("register.import.error.originWithoutKey", {
+        line: error.line,
+        value: error.value,
+      });
     case "badKey":
       return t("register.import.error.badKey", { line: error.line, value: error.value });
     case "duplicateKeyInFile":
@@ -232,14 +235,15 @@ export function matchHeader(names: readonly string[]): {
 // --- rows ---------------------------------------------------------------------------------
 
 // One data row as the preview shows it: the fields as they will be stored, the key normalized
-// ("" for a pending row), and the row's own errors.
+// ("" for a contact without a radio, and then no origin), and the row's own errors.
 export interface CsvRow {
   line: number;
   label: string;
   person?: string;
   street?: string;
   role?: string;
-  origin: RegisterOrigin;
+  phone?: string;
+  origin?: RegisterOrigin;
   publicKey: string;
   notes?: string;
   errors: CsvError[];
@@ -248,12 +252,22 @@ export interface CsvRow {
 export interface RegisterImportPreview {
   separator: CsvSeparator;
   rows: CsvRow[];
-  // The rows with a key, ready for the store, in file order. Empty while there is any error.
+  // Every row ready for the store, in file order — with a radio or without. Empty while
+  // there is any error.
   entries: NewRegisterEntry[];
-  // The rows without a key, in file order. Empty while there is any error.
-  pending: NewPendingRegisterRow[];
   // File-level errors, then every row's errors, in file order.
   errors: CsvError[];
+}
+
+// What a preview holds, for the summary line and the note: the rows with a radio and the
+// rows without, among the rows that have no error of their own.
+export function previewCounts(preview: RegisterImportPreview): {
+  withRadio: number;
+  withoutRadio: number;
+} {
+  const clean = preview.rows.filter((row) => row.errors.length === 0);
+  const withRadio = clean.filter((row) => row.publicKey !== "").length;
+  return { withRadio, withoutRadio: clean.length - withRadio };
 }
 
 function optional(value: string | undefined): string | undefined {
@@ -261,11 +275,20 @@ function optional(value: string | undefined): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
+// The origin of a row with a key: empty means issued; anything else has to be one of the
+// three words, case folded. A row without a key has no origin, and one given is an error.
 function parseOrigin(
   value: string | undefined,
+  hasKey: boolean,
   line: number,
-): { origin: RegisterOrigin; error: CsvError | null } {
+): { origin: RegisterOrigin | undefined; error: CsvError | null } {
   const trimmed = value?.trim() ?? "";
+  if (!hasKey) {
+    return {
+      origin: undefined,
+      error: trimmed === "" ? null : { kind: "originWithoutKey", line, value: trimmed },
+    };
+  }
   if (trimmed === "") {
     return { origin: "issued", error: null };
   }
@@ -286,13 +309,7 @@ export function previewRegisterImport(
 ): RegisterImportPreview {
   const body = stripBom(text);
   const separator = detectSeparator(body);
-  const empty: RegisterImportPreview = {
-    separator,
-    rows: [],
-    entries: [],
-    pending: [],
-    errors: [],
-  };
+  const empty: RegisterImportPreview = { separator, rows: [], entries: [], errors: [] };
 
   const parsed = parseCsvRecords(body, separator);
   if (parsed.error !== null) {
@@ -308,7 +325,12 @@ export function previewRegisterImport(
   }
   const columns = matched.columns;
 
-  const existingByKey = new Map(existing.map((entry) => [entry.publicKey, entry]));
+  const existingByKey = new Map<string, RegisterEntry>();
+  for (const entry of existing) {
+    if (entry.publicKey !== undefined) {
+      existingByKey.set(entry.publicKey, entry);
+    }
+  }
   const firstLineOfKey = new Map<string, number>();
   const rows: CsvRow[] = [];
   const errors: CsvError[] = [];
@@ -322,7 +344,7 @@ export function previewRegisterImport(
         found: record.fields.length,
         expected: header.fields.length,
       };
-      rows.push({ line, label: "", origin: "issued", publicKey: "", errors: [error] });
+      rows.push({ line, label: "", publicKey: "", errors: [error] });
       errors.push(error);
       continue;
     }
@@ -339,11 +361,11 @@ export function previewRegisterImport(
     if (label === "") {
       rowErrors.push({ kind: "labelMissing", line });
     }
-    const origin = parseOrigin(byColumn.origin, line);
+    const rawKey = byColumn.publicKey?.trim() ?? "";
+    const origin = parseOrigin(byColumn.origin, rawKey !== "", line);
     if (origin.error !== null) {
       rowErrors.push(origin.error);
     }
-    const rawKey = byColumn.publicKey?.trim() ?? "";
     let publicKey = "";
     if (rawKey !== "") {
       publicKey = normalizePublicKey(rawKey);
@@ -367,6 +389,7 @@ export function previewRegisterImport(
       person: optional(byColumn.person),
       street: optional(byColumn.street),
       role: optional(byColumn.role),
+      phone: optional(byColumn.phone),
       origin: origin.origin,
       publicKey,
       notes: optional(byColumn.notes),
@@ -376,26 +399,19 @@ export function previewRegisterImport(
   }
 
   if (errors.length > 0) {
-    return { separator, rows, entries: [], pending: [], errors };
+    return { separator, rows, entries: [], errors };
   }
-  const entries: NewRegisterEntry[] = [];
-  const pending: NewPendingRegisterRow[] = [];
-  for (const row of rows) {
-    const fields = {
-      label: row.label,
-      person: row.person,
-      street: row.street,
-      role: row.role,
-      origin: row.origin,
-      notes: row.notes,
-    };
-    if (row.publicKey === "") {
-      pending.push(fields);
-    } else {
-      entries.push({ ...fields, publicKey: row.publicKey });
-    }
-  }
-  return { separator, rows, entries, pending, errors };
+  // The key and the origin go together or not at all (the schema's rule, P3-06).
+  const entries: NewRegisterEntry[] = rows.map((row) => ({
+    label: row.label,
+    person: row.person,
+    phone: row.phone,
+    street: row.street,
+    role: row.role,
+    notes: row.notes,
+    ...(row.publicKey === "" ? {} : { publicKey: row.publicKey, origin: row.origin }),
+  }));
+  return { separator, rows, entries, errors };
 }
 
 // --- export -------------------------------------------------------------------------------
@@ -409,12 +425,10 @@ function csvLine(fields: readonly string[]): string {
   return fields.map(csvField).join(";");
 }
 
-// The file: BOM, header, one line per entry in the order given, then the pending rows with
-// an empty key, CRLF throughout. Imports back into the same rows (registerCsv.test.ts).
-export function registerCsv(
-  entries: readonly RegisterEntry[],
-  pending: readonly PendingRegisterRow[],
-): string {
+// The file: BOM, header, one line per entry in the order given, CRLF throughout; a contact
+// without a radio has an empty key and an empty origin. Imports back into the same rows
+// (registerCsv.test.ts).
+export function registerCsv(entries: readonly RegisterEntry[]): string {
   const lines: string[] = [csvLine(CSV_COLUMNS)];
   for (const entry of entries) {
     lines.push(
@@ -423,22 +437,10 @@ export function registerCsv(
         entry.person ?? "",
         entry.street ?? "",
         entry.role ?? "",
-        entry.origin,
-        entry.publicKey,
+        entry.phone ?? "",
+        entry.origin ?? "",
+        entry.publicKey ?? "",
         entry.notes ?? "",
-      ]),
-    );
-  }
-  for (const row of pending) {
-    lines.push(
-      csvLine([
-        row.label,
-        row.person ?? "",
-        row.street ?? "",
-        row.role ?? "",
-        row.origin,
-        "",
-        row.notes ?? "",
       ]),
     );
   }

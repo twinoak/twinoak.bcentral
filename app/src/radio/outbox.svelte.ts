@@ -15,6 +15,7 @@
 import { t } from "../i18n/index.svelte.ts";
 import type { JournalStore } from "../store/journalStore.ts";
 import { appendStatusChange } from "../store/outgoing.ts";
+import { hasRadio } from "../store/register.ts";
 import type { JournalEntry, Status } from "../store/types.ts";
 import { deferred, type Deferred } from "./deferred.ts";
 import type { PushListener } from "./radioStore.svelte.ts";
@@ -308,6 +309,11 @@ export function createOutbox(deps: OutboxDeps): Outbox {
       const recipient = await store.getRegisterEntry(message.counterpartyId);
       if (recipient === undefined) {
         throw new OutboxError(t("send.error.noRecipient"));
+      }
+      // A contact without a radio has no key to send to (P3-06); the store refuses to
+      // compose such a message, so this is the guard against an id that got past it.
+      if (!hasRadio(recipient)) {
+        throw new OutboxError(t("send.error.noRadio", { label: recipient.label }));
       }
 
       queued = [...queued, messageId];

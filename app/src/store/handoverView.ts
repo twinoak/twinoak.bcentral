@@ -11,7 +11,8 @@
 //   unanswered  message_in entries nobody has answered: no message_out carries their id as
 //               refersTo (a reply, P1-02), and no roger was recorded from them (the roger's
 //               status_change carries the incoming entry's id as its text, P0-06)
-//   quiet       register entries not heard from within the blind time, quietest first
+//   quiet       contacts with a radio not heard from within the blind time, quietest first
+//               (P3-06: a person without a radio cannot be quiet on the radio)
 
 import {
   OPEN_STATUSES,
@@ -25,6 +26,7 @@ import {
   type PointView,
   type TimelineRow,
 } from "./journalView.ts";
+import { radioContacts } from "./register.ts";
 import type { JournalEntry, RegisterEntry } from "./types.ts";
 
 // Every outgoing message's view off the timeline, one per message_out: a batch is opened up,
@@ -114,14 +116,15 @@ export interface QuietOptions {
   blindAfterMs: number;
 }
 
-// Register entries not heard from in longer than the blind time, in the "last heard from"
-// panel's order: never heard first, then the oldest contact first.
+// Contacts with a radio not heard from in longer than the blind time, in the "last heard
+// from" panel's order: never heard first, then the oldest contact first. A contact without
+// a radio is never listed: there is no radio to be quiet and no status request to send.
 export function quietRadios(
   register: readonly RegisterEntry[],
   heard: ReadonlyMap<string, string>,
   options: QuietOptions,
 ): LastHeard[] {
-  return sortedByLastHeard(register, heard).filter(
+  return sortedByLastHeard(radioContacts(register), heard).filter(
     (row) => row.at === null || options.nowMs - Date.parse(row.at) > options.blindAfterMs,
   );
 }

@@ -4,6 +4,8 @@
   // (a phone call, a courier's note, something said across the room); an outgoing message
   // on a non-radio transport — and for the two message kinds the other end (From / To) and
   // Via with phone, courier and verbal only: the radio is the MeshCore tab (ComposeForm).
+  // The other end is any contact in the register, with a radio or without (P3-06): a caller
+  // without a radio is recorded here, and only here.
   // An outgoing record is stored as the compose form stored a non-mesh message before, with
   // the recipient's next #n in the text (the counter is shared across transports); its
   // status is set by the operator from the row afterwards. No byte counter: no radio limit

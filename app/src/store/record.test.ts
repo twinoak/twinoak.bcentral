@@ -83,6 +83,31 @@ describe("an incoming message by phone", () => {
     expect(await store.lastSeqNo(HANS)).toBe(2);
   });
 
+  it("a contact without a radio is a counterparty like any other (P3-06), and her call is 'last heard from'", async () => {
+    const store = await storeWithWalkthrough();
+    const grethe = await store.createRegisterEntry({
+      label: "Grethe",
+      street: "Nørregade 12",
+      phone: "12 34 56 78",
+    });
+    const message = stored(
+      await recordByHand(store, {
+        incidentId: INCIDENT,
+        operator: "Anne",
+        type: "message_in",
+        counterpartyId: grethe.id,
+        transport: "phone",
+        text: "Der er vand i kælderen i nr 12",
+      }),
+    );
+    expect(message).toMatchObject({
+      type: "message_in",
+      transport: "phone",
+      counterpartyId: grethe.id,
+    });
+    expect(await store.lastHeardAt(grethe.id)).toBe(message.timestamp);
+  });
+
   it("refuses the radio, a missing counterparty and a counterparty that is not in the register", async () => {
     const store = await storeWithWalkthrough();
     const before = await store.lastDeviceSeq();
