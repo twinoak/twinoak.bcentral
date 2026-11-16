@@ -1,7 +1,8 @@
 <script lang="ts">
   // The print view (P1-04; on the design language in P2-05): the current incident's journal
-  // as a document for the browser's print dialog. One line per message with its status
-  // strip, a batch as one block with its counters and one line per recipient, a corrected
+  // as a document for the browser's print dialog. One line per message, a radio message's
+  // with its status strip and status word (a message by phone, courier or verbal has none,
+  // P3-07), a batch as one block with its counters and one line per recipient, a corrected
   // entry with its corrected text marked "(corrected ‹time› · ‹operator›)" and the earlier
   // versions as footnote lines beneath (P3-02), oldest first by default (a printed journal
   // reads top-down); then the points as a block at the end (P3-05): the open ones, then the
@@ -137,8 +138,11 @@
     }
   }
 
-  function stripLine(view: MessageView): string {
-    return view.strip.map((item) => stripText(item, null)).join(" · ");
+  // The strip sentence of a radio message; a message without a chain has none (P3-07).
+  function stripLine(view: MessageView): string | null {
+    return view.status === null
+      ? null
+      : view.strip.map((item) => stripText(item, null)).join(" · ");
   }
 
   // The line a point was opened from: its time, the counterparty of a message with the
@@ -190,11 +194,12 @@
   {/if}
 {/snippet}
 
-<!-- An outgoing message: one line with its strip; a recipient inside a batch is indented and
-     shows the label and the strip only (the text is the batch's), unless its own record was
-     corrected. -->
+<!-- An outgoing message: one line, with its strip and status word when it is a radio message;
+     a recipient inside a batch is indented and shows the label and the strip only (the text
+     is the batch's), unless its own record was corrected. -->
 {#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
+  {@const strip = stripLine(view)}
   <tr data-nested={nested ? "true" : undefined} data-type="message_out">
     {@render timeCell(entry)}
     <td>{entry.operator}</td>
@@ -207,13 +212,15 @@
     <td class="label">{labels.get(entry.counterpartyId ?? "") ?? ""}</td>
     <td class="doc-text" class:doc-indent={nested}>
       {#if nested && view.corrections.length === 0}
-        <span class="doc-meta">{stripLine(view)}</span>
+        <span class="doc-meta">{strip ?? ""}</span>
       {:else}
         {@render docText(entry, view.corrections)}
-        <div class="doc-meta">{stripLine(view)}</div>
+        {#if strip !== null}
+          <div class="doc-meta">{strip}</div>
+        {/if}
       {/if}
     </td>
-    <td class="doc-status">{t(`journal.status.${view.status}`)}</td>
+    <td class="doc-status">{view.status === null ? "" : t(`journal.status.${view.status}`)}</td>
   </tr>
 {/snippet}
 

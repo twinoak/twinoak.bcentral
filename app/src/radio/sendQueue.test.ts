@@ -119,10 +119,11 @@ async function messageOuts(store: JournalStore): Promise<JournalEntry[]> {
   return (await store.allEntries()).filter((entry) => entry.type === "message_out");
 }
 
+// The chain's status of every (mesh) message; a null cannot occur for a queued message.
 async function statuses(store: JournalStore, messages: readonly JournalEntry[]): Promise<string[]> {
   const result: string[] = [];
   for (const message of messages) {
-    result.push(await store.statusOf(message.id));
+    result.push((await store.statusOf(message.id)) ?? "none");
   }
   return result;
 }
@@ -354,7 +355,7 @@ describe("send queue (send to all, P0-08)", () => {
     queue.stop();
   });
 
-  it("requeuePending skips what is not pending, not mesh, or already held", async () => {
+  it("requeuePending skips what is not pending, not mesh (a courier record has no status at all, P3-07), or already held", async () => {
     const { store, radio, queue, register, batch } = await setUp({ recipients: 4, gapMs: 1000 });
     const messages = await batch();
     const delivered = messages[0] as JournalEntry;
@@ -380,13 +381,15 @@ describe("send queue (send to all, P0-08)", () => {
       refersTo: givenUp.id,
       newStatus: "given_up",
     });
-    await composeMessage(store, {
+    const courier = await composeMessage(store, {
       incidentId: INCIDENT,
       operator: "Thomas",
       counterpartyId: register[0]?.id ?? "",
       transport: "courier",
       body: "med bud",
     });
+    expect(courier.message.seqNo).toBeUndefined();
+    expect(await store.statusOf(courier.message.id)).toBeNull();
     // Already held (paused: no radio), so not restored a second time; the straggler of the
     // same batch joins its batch instead of making a new one.
     queue.enqueue([messages[2] as JournalEntry]);

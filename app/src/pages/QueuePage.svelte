@@ -64,10 +64,17 @@
     return sendQueue.drainEstimateMs();
   });
 
+  // The queue holds radio messages only, so every status is one of the chain's; a message
+  // whose incident is not loaded yet reads as pending, which is what the queue took it as.
   const statuses = $derived.by(() => {
     const map = new Map<string, Status>();
     for (const item of items) {
-      map.set(item.messageId, statusOf(entries.get(item.incidentId) ?? [], item.messageId));
+      const loaded = entries.get(item.incidentId) ?? [];
+      const message = loaded.find((entry) => entry.id === item.messageId);
+      const status = message === undefined ? "pending" : statusOf(loaded, message);
+      if (status !== null) {
+        map.set(item.messageId, status);
+      }
     }
     return map;
   });

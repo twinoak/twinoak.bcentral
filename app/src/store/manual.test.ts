@@ -122,7 +122,7 @@ describe("incoming message on a non-mesh transport", () => {
     store.close();
   });
 
-  it("is not parsed for roger: 'R1' by phone stays a message; the operator records the roger by hand", async () => {
+  it("is not parsed for roger: 'R1' by phone stays a message; a phone message_out has no status to move (P3-07)", async () => {
     const store = await openTestStore();
     const entry = await hans(store);
     const { message } = await composeMessage(store, {
@@ -140,9 +140,11 @@ describe("incoming message on a non-mesh transport", () => {
       text: "R1",
     });
     expect(phoned.text).toBe("R1");
-    expect(await store.statusOf(message.id)).toBe("pending");
-    // Were the roger rules applied to it, they would still find nothing open (pending).
+    expect(message.seqNo).toBeUndefined();
+    expect(await store.statusOf(message.id)).toBeNull();
+    // Were the roger rules applied to it, they would find no numbered message to close.
     expect(await applyIncoming(store, phoned)).toBeNull();
+    expect(await store.entriesReferringTo(message.id)).toEqual([]);
     store.close();
   });
 

@@ -1,12 +1,13 @@
 <script lang="ts">
   // The incident's journal as a list of message slips (P0-07, reshaped in P1-01, on the row
   // list in P2-03): one row per entry, newest on top, laid on the columns time | who | body |
-  // status. An outgoing message carries its status in the fixed column at the right (P3-03,
+  // status. A radio message carries its status in the fixed column at the right (P3-03,
   // StatusSlots.svelte): three slots — sent · delivered · confirmed — one symbol each under
   // the header's labels, the times in the slots' tooltips and nowhere else in the list.
   // Incoming and outgoing are told apart by the glyph before the counterparty (→ out, ← in)
-  // and by the counterparty itself; an incoming row, a note and a correction leave the
-  // column empty. The messages of one send-to-all are one row with a count per slot. A
+  // and by the counterparty itself; an incoming row, a note, a correction and an outgoing
+  // message by phone, courier or verbal (P3-07: a plain record with no status chain) leave
+  // the column empty. The messages of one send-to-all are one row with a count per slot. A
   // corrected entry reads its latest correction's text as its text, with a "corrected" chip
   // after the time (P3-02). The view stays at the top unless the operator scrolled down;
   // then new rows arrive above without moving the viewport and a "N new" chip, on the
@@ -18,12 +19,13 @@
   // "answers" / "answered" links of a reply (P1-02), the point line when the entry has a
   // point (P3-05), and the action row — quiet buttons for exactly the actions that apply
   // (lib/rowActions.ts): the point action first (Open point, Close point or Reopen point by
-  // the point's state), then Retry or Send, Mark, Correct on an outgoing message, Reply and
+  // the point's state), then Retry or Send, Mark, Correct on a radio message, Correct alone
+  // on an outgoing message by hand (no history, no Mark: it has no chain), Reply and
   // Correct on an incoming one, Correct on a note; a send-to-all row opens into one row per
   // recipient, each with its own actions, and "Retry all given up" when any can be; its
   // point is its first message's. One row is open at a time (lib/rowOpen.ts): opening
   // another closes the first, the open row's own line closes it, Esc closes. The Mark form
-  // (a manual status with a required reason), the Correct form (one box with the current
+  // (a manual roger or given-up with a required reason), the Correct form (one box with the current
   // text, the "#n " of a message fixed in front of it, lib/correctionForm.ts, P3-02), the
   // Open point form (one box with the title, prefilled from the text, lib/pointTitle.ts) and
   // the Close point form (a required reason) replace the action row while they are open;
@@ -71,7 +73,7 @@
     type PointView,
     type TimelineRow,
   } from "../store/journalView.ts";
-  import { manualStatusesFor } from "../store/outgoing.ts";
+  import { MANUAL_STATUSES } from "../store/outgoing.ts";
   import type { JournalEntry, Status } from "../store/types.ts";
   import Icon from "./Icon.svelte";
   import Row from "./Row.svelte";
@@ -748,43 +750,42 @@
   {/if}
 {/snippet}
 
-<!-- The Mark form: the reason, one button per status the operator may set by hand on the
-     message's transport, Cancel. -->
+<!-- The Mark form of a radio message: the reason, one button per status the operator may set
+     by hand (roger, given up), Cancel. -->
 {#snippet statusForm(entry: JournalEntry)}
-  {#if entry.transport !== undefined}
-    <div class="row-form">
-      <div class="field">
-        <input
-          type="text"
-          placeholder={t("journal.manual.reason")}
-          aria-label={t("journal.manual.reason")}
-          bind:value={reason}
-        />
-      </div>
-      {#each manualStatusesFor(entry.transport) as next (next)}
-        <button
-          type="button"
-          class="btn"
-          disabled={busy || reason.trim() === ""}
-          onclick={() => saveStatus(entry, next)}
-        >
-          {t(`send.manual.${next}`)}
-        </button>
-      {/each}
-      <button type="button" class="btn btn-quiet" onclick={cancelForms}
-        >{t("journal.action.cancel")}</button
-      >
-      {#if error}
-        <span class="field-error" role="alert"><Icon name="warning" />{error}</span>
-      {/if}
+  <div class="row-form">
+    <div class="field">
+      <input
+        type="text"
+        placeholder={t("journal.manual.reason")}
+        aria-label={t("journal.manual.reason")}
+        bind:value={reason}
+      />
     </div>
-  {/if}
+    {#each MANUAL_STATUSES as next (next)}
+      <button
+        type="button"
+        class="btn"
+        disabled={busy || reason.trim() === ""}
+        onclick={() => saveStatus(entry, next)}
+      >
+        {t(`send.manual.${next}`)}
+      </button>
+    {/each}
+    <button type="button" class="btn btn-quiet" onclick={cancelForms}
+      >{t("journal.action.cancel")}</button
+    >
+    {#if error}
+      <span class="field-error" role="alert"><Icon name="warning" />{error}</span>
+    {/if}
+  </div>
 {/snippet}
 
-<!-- An outgoing message: the line with its status slots; open, its history (the transitions,
-     then the text's versions), the incoming message it answers, its point line, and its
-     actions or its form. `nested` marks a recipient row inside a batch, whose point is the
-     batch's (shown on the batch row, not here). -->
+<!-- An outgoing message: the line with its status slots when it has a chain (a radio
+     message; one by phone, courier or verbal leaves the column empty, P3-07); open, its
+     history (the transitions, then the text's versions), the incoming message it answers,
+     its point line, and its actions or its form. `nested` marks a recipient row inside a
+     batch, whose point is the batch's (shown on the batch row, not here). -->
 {#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
   {@const inflightText = inflight(entry.id)}
@@ -811,7 +812,9 @@
       <div class="row-body">
         {#if correcting !== entry.id}{currentText(entry, view.corrections)}{/if}
       </div>
-      <StatusSlots strip={view.strip} transport={entry.transport} {inflightText} />
+      {#if view.status !== null}
+        <StatusSlots strip={view.strip} {inflightText} />
+      {/if}
     {/snippet}
     {#snippet area()}
       <RowHistory

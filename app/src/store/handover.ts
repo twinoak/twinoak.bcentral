@@ -1,9 +1,11 @@
 // The writes the handover screen makes (P1-08), above the store: the handover note when the
 // operator name changes, the status request to a quiet radio, and the "send by courier"
-// decision on a given-up message (recorded from the New record tab since P3-01). Everything
-// is an ordinary entry the journal already has (note, message_out, status_change); the data
-// model is untouched.
+// decision on a given-up message (recorded from the New record tab since P3-01; since P3-07
+// the copy is a plain record with a point on it). Everything is an ordinary entry the
+// journal already has (note, message_out, point, status_change); the data model is
+// untouched.
 
+import { suggestedTitle } from "../lib/pointTitle.ts";
 import type { JournalStore } from "./journalStore.ts";
 import { NON_MESH_TRANSPORTS } from "./manual.ts";
 import {
@@ -12,6 +14,7 @@ import {
   recordManualStatus,
   type Composed,
 } from "./outgoing.ts";
+import { openPoint } from "./points.ts";
 import type { JournalEntry, Transport } from "./types.ts";
 
 export class HandoverError extends Error {
@@ -100,25 +103,29 @@ export interface ResendOptions {
   transport: Transport;
   // The copy's text, prefilled with the original's body and possibly edited.
   body: string;
-  // The reason recorded on the original ("sent by courier as #n"), built from the copy.
-  reason: (copy: JournalEntry) => string;
+  // The reason recorded on the original ("sent via Courier").
+  reason: string;
 }
 
 export interface CourierHandoff {
-  // The copy: a message_out on the chosen transport to the same recipient, its own #n,
-  // pending.
+  // The copy: a plain message_out on the chosen transport to the same recipient (P3-07: no
+  // #n, no status).
   copy: JournalEntry;
+  // The point opened on the copy, titled from its text: the follow-up the chain used to be.
+  point: JournalEntry;
   // The status_change that closed the original.
   closed: JournalEntry;
 }
 
-// The decision "send by courier" on a given-up message, recorded from the New record tab
-// (P3-01): a message_out on a non-radio transport to the same recipient (a new #n, pending
-// until the operator marks it sent / delivered / roger by hand), and the original closed with
-// roger and the reason, which is how an item leaves the staff's queue (text-protocol.md:
-// roger is final; P0-07: a roger on a mesh message may be recorded by hand). The copy is
-// written first, so a refused close leaves a copy the operator can see and the original
-// still in the list. The radio is refused: a copy over the mesh is a Retry, not a resend.
+// The decision "send by courier" on a given-up radio message, recorded from the New record
+// tab (P3-01): a plain message_out on a non-radio transport to the same recipient, a point
+// opened on it so the follow-up is not lost (P3-07: a courier copy has no status chain to
+// watch; "the courier is not back" is a point), and the original closed with roger and the
+// reason, which is how an item leaves the staff's queue (text-protocol.md: roger is final;
+// P0-07: a roger on a mesh message may be recorded by hand). The copy and its point are
+// written first, so a refused close leaves them for the operator to see and the original
+// still in the list. The radio is refused: a copy over the mesh is a Retry, not a resend;
+// and only a radio message can be given up, so only one can be resent this way.
 export async function resendByHand(
   store: JournalStore,
   original: JournalEntry,
@@ -142,9 +149,13 @@ export async function resendByHand(
     transport: options.transport,
     body: options.body,
   });
+  const point = await openPoint(store, copy, {
+    operator: options.operator,
+    title: suggestedTitle(copy.text ?? ""),
+  });
   const closed = await recordManualStatus(store, original, "roger", {
     operator: options.operator,
-    text: options.reason(copy),
+    text: options.reason,
   });
-  return { copy, closed };
+  return { copy, point, closed };
 }

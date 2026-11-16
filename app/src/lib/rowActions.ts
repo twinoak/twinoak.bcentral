@@ -2,7 +2,8 @@
 // exactly these, in this order, on the action line of the open row (components/Timeline.svelte):
 //
 //   message_out over the radio   Retry (given up) or Send (never sent, nobody sending it), Mark, Correct
-//   message_out by hand          Mark, Correct
+//   message_out by hand          Correct (P3-07: a phone, courier or verbal message has no
+//                                status to mark and nothing to retry; its follow-up is a point)
 //   message_in                   Reply, Correct
 //   note                         Correct
 //   a send-to-all row            Retry all given up (when any can be retried)
@@ -31,7 +32,9 @@ export function pointAction(state: PointState | undefined): PointAction {
 
 export interface MessageActionInput {
   transport: Transport | undefined;
-  status: Status;
+  // The chain's status of a radio message; null for a message by phone, courier or verbal,
+  // which has none (store/status.ts).
+  status: Status | null;
   // The page's rule for Retry / Send: a mesh message nobody is sending, given up or never
   // sent (JournalPage.svelte canRetry).
   canRetry: boolean;
@@ -44,9 +47,15 @@ export function messageActions(input: MessageActionInput): RowAction[] {
   if (input.canRetry) {
     actions.push(input.status === "given_up" ? "retry" : "send");
   }
-  // Mark: a manual status with a reason, on any transport, until the message is confirmed
-  // and while nothing is sending it (store/outgoing.ts manualStatusesFor says which).
-  if (input.status !== "roger" && input.transport !== undefined && !input.inflight) {
+  // Mark: a manual roger or given-up with a reason on a radio message (store/outgoing.ts
+  // MANUAL_STATUSES), until the message is confirmed and while nothing is sending it. A
+  // message without a chain (status null) has nothing to mark.
+  if (
+    input.transport === "mesh" &&
+    input.status !== null &&
+    input.status !== "roger" &&
+    !input.inflight
+  ) {
     actions.push("mark");
   }
   actions.push("correct");

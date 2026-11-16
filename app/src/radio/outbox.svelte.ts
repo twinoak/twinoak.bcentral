@@ -284,10 +284,11 @@ export function createOutbox(deps: OutboxDeps): Outbox {
   // second click on the same message is refused at once.
   const requested = new Set<string>();
 
+  // The message is a mesh message_out by now (send() checked), so its status is never null.
   async function assertSendable(store: JournalStore, message: JournalEntry): Promise<void> {
     const status = await store.statusOf(message.id);
     if (status !== "pending" && status !== "given_up") {
-      throw new OutboxError(t("send.error.wrongStatus", { status }));
+      throw new OutboxError(t("send.error.wrongStatus", { status: status ?? "" }));
     }
   }
 

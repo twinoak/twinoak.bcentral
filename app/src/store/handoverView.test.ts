@@ -1,7 +1,8 @@
 // The handover screen's four lists (P1-08) against contract/examples/walkthrough.json plus a
 // few extra entries: open orders, given up, unanswered incoming and quiet radios, each
 // oldest first; and that they are derived live (a new roger removes an order, a reply removes
-// an incoming message, a message from a quiet radio removes it).
+// an incoming message, a message from a quiet radio removes it). The orders are radio
+// messages only (P3-07): the walkthrough's courier record is in no list.
 
 import { describe, expect, it } from "vitest";
 import { loadWalkthrough } from "../test-support/walkthrough.ts";
@@ -13,7 +14,7 @@ import {
   quietRadios,
   unansweredIncoming,
 } from "./handoverView.ts";
-import { buildTimeline, lastHeardFrom } from "./journalView.ts";
+import { buildTimeline, lastHeardFrom, type MessageView } from "./journalView.ts";
 import type { JournalEntry, RegisterEntry } from "./types.ts";
 
 const walkthrough = loadWalkthrough();
@@ -63,17 +64,32 @@ function messageOut(options: {
   at: string;
   batchId?: string;
   refersTo?: string;
-  transport?: JournalEntry["transport"];
 }): JournalEntry {
   return {
     ...stamp(options.at),
     type: "message_out",
-    transport: options.transport ?? "mesh",
+    transport: "mesh",
     counterpartyId: options.counterpartyId,
     seqNo: options.seqNo,
     batchId: options.batchId,
     refersTo: options.refersTo,
     text: `#${options.seqNo} ${options.body}`,
+  };
+}
+
+// A message by phone, courier or verbal: a plain record, no number (P3-07).
+function plainOut(options: {
+  counterpartyId: string;
+  text: string;
+  at: string;
+  transport: "phone" | "courier" | "verbal";
+}): JournalEntry {
+  return {
+    ...stamp(options.at),
+    type: "message_out",
+    transport: options.transport,
+    counterpartyId: options.counterpartyId,
+    text: options.text,
   };
 }
 
@@ -177,15 +193,40 @@ const register: RegisterEntry[] = [
 describe("the handover lists over the walkthrough plus extras", () => {
   const lists = buildHandover(entries);
 
-  it("open orders: not yet roger, given up apart, oldest first — courier #2, Peter #2, Hans #3", () => {
-    expect(lists.open.map((view) => view.entry.id)).toEqual([W.courier2, toPeter2.id, toHans3.id]);
-    expect(lists.open.map((view) => view.status)).toEqual(["delivered", "delivered", "pending"]);
-    // #1 to Hans has its roger and is not open; #1 to Peter is given up and not here.
+  it("open orders: not yet roger, given up apart, oldest first — Peter #2, Hans #3; the courier record is no order", () => {
+    expect(lists.open.map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id]);
+    expect(lists.open.map((view) => view.status)).toEqual(["delivered", "pending"]);
+    // #1 to Hans has its roger and is not open; #1 to Peter is given up and not here; the
+    // courier record to Hans has no status at all (P3-07).
     expect(lists.open.some((view) => view.entry.id === W.order1)).toBe(false);
     expect(lists.open.some((view) => view.entry.id === toPeter1.id)).toBe(false);
+    expect(lists.open.some((view) => view.entry.id === W.courier2)).toBe(false);
+    expect(lists.givenUp.some((view) => view.entry.id === W.courier2)).toBe(false);
     // Each item carries the strip the journal shows.
     expect(lists.open[0]?.strip.map((item) => item.kind)).toEqual(["sent", "delivered"]);
-    expect(lists.open[2]?.strip.map((item) => item.kind)).toEqual(["pending"]);
+    expect(lists.open[1]?.strip.map((item) => item.kind)).toEqual(["pending"]);
+  });
+
+  it("a message by phone, courier or verbal is in neither list, whatever refers to it (P3-07)", () => {
+    const byPhone = plainOut({
+      counterpartyId: PETER,
+      text: "Ringede: kør til nr 4",
+      at: "2026-10-28T19:27:00Z",
+      transport: "phone",
+    });
+    const views = messageViews(buildTimeline([...entries, byPhone]));
+    const view = views.find((candidate) => candidate.entry.id === byPhone.id);
+    expect(view?.status).toBeNull();
+    expect(view?.strip).toEqual([]);
+    expect(openOrders(views).some((candidate) => candidate.entry.id === byPhone.id)).toBe(false);
+    expect(givenUpOrders(views).some((candidate) => candidate.entry.id === byPhone.id)).toBe(false);
+    // The rule itself: a view without a status is in neither list.
+    const nothing = { ...(view as MessageView), status: null };
+    expect(openOrders([nothing])).toEqual([]);
+    expect(givenUpOrders([nothing])).toEqual([]);
+    // The courier record of the walkthrough, with its point, is neither either.
+    const courier = views.find((candidate) => candidate.entry.id === W.courier2);
+    expect(courier?.status).toBeNull();
   });
 
   it("given up: the one that needs a decision, with its strip", () => {
@@ -206,7 +247,7 @@ describe("the handover lists over the walkthrough plus extras", () => {
       text: "Peter rang",
     });
     const after = buildHandover([...entries, roger]);
-    expect(after.open.map((view) => view.entry.id)).toEqual([W.courier2, toHans3.id]);
+    expect(after.open.map((view) => view.entry.id)).toEqual([toHans3.id]);
     expect(after.givenUp.map((view) => view.entry.id)).toEqual(
       lists.givenUp.map((view) => view.entry.id),
     );
@@ -225,38 +266,36 @@ describe("the handover lists over the walkthrough plus extras", () => {
     });
     const after = buildHandover([...entries, reply]);
     expect(after.unanswered.map((entry) => entry.id)).toEqual([W.freeTextIn]);
-    expect(after.open.map((view) => view.entry.id)).toEqual([
-      W.courier2,
-      toPeter2.id,
-      toHans3.id,
-      reply.id,
-    ]);
+    expect(after.open.map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id, reply.id]);
+  });
+
+  it("a reply by phone removes the incoming item too, and is no order itself (P3-07)", () => {
+    const reply = plainOut({
+      counterpartyId: PETER,
+      text: "Ringede tilbage: bliv der",
+      at: "2026-10-28T19:56:00Z",
+      transport: "phone",
+    });
+    const after = buildHandover([...entries, { ...reply, refersTo: fromPeter.id }]);
+    expect(after.unanswered.map((entry) => entry.id)).toEqual([W.freeTextIn]);
+    expect(after.open.map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id]);
   });
 
   it("a retry moves a given-up order back among the open; a manual roger closes it", () => {
     const retried = statusChange({ refersTo: toPeter1.id, to: "sent", at: "2026-10-28T20:00:00Z" });
     const after = buildHandover([...entries, retried]);
     expect(after.givenUp).toEqual([]);
-    expect(after.open.map((view) => view.entry.id)).toEqual([
-      W.courier2,
-      toPeter1.id,
-      toPeter2.id,
-      toHans3.id,
-    ]);
+    expect(after.open.map((view) => view.entry.id)).toEqual([toPeter1.id, toPeter2.id, toHans3.id]);
 
     const closed = statusChange({
       refersTo: toPeter1.id,
       to: "roger",
       at: "2026-10-28T20:00:00Z",
-      text: "sent by courier as #3",
+      text: "sent via Courier",
     });
     const afterClose = buildHandover([...entries, closed]);
     expect(afterClose.givenUp).toEqual([]);
-    expect(afterClose.open.map((view) => view.entry.id)).toEqual([
-      W.courier2,
-      toPeter2.id,
-      toHans3.id,
-    ]);
+    expect(afterClose.open.map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id]);
   });
 
   it("a manual roger's reason is not an entry id and matches no incoming message", () => {
@@ -308,23 +347,20 @@ describe("the handover lists over the walkthrough plus extras", () => {
       }),
     ];
     const views = messageViews(buildTimeline([...entries, a, b, c, ...chain]));
-    // The walkthrough's #1 and courier #2, the three extras, the three of the batch.
+    // The walkthrough's #1 and the courier record, the three extras, the three of the batch.
     expect(views).toHaveLength(8);
     expect(views.filter((view) => view.entry.batchId === BATCH)).toHaveLength(3);
-    expect(openOrders(views).map((view) => view.entry.id)).toEqual([
-      W.courier2,
-      toPeter2.id,
-      toHans3.id,
-      c.id,
-    ]);
+    expect(openOrders(views).map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id, c.id]);
     expect(givenUpOrders(views).map((view) => view.entry.id)).toEqual([toPeter1.id, b.id]);
   });
 
-  it("the walkthrough alone: courier #2 open, nothing given up, the free text unanswered", () => {
+  it("the walkthrough alone: nothing open (#1 is roger, the courier record has no status), nothing given up, the free text unanswered", () => {
     const alone = buildHandover(walkthrough.entries);
-    expect(alone.open.map((view) => view.entry.id)).toEqual([W.courier2]);
+    expect(alone.open).toEqual([]);
     expect(alone.givenUp).toEqual([]);
     expect(alone.unanswered.map((entry) => entry.id)).toEqual([W.freeTextIn]);
+    // The courier record's follow-up was a point, closed: the handover's first list is empty.
+    expect(alone.points).toEqual([]);
   });
 
   it("an empty incident has empty lists", () => {
@@ -365,7 +401,7 @@ describe("the handover lists over the walkthrough plus extras", () => {
     ).toEqual(["Kælder i nr 4: pumpe", "Hent Peter ved nr 4"]);
     // The other lists do not move: a point is not a message and answers nothing.
     const lists = buildHandover([...withPoints, closed, reopened]);
-    expect(lists.open.map((view) => view.entry.id)).toEqual([W.courier2, toPeter2.id, toHans3.id]);
+    expect(lists.open.map((view) => view.entry.id)).toEqual([toPeter2.id, toHans3.id]);
     expect(lists.unanswered.map((entry) => entry.id)).toEqual([W.freeTextIn, fromPeter.id]);
   });
 });

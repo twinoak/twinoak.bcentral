@@ -1,6 +1,7 @@
 // The New record tab's store path (P3-01): a note, an incoming message by phone, an outgoing
-// message by courier — each the entry the journal already had for it — and what the tab
-// refuses: the radio on either message kind, a counterparty that is not in the register.
+// message by courier — each the entry the journal already had for it; the outgoing one a
+// plain record since P3-07 — and what the tab refuses: the radio on either message kind, a
+// counterparty that is not in the register.
 
 import { describe, expect, it } from "vitest";
 import { openTestStore } from "../test-support/testStore.ts";
@@ -52,7 +53,7 @@ describe("a note", () => {
     expect(note.seqNo).toBeUndefined();
     expect(note.refersTo).toBeUndefined();
     expect(await store.lastDeviceSeq()).toBe(before + 1);
-    expect(await store.lastSeqNo(HANS)).toBe(2);
+    expect(await store.lastSeqNo(HANS)).toBe(1);
   });
 });
 
@@ -79,8 +80,8 @@ describe("an incoming message by phone", () => {
     expect(message.seqNo).toBeUndefined();
     expect(message.newStatus).toBeUndefined();
     expect(await store.entriesReferringTo(message.id)).toEqual([]);
-    // The counter is the outgoing side's; an incoming message does not move it.
-    expect(await store.lastSeqNo(HANS)).toBe(2);
+    // The counter is the radio's; an incoming message does not move it.
+    expect(await store.lastSeqNo(HANS)).toBe(1);
   });
 
   it("a contact without a radio is a counterparty like any other (P3-06), and her call is 'last heard from'", async () => {
@@ -133,9 +134,9 @@ describe("an incoming message by phone", () => {
 });
 
 describe("an outgoing message by courier", () => {
-  it("is a message_out with the recipient's next #n in the text, seqNo reserved, pending, and nothing transmitted", async () => {
+  it("is a plain message_out: the text as typed, no seqNo, no prefix, no status, the counter untouched (P3-07)", async () => {
     const store = await storeWithWalkthrough();
-    expect(await store.lastSeqNo(HANS)).toBe(2);
+    expect(await store.lastSeqNo(HANS)).toBe(1);
     const message = stored(
       await recordByHand(store, {
         incidentId: INCIDENT,
@@ -150,17 +151,17 @@ describe("an outgoing message by courier", () => {
       type: "message_out",
       transport: "courier",
       counterpartyId: HANS,
-      seqNo: 3,
-      text: "#3 Pumpe på vej med Peter på cykel",
+      text: "Pumpe på vej med Peter på cykel",
       operator: "Anne",
     });
+    expect("seqNo" in message).toBe(false);
     expect(message.refersTo).toBeUndefined();
     expect(message.batchId).toBeUndefined();
-    expect(await store.lastSeqNo(HANS)).toBe(3);
-    // No status_change of any kind: pending until the operator marks it from the row.
-    expect(await store.statusOf(message.id)).toBe("pending");
+    expect(await store.lastSeqNo(HANS)).toBe(1);
+    // No status chain: nothing refers to it and its status is null, not pending.
+    expect(await store.statusOf(message.id)).toBeNull();
     expect(await store.entriesReferringTo(message.id)).toEqual([]);
-    // The counter is shared across transports: the next radio message to Hans is #4.
+    // The counter is the radio's alone: the next radio message to Hans is #2.
     const { message: radio } = await composeMessage(store, {
       incidentId: INCIDENT,
       operator: "Anne",
@@ -168,7 +169,7 @@ describe("an outgoing message by courier", () => {
       transport: "mesh",
       body: "Meld status",
     });
-    expect(radio.text).toBe("#4 Meld status");
+    expect(radio.text).toBe("#2 Meld status");
   });
 
   it("refuses the radio: a mesh message_out is the MeshCore tab's, and the counter stays", async () => {
@@ -195,10 +196,10 @@ describe("an outgoing message by courier", () => {
       }),
     ).rejects.toBeInstanceOf(ManualEntryError);
     expect(await store.lastDeviceSeq()).toBe(before);
-    expect(await store.lastSeqNo(HANS)).toBe(2);
+    expect(await store.lastSeqNo(HANS)).toBe(1);
   });
 
-  it("carries the ØVELSE prefix in a drill, like any message_out", async () => {
+  it("carries no ØVELSE prefix in a drill: the prefix is the radio's, like the number (P3-07)", async () => {
     const store = await storeWithWalkthrough();
     const drill = await store.createIncident({ name: "Øvelse", createdBy: "Anne", drill: true });
     const message = await recordByHand(store, {
@@ -209,12 +210,13 @@ describe("an outgoing message by courier", () => {
       transport: "verbal",
       text: "Meld status",
     });
-    expect(message.text).toBe("ØVELSE #3 Meld status");
+    expect(message.text).toBe("Meld status");
+    expect(message.incidentId).toBe(drill.id);
   });
 });
 
 describe("a reply to a courier incoming (P1-02 on the New record tab)", () => {
-  it("is a courier message_out with refersTo = the incoming entry's id and the next #n", async () => {
+  it("is a courier message_out with refersTo = the incoming entry's id, as typed, with no number", async () => {
     const store = await storeWithWalkthrough();
     const incoming = await recordByHand(store, {
       incidentId: INCIDENT,
@@ -239,10 +241,11 @@ describe("a reply to a courier incoming (P1-02 on the New record tab)", () => {
       type: "message_out",
       transport: "courier",
       counterpartyId: HANS,
-      seqNo: 3,
-      text: "#3 Modtaget, bliv ved nr 4",
+      text: "Modtaget, bliv ved nr 4",
       refersTo: incoming.id,
     });
+    expect(reply.seqNo).toBeUndefined();
+    expect(await store.lastSeqNo(HANS)).toBe(1);
     expect(await store.getEntry(incoming.id)).toEqual(incoming);
     expect(await store.entriesReferringTo(incoming.id)).toEqual([reply]);
   });

@@ -71,6 +71,7 @@ export interface JournalEntry {
   type: EntryType;
   transport?: Transport;
   counterpartyId?: string;
+  // The #n of a mesh message_out (text-protocol.md); never on any other transport (P3-07).
   seqNo?: number;
   // Set on every message_out one send-to-all created (P1-01); absent on a single send.
   batchId?: string;
@@ -86,12 +87,14 @@ export type NewJournalEntry = Omit<
   "id" | "deviceId" | "deviceSeq" | "timestamp" | "clockTrust"
 >;
 
-// A message_out before its #n exists: what appendMessageOut takes (P0-05). The store assigns
-// seqNo from the recipient's counter and the caller's compose() turns it into the text.
+// A mesh message_out before its #n exists: what appendMessageOut takes (P0-05). The store
+// assigns seqNo from the recipient's counter and the caller's compose() turns it into the
+// text. Only a radio message is numbered (P3-07): a message_out by phone, courier or verbal
+// is a plain record appended like any other entry, with neither seqNo nor batchId.
 export interface NewMessageOut {
   incidentId: string;
   operator: string;
-  transport: Transport;
+  transport: "mesh";
   counterpartyId: string;
   // The batch this message belongs to (send-to-all); omitted for a single send.
   batchId?: string;

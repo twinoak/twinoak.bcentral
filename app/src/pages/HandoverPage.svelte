@@ -6,10 +6,12 @@
   // radio's state, Print — then five cards, each a row list with its count in the title,
   // oldest first, derived from the entries on every reload (store/handoverView.ts): the open
   // points (P3-05, first of the five and across the width: the to-do list, each with its
-  // title, age, origin and Close with a reason), then in a 2 × 2 grid open orders, given-up
-  // messages with the three decisions (retry, send by courier, close with a reason),
-  // unanswered incoming messages with Reply, and quiet radios with "Send status request"
-  // ("#n Meld status"). An outgoing row carries the
+  // title, age, origin and Close with a reason), then in a 2 × 2 grid open orders and
+  // given-up messages — radio messages only (P3-07): a message by phone, courier or verbal
+  // has no status chain, and its follow-up is a point — the given-up ones with the three
+  // decisions (retry, send by courier, close with a reason), unanswered incoming messages
+  // with Reply, and quiet radios with "Send status request" ("#n Meld status"). An outgoing
+  // row carries the
   // journal's status column (P3-03, StatusSlots.svelte) under the same header labels, and
   // its age after the time. The entry rows are the journal's rows (components/Row.svelte,
   // P3-04): one line at rest, nothing on hover; a click opens the row with its history
@@ -287,8 +289,8 @@
   }
 
   // "Send by courier" (P3-01): the New record tab opens as an outgoing courier message to
-  // the same recipient with the original's text; recording it writes the copy and closes
-  // the original (store/handover.ts).
+  // the same recipient with the original's text; adding it writes the copy with a point on
+  // it (P3-07) and closes the original (store/handover.ts).
   async function courier(view: MessageView) {
     await open(courierPrefill(view.entry));
   }
@@ -398,8 +400,8 @@
     }
   }
 
-  // A record from the card: a reply by hand, or the courier copy that closed a given-up
-  // message, which is a toast.
+  // A record from the card: a reply by hand, or the courier copy (with its point) that
+  // closed a given-up message, which is a toast.
   async function onadded(recorded: Recorded) {
     actionError = null;
     composeOpen = null;
@@ -407,7 +409,6 @@
       showToast(
         t("handover.givenUp.resentDone", {
           via: t(`send.transport.${recorded.entry.transport ?? "courier"}`),
-          n: recorded.entry.seqNo ?? 0,
         }),
       );
     }
@@ -484,14 +485,10 @@
   </span>
 {/snippet}
 
-<!-- An outgoing message's status column: the three slots, with the in-flight words in the
+<!-- A radio message's status column: the three slots, with the in-flight words in the
      tooltip while the outbox or the queue holds it. -->
 {#snippet stripCell(view: MessageView)}
-  <StatusSlots
-    strip={view.strip}
-    transport={view.entry.transport}
-    inflightText={inflight(view.entry.id)}
-  />
+  <StatusSlots strip={view.strip} inflightText={inflight(view.entry.id)} />
 {/snippet}
 
 <!-- The page heading is for assistive technology; the bar's navigation names the screen. -->

@@ -6,8 +6,11 @@
 //
 // The five lists, each oldest first (the overdue one on top; this screen exists to find it):
 //   points      open points (P3-05): the staff's to-do list, first of the five
-//   open        message_out entries not yet roger and not given up (pending / sent / delivered)
-//   givenUp     message_out entries whose status is given_up: the ones that need a decision
+//   open        radio message_out entries not yet roger and not given up (pending / sent /
+//               delivered); a message by phone, courier or verbal has no status and is in
+//               neither list (P3-07) — its follow-up is a point
+//   givenUp     radio message_out entries whose status is given_up: the ones that need a
+//               decision
 //   unanswered  message_in entries nobody has answered: no message_out carries their id as
 //               refersTo (a reply, P1-02), and no roger was recorded from them (the roger's
 //               status_change carries the incoming entry's id as its text, P0-06)
@@ -47,9 +50,12 @@ function oldestFirst(views: readonly MessageView[]): MessageView[] {
   return [...views].sort((a, b) => compareEntries(a.entry, b.entry));
 }
 
-// Not yet roger: pending, sent or delivered. Given up is a list of its own.
+// Not yet roger: pending, sent or delivered. Given up is a list of its own. A view with no
+// status (null: a message by phone, courier or verbal, P3-07) is in neither.
 export function openOrders(views: readonly MessageView[]): MessageView[] {
-  return oldestFirst(views.filter((view) => OPEN_STATUSES.includes(view.status)));
+  return oldestFirst(
+    views.filter((view) => view.status !== null && OPEN_STATUSES.includes(view.status)),
+  );
 }
 
 export function givenUpOrders(views: readonly MessageView[]): MessageView[] {

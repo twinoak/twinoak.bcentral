@@ -103,8 +103,9 @@ component defines its own colours or sizes; a component `<style>` block may only
   still out), `✕` `--danger` (given up, in the first slot not reached; the slots before it
   stay filled). A batch row shows a count per slot (`23/25`, `--ok` once all are there)
   and `✕ n` under them when n > 0. The header is three 13 px labels over the slots, stuck
-  to the top of the list. Incoming rows, notes and corrections leave the column empty.
-  High contrast keeps the shapes and drops the tints.
+  to the top of the list. Incoming rows, notes, corrections and outgoing messages by phone,
+  courier or verbal (P3-07: `#n` and the chain are the radio's; a message by hand is a
+  plain record) leave the column empty. High contrast keeps the shapes and drops the tints.
 - **Card** `.card`: surface, rule border, radius `--r-2`, padding `--s-5`; `.card-title`
   20 px 600 with `--s-4` below. A card has one purpose; two purposes are two cards or tabs.
 - **Tabs** `.tabs` for switching between forms of the same kind in one card (New record /
@@ -270,6 +271,15 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   runs the row's one point action and opens the row first when a form is needed. The print
   block is a three-column table at the end of the document (title, state with the time and
   reason, the origin line), left out of a "since last print" that has no changed point.
+- `#n` and the status chain are the radio's (P3-07): an outgoing message by phone, courier
+  or verbal is a plain record — the text as typed, no number, no prefix, no status, nothing
+  to mark — so its row has an empty status column like an incoming row's, and its open area
+  offers the point action and Correct and nothing else (no history: there is none). The
+  Mark form offers the radio's two manual statuses, roger and given up. "Send by courier" on
+  a given-up radio message adds the courier record with a point on it, so the follow-up the
+  chain used to carry is on the to-do list; the New record tab's one button says "Add to
+  journal" for all three kinds. The print page writes the strip sentence and the status word
+  for radio messages only.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
   queued and reopens from the queue's title; the handover's row actions were always shown

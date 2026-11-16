@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Open items (P0-07): per register entry, every outgoing message not yet roger, with the
-  // given-up ones flagged. Newest first (P1-01): the groups in the order of their newest
+  // Open items (P0-07): per register entry, every radio message not yet roger, with the
+  // given-up ones flagged (a message by phone, courier or verbal has no status and is never
+  // here, P3-07). Newest first (P1-01): the groups in the order of their newest
   // item, as openItems() hands them over, and the items within a group newest first.
   // A card with the count in its title (P2-03); each group a row list in 14 / 16 px, each row
   // a button that scrolls the timeline to the message. The text is the message's current
@@ -48,7 +49,7 @@
             <button type="button" class="row-button" onclick={() => onselect(item.message.id)}>
               <span class="row-time">{formatTime(item.message.timestamp)}</span>
               <span class="row-body text">{item.text}</span>
-              <StatusSlots strip={item.strip} transport={item.message.transport} />
+              <StatusSlots strip={item.strip} />
             </button>
           </li>
         {/each}

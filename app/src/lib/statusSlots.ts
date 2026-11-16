@@ -1,9 +1,11 @@
-// The status column (P3-03): the state of an outgoing message read off three fixed slots at
-// the right of its row — sent · delivered · confirmed — one symbol each, always in the same
+// The status column (P3-03): the state of a radio message read off three fixed slots at the
+// right of its row — sent · delivered · confirmed — one symbol each, always in the same
 // place, with no times in the list (the times are the slots' tooltips and the row's
 // history). One pure rule per thing, like lib/journalRows.ts, so the timeline, the handover
 // lists and the open-items card agree and a test can hold every state. The words of the
 // tooltips are lib/journalText.ts's (slotText); the drawing is components/SlotSymbol.svelte.
+// A message by phone, courier or verbal has no chain and no slots (P3-07): its column is
+// empty, like an incoming row's.
 //
 // Five shapes, so colour is never the only cue (docs/design.md): a hollow circle (not yet),
 // a filled circle (done), a filled circle with a check (confirmed), a hollow circle with a
@@ -11,7 +13,6 @@
 // slot the message did not reach; the slots before it stay filled).
 
 import type { BatchCounters, StripItem } from "../store/journalView.ts";
-import type { Transport } from "../store/types.ts";
 import type { ChipTint } from "./journalRows.ts";
 
 export const SLOT_NAMES = ["sent", "delivered", "roger"] as const;
@@ -32,10 +33,6 @@ export interface Slot {
   text: string | null;
   // On a clock: the latest resend attempt's text ("attempt 2/3"), null on the first attempt.
   attempt: string | null;
-  // True when the status was set by the operator, not the radio: every status of a message
-  // on a non-mesh transport (text-protocol.md: "the operator sets sent, delivered and roger
-  // by hand"). The tooltip says "by hand" with the reason.
-  byHand: boolean;
 }
 
 // The slot's tint and shape when the message reached that state.
@@ -45,11 +42,11 @@ const DONE_SHAPE: Readonly<Record<SlotName, SlotShape>> = {
   roger: "check",
 };
 
-// The three slots of a message from its strip (store/journalView.ts statusStrip: the current
-// run, oldest first) and its transport. Every outgoing message has all three; a pending
-// message (no sent yet) is three hollow circles.
-export function statusSlots(strip: readonly StripItem[], transport: Transport | undefined): Slot[] {
-  const byHand = transport !== undefined && transport !== "mesh";
+// The three slots of a radio message from its strip (store/journalView.ts statusStrip: the
+// current run, oldest first). Every radio message has all three; a pending message (no sent
+// yet) is three hollow circles. The text of a reached or crossed slot is the transition's
+// own — the radio's detail, or the operator's reason on a roger or given-up set by hand.
+export function statusSlots(strip: readonly StripItem[]): Slot[] {
   const givenUp = strip.find((item) => item.kind === "given_up");
   const waiting = strip.find((item) => item.kind === "waiting");
   let crossed = false;
@@ -63,7 +60,6 @@ export function statusSlots(strip: readonly StripItem[], transport: Transport | 
         at: reached.at,
         text: reached.text,
         attempt: null,
-        byHand,
       };
     }
     if (givenUp !== undefined && !crossed) {
@@ -75,7 +71,6 @@ export function statusSlots(strip: readonly StripItem[], transport: Transport | 
         at: givenUp.at,
         text: givenUp.text,
         attempt: null,
-        byHand,
       };
     }
     if (name === "delivered" && waiting !== undefined) {
@@ -86,10 +81,9 @@ export function statusSlots(strip: readonly StripItem[], transport: Transport | 
         at: null,
         text: null,
         attempt: waiting.attempt,
-        byHand,
       };
     }
-    return { name, shape: "hollow", tint: "neutral", at: null, text: null, attempt: null, byHand };
+    return { name, shape: "hollow", tint: "neutral", at: null, text: null, attempt: null };
   });
 }
 

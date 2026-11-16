@@ -113,7 +113,13 @@ export async function applyIncoming(
     if (rule.rule === "numbered" && entry.seqNo !== rule.n) {
       continue;
     }
-    candidates.push({ message: entry, status: await store.statusOf(entry.id) });
+    // A numbered message is a mesh message and has a chain; the null of a message without
+    // one (P3-07) cannot occur here, and such a message is no candidate anyway.
+    const status = await store.statusOf(entry.id);
+    if (status === null) {
+      continue;
+    }
+    candidates.push({ message: entry, status });
   }
 
   const message = chooseRoger(rule, candidates);

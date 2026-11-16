@@ -44,6 +44,32 @@ describe("contract schema validators", () => {
     expect(validateJournalEntry({ ...byType("correction"), batchId })).toBe(false);
   });
 
+  it("number a message_out on transport mesh only: no seqNo and no batchId on any other (P3-07)", () => {
+    const walkthrough = loadWalkthrough();
+    const mesh = walkthrough.entries.find(
+      (e) => e.type === "message_out" && e.transport === "mesh",
+    );
+    const courier = walkthrough.entries.find(
+      (e) => e.type === "message_out" && e.transport === "courier",
+    );
+    expect(mesh?.seqNo).toBe(1);
+    expect(courier?.seqNo).toBeUndefined();
+    expect(validateJournalEntry(courier)).toBe(true);
+    // A radio message needs its number; a plain record may not have one, nor a batch.
+    expect(validateJournalEntry({ ...mesh, seqNo: undefined })).toBe(false);
+    for (const transport of ["phone", "courier", "verbal"]) {
+      expect(validateJournalEntry({ ...courier, transport })).toBe(true);
+      expect(validateJournalEntry({ ...courier, transport, seqNo: 2 }), transport).toBe(false);
+      expect(
+        validateJournalEntry({ ...courier, transport, batchId: "01JB8ZK3QX9V2M4N6P8R0T2X10" }),
+        transport,
+      ).toBe(false);
+    }
+    // The walkthrough's courier record has no status change referring to it, only a point.
+    const referring = walkthrough.entries.filter((e) => e.refersTo === courier?.id);
+    expect(referring.map((e) => e.type)).toEqual(["point"]);
+  });
+
   it("allow drill: true on an incident and nothing but a boolean (P1-05)", () => {
     const [incident] = loadWalkthrough().incidents;
     expect(validateIncident({ ...incident, drill: true })).toBe(true);

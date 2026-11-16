@@ -361,7 +361,7 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
         entry.type === "message_out" &&
         entry.transport === "mesh" &&
         !held(entry.id) &&
-        statusOf(entries, entry.id) === "pending",
+        statusOf(entries, entry) === "pending",
     );
     if (pending.length === 0) {
       return [];

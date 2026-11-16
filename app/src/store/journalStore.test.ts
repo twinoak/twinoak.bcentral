@@ -76,16 +76,16 @@ describe("round trip of contract/examples/walkthrough.json", () => {
     store.close();
   });
 
-  it("the walkthrough's own counters are picked up for this device", async () => {
+  it("the walkthrough's own counters are picked up for this device: #1 is Hans's only number, the courier record has none (P3-07)", async () => {
     const walkthrough = loadWalkthrough();
     const store = await openTestStore({ deviceId: walkthrough.deviceId });
     await store.importEnvelope(walkthrough);
     expect(await store.lastDeviceSeq()).toBe(13);
-    expect(await store.lastSeqNo(HANS)).toBe(2);
+    expect(await store.lastSeqNo(HANS)).toBe(1);
 
     const next = await store.appendEntry(note("after import"));
     expect(next.deviceSeq).toBe(14);
-    expect(await store.nextSeqNo(HANS)).toBe(3);
+    expect(await store.nextSeqNo(HANS)).toBe(2);
     store.close();
   });
 
@@ -204,8 +204,11 @@ describe("appendEntry", () => {
     await store.appendEntry(note("before"));
 
     const invalid: NewJournalEntry[] = [
-      // message_out without seqNo
+      // mesh message_out without seqNo
       { incidentId: INCIDENT, operator: "Thomas", type: "message_out", transport: "mesh", counterpartyId: HANS, text: "#1 x" },
+      // courier message_out with a seqNo, and one with a batchId (P3-07: a plain record has neither)
+      { incidentId: INCIDENT, operator: "Thomas", type: "message_out", transport: "courier", counterpartyId: HANS, seqNo: 1, text: "#1 x" },
+      { incidentId: INCIDENT, operator: "Thomas", type: "message_out", transport: "phone", counterpartyId: HANS, batchId: "01JB8ZK3QX9V2M4N6P8R0T2X10", text: "x" },
       // message_in over mesh without dedupeKey
       { incidentId: INCIDENT, operator: "Thomas", type: "message_in", transport: "mesh", counterpartyId: HANS, text: "R1" },
       // status_change with a counterparty
@@ -292,10 +295,21 @@ describe("queries", () => {
     const roger = await store.appendEntry({ ...statusChange(out.id, "roger"), text: inbound.id });
     expect(await store.statusOf(out.id)).toBe("roger");
     const aside = await store.appendEntry(note("phone call"));
+    // A courier record: a message_out with no seqNo, whose status is null, not pending (P3-07).
+    const courier = await store.appendEntry({
+      incidentId: INCIDENT,
+      operator: "Thomas",
+      type: "message_out",
+      transport: "courier",
+      counterpartyId: HANS,
+      text: "Pumpe på vej",
+    });
+    expect(await store.statusOf(courier.id)).toBeNull();
+    await expect(store.statusOf("01JB8ZK3QX9V2M4N6P8R0T2X99")).rejects.toThrow(RangeError);
 
-    expect(await store.entriesForIncident(INCIDENT)).toStrictEqual([out, sent, delivered, inbound, roger, aside]);
+    expect(await store.entriesForIncident(INCIDENT)).toStrictEqual([out, sent, delivered, inbound, roger, aside, courier]);
     expect(await store.entriesForIncident("01JB8ZK3QX9V2M4N6P8R0T2W99")).toStrictEqual([]);
-    expect(await store.entriesForCounterparty(HANS)).toStrictEqual([out, inbound]);
+    expect(await store.entriesForCounterparty(HANS)).toStrictEqual([out, inbound, courier]);
     expect(await store.entriesReferringTo(out.id)).toStrictEqual([sent, delivered, roger]);
     expect(await store.entriesReferringTo(aside.id)).toStrictEqual([]);
     store.close();
