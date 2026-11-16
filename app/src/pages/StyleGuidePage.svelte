@@ -7,9 +7,13 @@
   // out. The sample words are the app's own strings, so the page reads in the UI language.
   import { CHROME_MIN, contrastRatio, PAIRS, TEXT_MIN } from "../../scripts/contrast.mjs";
   import Icon from "../components/Icon.svelte";
+  import StatusColumnHead from "../components/StatusColumnHead.svelte";
+  import StatusSlots from "../components/StatusSlots.svelte";
   import { t } from "../i18n/index.svelte.ts";
   import { ICON_NAMES } from "../lib/icons.ts";
   import { settings } from "../lib/settings.svelte.ts";
+  import type { BatchCounters, StripItem, StripKind } from "../store/journalView.ts";
+  import type { Transport } from "../store/types.ts";
 
   const COLOUR_TOKENS = [
     "--bg",
@@ -59,13 +63,44 @@
     return contrastRatio(a, b).toFixed(2);
   }
 
-  const STATUSES = ["sent", "delivered", "roger", "pending", "given_up"] as const;
-  const STATUS_CHIP: Record<(typeof STATUSES)[number], { variant: string; outline: boolean }> = {
-    sent: { variant: "", outline: false },
-    delivered: { variant: "chip-ok", outline: true },
-    roger: { variant: "chip-ok", outline: false },
-    pending: { variant: "chip-warn", outline: false },
-    given_up: { variant: "chip-danger", outline: false },
+  // The status column (P3-03) in every state it has: one sample strip per state, as
+  // store/journalView.ts's statusStrip would derive it, and a batch's counters.
+  const SAMPLE_AT = "2026-10-28T19:00:00Z";
+  function item(kind: StripKind, text: string | null = null): StripItem {
+    return {
+      kind,
+      at: kind === "pending" || kind === "waiting" ? null : SAMPLE_AT,
+      attempt: null,
+      text,
+    };
+  }
+  const SLOT_SAMPLES: { key: string; strip: StripItem[]; transport: Transport }[] = [
+    { key: "pending", strip: [item("pending")], transport: "mesh" },
+    {
+      key: "waiting",
+      strip: [item("sent"), { ...item("waiting"), attempt: "attempt 2/3" }],
+      transport: "mesh",
+    },
+    { key: "delivered", strip: [item("sent"), item("delivered")], transport: "mesh" },
+    { key: "roger", strip: [item("sent"), item("delivered"), item("roger")], transport: "mesh" },
+    {
+      key: "given_up",
+      strip: [item("sent"), item("given_up", "no ack after 3 attempts")],
+      transport: "mesh",
+    },
+    {
+      key: "by_hand",
+      strip: [item("sent", "Peter cyklede 19:10"), item("delivered", "Peter tilbage 19:40")],
+      transport: "courier",
+    },
+  ];
+  const SAMPLE_COUNTERS: BatchCounters = {
+    total: 25,
+    pending: 0,
+    sent: 25,
+    delivered: 23,
+    roger: 18,
+    givenUp: 1,
   };
 
   let activeTab = $state(0);
@@ -290,18 +325,29 @@
   </div>
 </section>
 
-<!-- The status strip: the run of chips a journal row carries. -->
+<!-- The status column: the three slots of an outgoing row under the header's labels, in
+     every state — pending, sent and waiting, delivered, confirmed, given up, by hand — and
+     a batch's counts. Hover a slot for its sentence. -->
 <section class="card">
-  <h2 class="card-title"><code>.strip</code></h2>
-  <div class="samples">
-    <span class="strip">
-      {#each STATUSES as status (status)}
-        <span class="chip {STATUS_CHIP[status].variant}">
-          <span class="chip-dot" class:chip-dot-outline={STATUS_CHIP[status].outline}></span>
-          {t(`journal.status.${status}`)}
-        </span>
+  <h2 class="card-title"><code>.slots</code></h2>
+  <div class="rows-box">
+    <StatusColumnHead />
+    <ol class="rows">
+      {#each SLOT_SAMPLES as sample (sample.key)}
+        <li data-sample={sample.key}>
+          <span class="row-time">19.00.00</span>
+          <span class="row-who">→ {t("register.field.person")}</span>
+          <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
+          <StatusSlots strip={sample.strip} transport={sample.transport} />
+        </li>
       {/each}
-    </span>
+      <li data-sample="batch">
+        <span class="row-time">19.40.00</span>
+        <span class="row-who">→ {t("journal.batch.toAll", { count: SAMPLE_COUNTERS.total })}</span>
+        <span class="row-body">#n {t("handover.quiet.requestHelp")}</span>
+        <StatusSlots counters={SAMPLE_COUNTERS} />
+      </li>
+    </ol>
   </div>
 </section>
 
@@ -398,7 +444,7 @@
   </div>
 </section>
 
-<!-- Row list: time | who | body | strip, a current row, an expanded row with its history. -->
+<!-- Row list: time | who | body | status, a current row, an expanded row with its history. -->
 <section class="card">
   <h2 class="card-title"><code>.rows</code></h2>
   <ol class="rows">
@@ -406,12 +452,7 @@
       <span class="row-time">08:30:12</span>
       <span class="row-who">{t("register.field.person")} C</span>
       <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
-      <span class="row-strip strip">
-        <span class="chip"><span class="chip-dot"></span>{t("journal.status.sent")}</span>
-        <span class="chip chip-warn"
-          ><span class="chip-dot"></span>{t("journal.status.pending")}</span
-        >
-      </span>
+      <StatusSlots strip={[item("sent"), item("waiting")]} transport="mesh" />
     </li>
     <li aria-current="true">
       <span class="row-time">08:12:40</span>
@@ -427,12 +468,7 @@
       <span class="row-time">08:04:05</span>
       <span class="row-who">{t("register.field.person")} A</span>
       <span class="row-body">#1 {t("handover.quiet.requestHelp")}</span>
-      <span class="row-strip strip">
-        <span class="chip chip-ok"
-          ><span class="chip-dot chip-dot-outline"></span>{t("journal.status.delivered")}</span
-        >
-        <span class="chip chip-ok"><span class="chip-dot"></span>{t("journal.status.roger")}</span>
-      </span>
+      <StatusSlots strip={[item("sent"), item("delivered"), item("roger")]} transport="mesh" />
       <div class="row-detail">
         08:04:05 {t("journal.status.sent")} · 08:04:09 {t("journal.status.delivered")} · 08:06:51
         {t("journal.status.roger")}

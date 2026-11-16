@@ -5,6 +5,7 @@ import { t, language } from "../i18n/index.svelte.ts";
 import { isDrill } from "../store/incidents.ts";
 import type { BatchCounters, StripItem } from "../store/journalView.ts";
 import type { Incident, JournalEntry } from "../store/types.ts";
+import type { CountSlot, Slot } from "./statusSlots.ts";
 
 // The incident's name as every screen shows it: with the drill prefix in front for a drill
 // (P1-05), the plain name otherwise.
@@ -35,6 +36,8 @@ export function formatDateTime(timestamp: string): string {
 // One segment of the strip: the status and its time, or "waiting" with the latest attempt.
 // While the outbox or the queue holds the message, its own progress text replaces the
 // waiting / pending segment (the print view passes null: nothing is in flight on paper).
+// Since P3-03 the screen shows the strip as the status column's symbols (slotText below);
+// these words are the print view's.
 export function stripText(item: StripItem, inflightText: string | null): string {
   if ((item.kind === "waiting" || item.kind === "pending") && inflightText !== null) {
     return inflightText;
@@ -46,6 +49,51 @@ export function stripText(item: StripItem, inflightText: string | null): string 
   }
   const label = t(`journal.status.${item.kind}`);
   return item.at === null ? label : `${label} ${formatShortTime(item.at)}`;
+}
+
+// What a slot of the status column says in its tooltip (P3-03): "Delivered 12.21", "Not yet
+// delivered", "Not yet delivered: waiting (attempt 2/3)" on the clock — while the outbox or
+// the queue holds the message its own progress text is the detail, as on the strip — "Given
+// up 12.30 · no ack after 3 attempts" on the cross; a status set by hand ends in "by hand
+// (reason)". No time is shown anywhere but here and in the history.
+export function slotText(slot: Slot, inflightText: string | null): string {
+  if (slot.shape === "cross") {
+    return withDetail(
+      t("journal.slot.givenUp", { time: formatShortTime(slot.at ?? "") }),
+      slot.byHand ? byHand(slot.text) : slot.text,
+    );
+  }
+  if (slot.shape === "clock") {
+    const detail =
+      inflightText ??
+      (slot.attempt === null
+        ? t("journal.strip.waiting")
+        : t("journal.strip.waitingAttempt", { attempt: slot.attempt }));
+    return t("journal.slot.notDeliveredDetail", { detail });
+  }
+  if (slot.shape === "hollow") {
+    if (slot.name === "sent" && inflightText !== null) {
+      return t("journal.slot.notSentDetail", { detail: inflightText });
+    }
+    return t(`journal.slot.not.${slot.name}`);
+  }
+  return withDetail(
+    t(`journal.slot.at.${slot.name}`, { time: formatShortTime(slot.at ?? "") }),
+    slot.byHand ? byHand(slot.text) : null,
+  );
+}
+
+function byHand(reason: string | null): string {
+  return reason === null ? t("journal.slot.byHand") : t("journal.slot.byHandReason", { reason });
+}
+
+function withDetail(sentence: string, detail: string | null): string {
+  return detail === null ? sentence : `${sentence} · ${detail}`;
+}
+
+// A batch row's count slot: "23 of 25 delivered".
+export function countSlotText(slot: CountSlot): string {
+  return t(`journal.slot.count.${slot.name}`, { n: slot.n, total: slot.total });
 }
 
 // "25 sent · 23 delivered · 18 roger · 1 given up"; zero counters omitted.

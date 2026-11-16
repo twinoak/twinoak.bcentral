@@ -4,10 +4,12 @@
   // item, as openItems() hands them over, and the items within a group newest first.
   // A card with the count in its title (P2-03); each group a row list in 14 / 16 px, each row
   // a button that scrolls the timeline to the message. The text is the message's current
-  // one (its latest correction's when corrected, P3-02), as openItems() hands it over.
+  // one (its latest correction's when corrected, P3-02), as openItems() hands it over, and
+  // the status is the journal's three slots (P3-03, StatusSlots.svelte), packed: the card is
+  // 320 px wide and the slots' tooltips say what the journal's header labels say.
   import { t, language } from "../i18n/index.svelte.ts";
-  import { chipClass, statusChip } from "../lib/journalRows.ts";
   import type { OpenItem } from "../store/journalView.ts";
+  import StatusSlots from "./StatusSlots.svelte";
 
   interface Props {
     groups: ReadonlyMap<string, OpenItem[]>;
@@ -42,16 +44,11 @@
       <h3>{group.label}</h3>
       <ol class="rows rows-3">
         {#each group.items as item (item.message.id)}
-          {@const look = statusChip(item.status)}
-          <li>
+          <li data-status={item.status}>
             <button type="button" class="row-button" onclick={() => onselect(item.message.id)}>
               <span class="row-time">{formatTime(item.message.timestamp)}</span>
               <span class="row-body text">{item.text}</span>
-              <span class="row-strip chip {chipClass(look.tint)}">
-                <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{t(
-                  `journal.status.${item.status}`,
-                )}
-              </span>
+              <StatusSlots strip={item.strip} transport={item.message.transport} />
             </button>
           </li>
         {/each}

@@ -54,18 +54,79 @@ describe("the journal screen", () => {
     }
   });
 
-  it("the timeline is a row list with quiet row actions and a dot per state", () => {
+  it("the timeline is a row list with quiet row actions and the status column", () => {
     const timeline = read("components/Timeline.svelte");
     expect(timeline).toContain('<ol class="rows">');
     expect(timeline).not.toContain("<table");
     expect(timeline).toContain('class="row-actions"');
     expect(timeline).toContain('class="btn btn-quiet"');
     expect(timeline).not.toMatch(/class="(secondary|small|link|pill)"/);
-    expect(timeline).toContain("stripChip(item.kind)");
-    expect(timeline).toContain("counterChips(row.counters)");
-    expect(timeline).toContain('class="rows-top"');
+    expect(timeline).toContain("<StatusColumnHead>");
     expect(timeline).toContain('class="row-detail"');
     expect(timeline).toContain("DIRECTION_GLYPH[direction]");
+    expect(read("components/StatusColumnHead.svelte")).toContain('class="rows-top"');
+  });
+
+  it("the status is a fixed column of three symbol slots, no time in the list (P3-03)", () => {
+    const timeline = read("components/Timeline.svelte");
+    // A message row and a batch row carry the column; the strip of chips is gone.
+    expect(timeline).toContain(
+      "<StatusSlots strip={view.strip} transport={entry.transport} {inflightText} />",
+    );
+    expect(timeline).toContain("<StatusSlots counters={row.counters} />");
+    expect(timeline).not.toContain("stripChip");
+    expect(timeline).not.toContain("stripText");
+    expect(timeline).not.toContain("counterChips");
+    expect(timeline).not.toContain('class="row-strip strip"');
+    // An incoming row, a note and a correction render nothing in the column; the "answered"
+    // marks sit in the body.
+    expect(timeline.match(/<StatusSlots /g)).toHaveLength(2);
+    expect(timeline).toMatch(
+      /<div class="row-body">[\s\S]*?\{#each row\.answeredBy as reply \(reply\.id\)\}[\s\S]*?<\/div>\s*<span class="row-actions">/,
+    );
+    // The header's labels are stuck to the top of the box, the "N new" chip at their left.
+    expect(timeline).toMatch(
+      /<StatusColumnHead>\s*\{#if newCount > 0\}\s*<button type="button" class="chip chip-accent"/,
+    );
+    const head = read("components/StatusColumnHead.svelte");
+    expect(head).toContain('<div class="rows-head">');
+    expect(head).toContain("{#each SLOT_NAMES as name (name)}");
+    expect(head).toContain("{t(`journal.slot.${name}`)}");
+    const css = read("styles/components.css");
+    expect(css).toMatch(/^\.rows-head \{\s*position: sticky;\s*top: 0;/m);
+    expect(css).toMatch(
+      /grid-template-columns: max-content max-content minmax\(0, 1fr\) calc\(3 \* var\(--slot-w\)\);/,
+    );
+    expect(css).toMatch(/^\.rows \{\s*--slot-w: 4rem;/m);
+    expect(css).toMatch(/^\.rows-3 \{\s*--slot-w: 1\.5rem;/m);
+    expect(css).not.toContain(".strip {");
+    // The slots: the rule, the symbol per slot, the words in title and aria-label only.
+    const slots = read("components/StatusSlots.svelte");
+    expect(slots).toContain("statusSlots(strip, transport)");
+    expect(slots).toContain("countSlots(counters)");
+    expect(slots).toContain('<span class="row-strip slots" data-slots="message">');
+    expect(slots).toContain('<span class="row-strip slots slots-counts" data-slots="counts">');
+    expect(slots).toContain("<SlotSymbol shape={slot.shape} />");
+    expect(slots).toContain("{#if counters.givenUp > 0}");
+    expect(slots).toContain('<SlotSymbol shape="cross" />{counters.givenUp}');
+    expect(slots).not.toMatch(/formatTime|formatShortTime|formatDateTime/);
+    for (const use of slots.matchAll(/\b(slotText|countSlotText)\(/g)) {
+      expect(slots.slice(Math.max(0, use.index - 24), use.index)).toMatch(/\{@const text = $/);
+    }
+    expect(slots.match(/title=\{text\}\s*aria-label=\{text\}/g)).toHaveLength(3);
+    expect(slots).not.toContain("tabindex");
+    // Five shapes, drawn, not tinted apart: a hollow and a filled circle, the check, the
+    // clock, the cross.
+    const symbol = read("components/SlotSymbol.svelte");
+    for (const shape of ["hollow", "filled", "check", "clock", "cross"]) {
+      expect(symbol).toContain(`"${shape}"`);
+    }
+    expect(symbol).toContain('aria-hidden="true"');
+    expect(css).toMatch(/^:root\[data-contrast="high"\] \.slot,[\s\S]*?color: var\(--ink\);/m);
+    // High contrast keeps the shapes and drops the tints; the print block does the same.
+    expect(css.slice(css.lastIndexOf("@media print"))).toMatch(
+      /\.slot,[\s\S]*?color: var\(--ink\);/,
+    );
   });
 
   it("Correct is one box with the current text under the row, its text hidden; the row reads the corrected text with a chip (P3-02)", () => {
@@ -117,6 +178,30 @@ describe("the journal screen", () => {
     expect(handover).toContain("correctionsByTarget(entries)");
     expect(handover).toContain('<span class="row-body">{text(entry)}</span>');
     expect(handover).not.toContain('entry.text ?? ""}</span>');
+  });
+
+  it("the handover lists and the open-items card use the same column component (P3-03)", () => {
+    const handover = read("pages/HandoverPage.svelte");
+    expect(handover).toContain("<StatusSlots");
+    expect(handover).toContain("inflightText={inflight(view.entry.id)}");
+    expect(handover).not.toContain("stripChip");
+    expect(handover).not.toContain("stripText");
+    // The header labels on both lists of outgoing messages; the age after the time.
+    expect(handover.match(/<StatusColumnHead \/>/g)).toHaveLength(2);
+    expect(handover).toContain('<span class="row-meta age" title={t("handover.column.age")}');
+    expect(handover).not.toContain('class="row-strip strip"');
+    const open = read("components/OpenItemsPanel.svelte");
+    expect(open).toContain("<StatusSlots strip={item.strip} transport={item.message.transport} />");
+    expect(open).not.toContain("statusChip");
+    // The queue's table keeps its chip, with the column's symbol in it instead of the dot
+    // (the counter chips in the card's title keep theirs: nothing more changes there).
+    const queue = read("pages/QueuePage.svelte");
+    expect(queue).toContain("<SlotSymbol shape={queueRowShape(row.status)} />");
+    expect(queue).not.toMatch(/<td class="state">[\s\S]*?chip-dot[\s\S]*?<\/td>/);
+    // Print keeps the strip's words with their times.
+    const print = read("pages/PrintPage.svelte");
+    expect(print).toContain("stripText(item, null)");
+    expect(print).not.toContain("StatusSlots");
   });
 
   it("the compose card is one card with two tabs keyed on aria-selected", () => {

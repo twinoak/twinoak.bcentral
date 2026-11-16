@@ -1,16 +1,19 @@
 <script lang="ts">
   // The incident's journal as a list of message slips (P0-07, reshaped in P1-01, on the row
   // list in P2-03): one row per entry, newest on top, laid on the columns time | who | body |
-  // strip. An outgoing message carries its status strip at the right — chips with a dot per
-  // state, "sent 14:31 · delivered 14:32 · roger 14:35" — and its transitions are not rows
-  // but a history the operator opens on the row (a 14 px list under it). Incoming and
-  // outgoing are told apart by the glyph before the counterparty (→ out, ← in) and by the
-  // counterparty itself. The messages of one send-to-all are one row with counter chips
-  // that opens into one row per recipient. A corrected entry reads its latest correction's
-  // text as its text, with a "corrected" chip after the time; its history lists the original
-  // and every correction (P3-02). The view stays at the top unless the operator scrolled
-  // down; then new rows arrive above without moving the viewport and a "N new" chip, stuck
-  // to the top of the box, jumps back up.
+  // status. An outgoing message carries its status in the fixed column at the right (P3-03,
+  // StatusSlots.svelte): three slots — sent · delivered · confirmed — one symbol each under
+  // the header's labels, the times in the slots' tooltips and nowhere else in the list; its
+  // transitions are not rows but a history the operator opens on the row (a 14 px list
+  // under it, with the times). Incoming and outgoing are told apart by the glyph before the
+  // counterparty (→ out, ← in) and by the counterparty itself; an incoming row, a note and
+  // a correction leave the column empty. The messages of one send-to-all are one row with
+  // a count per slot that opens into one row per recipient. A corrected entry reads its
+  // latest correction's text as its text, with a "corrected" chip after the time; its
+  // history lists the original and every correction (P3-02). The view stays at the top
+  // unless the operator scrolled down; then new rows arrive above without moving the
+  // viewport and a "N new" chip, on the column header stuck to the top of the box, jumps
+  // back up.
   //
   // Row actions — Reply on an incoming message (P1-02), Retry / Send for a mesh message
   // nobody is sending, Mark (a manual status with a required reason), History, Correct —
@@ -34,7 +37,7 @@
     correctionForm as buildCorrectionForm,
     type CorrectionForm,
   } from "../lib/correctionForm.ts";
-  import { chipClass, counterChips, DIRECTION_GLYPH, stripChip } from "../lib/journalRows.ts";
+  import { DIRECTION_GLYPH } from "../lib/journalRows.ts";
   import {
     batchText,
     formatDateTime,
@@ -42,7 +45,6 @@
     formatTime,
     historyDetail as historyDetailOf,
     rogerSource as rogerSourceOf,
-    stripText,
   } from "../lib/journalText.ts";
   import { onShortcut } from "../lib/shortcutDispatch.ts";
   import {
@@ -56,6 +58,8 @@
   import { manualStatusesFor } from "../store/outgoing.ts";
   import type { JournalEntry, Status } from "../store/types.ts";
   import Icon from "./Icon.svelte";
+  import StatusColumnHead from "./StatusColumnHead.svelte";
+  import StatusSlots from "./StatusSlots.svelte";
 
   interface Props {
     rows: readonly TimelineRow[];
@@ -480,9 +484,9 @@
   {/each}
 {/snippet}
 
-<!-- An outgoing message: the row with its strip, its actions, its forms and its history
-     (the transitions, then the text's versions) when open. `nested` marks a recipient row
-     inside a batch. -->
+<!-- An outgoing message: the row with its status slots, its actions, its forms and its
+     history (the transitions, then the text's versions) when open. `nested` marks a
+     recipient row inside a batch. -->
 {#snippet messageRow(view: MessageView, nested: boolean)}
   {@const entry = view.entry}
   {@const inflightText = inflight(entry.id)}
@@ -516,21 +520,7 @@
         {/if}
       {/if}
     </div>
-    <span class="row-strip strip">
-      {#each view.strip as item, index (index)}
-        {@const look = stripChip(item.kind)}
-        <span
-          class="chip {chipClass(look.tint)}"
-          data-kind={item.kind}
-          title={item.at === null ? undefined : formatDateTime(item.at)}
-        >
-          <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{stripText(
-            item,
-            inflightText,
-          )}
-        </span>
-      {/each}
-    </span>
+    <StatusSlots strip={view.strip} transport={entry.transport} {inflightText} />
     <span class="row-actions">
       {#if canRetry(entry)}
         <button type="button" class="btn btn-quiet" onclick={() => onretry(entry)}>
@@ -624,16 +614,17 @@
 {/snippet}
 
 <div class="rows-box timeline" bind:this={box} {onscroll}>
-  {#if newCount > 0}
-    <div class="rows-top">
-      <button type="button" class="chip chip-accent" onclick={jumpToTop}
-        >{t("journal.timeline.newRows", { n: newCount })}</button
-      >
-    </div>
-  {/if}
   {#if rows.length === 0}
     <div class="empty"><p>{t("journal.entries.empty")}</p></div>
   {:else}
+    <!-- The column header stuck to the top of the box; the "N new" chip at its left. -->
+    <StatusColumnHead>
+      {#if newCount > 0}
+        <button type="button" class="chip chip-accent" onclick={jumpToTop}
+          >{t("journal.timeline.newRows", { n: newCount })}</button
+        >
+      {/if}
+    </StatusColumnHead>
     <ol class="rows">
       {#each rows as row (row.id)}
         {#if row.kind === "message"}
@@ -656,14 +647,7 @@
               t("journal.batch.toAll", { count: row.counters.total }),
             )}
             <span class="row-body">{batchText(row.body, row.drill)}</span>
-            <span class="row-strip strip">
-              {#each counterChips(row.counters) as counter (counter.key)}
-                <span class="chip {chipClass(counter.look.tint)}" data-kind={counter.key}>
-                  <span class="chip-dot" class:chip-dot-outline={counter.look.dot === "outline"}
-                  ></span>{t(`journal.batch.counter.${counter.key}`, { n: counter.n })}
-                </span>
-              {/each}
-            </span>
+            <StatusSlots counters={row.counters} />
             <span class="row-actions">
               <button
                 type="button"
@@ -702,6 +686,9 @@
             {:else}
               <span class="row-who">{entry.operator}</span>
             {/if}
+            <!-- The column at the right stays empty: an incoming message, a note, the
+                 incident's own status and a correction have no delivery status. The
+                 "answered" marks sit after the text, as a reply's "answers" mark does. -->
             <div class="row-body">
               {#if correcting !== entry.id}
                 {#if entry.type === "status_change"}
@@ -710,18 +697,7 @@
                 {:else}
                   {currentText(entry, row.corrections)}
                 {/if}
-              {/if}
-            </div>
-            <span class="row-strip strip">
-              {#if entry.type === "status_change"}
-                <span class="chip" data-kind={entry.newStatus}
-                  ><span class="chip-dot"></span>{t(
-                    `journal.status.${entry.newStatus ?? "pending"}`,
-                  )}</span
-                >
-              {/if}
-              {#each row.answeredBy as reply (reply.id)}
-                <span class="chip">
+                {#each row.answeredBy as reply (reply.id)}
                   <button
                     type="button"
                     class="btn-link"
@@ -730,9 +706,9 @@
                   >
                     {t("journal.reply.answered", { time: formatShortTime(reply.timestamp) })}
                   </button>
-                </span>
-              {/each}
-            </span>
+                {/each}
+              {/if}
+            </div>
             <span class="row-actions">
               {#if incoming}
                 <button type="button" class="btn btn-quiet" onclick={() => onreply(entry)}>

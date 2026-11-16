@@ -317,7 +317,7 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     const only = buildTimeline([entry(W.courier2)]);
     const view = messageRow(only, W.courier2);
     expect(view.status).toBe("pending");
-    expect(view.strip).toEqual([{ kind: "pending", at: null, attempt: null }]);
+    expect(view.strip).toEqual([{ kind: "pending", at: null, attempt: null, text: null }]);
     expect(view.history).toEqual([]);
   });
 
@@ -548,8 +548,18 @@ describe("the status strip", () => {
     expect(view.history).toHaveLength(3);
     // After the first attempt alone: waiting, with no attempt text.
     expect(statusStrip(chain.slice(0, 1))).toEqual([
-      { kind: "sent", at: at(1, 2), attempt: null },
-      { kind: "waiting", at: null, attempt: null },
+      { kind: "sent", at: at(1, 2), attempt: null, text: null },
+      { kind: "waiting", at: null, attempt: null, text: null },
+    ]);
+    // Every item carries its transition's text, for the status column's tooltips (P3-03).
+    expect(statusStrip(chain).map((item) => item.text)).toEqual([null, null]);
+    const givenUp = statusStrip([
+      ...chain,
+      statusChange({ refersTo: message.id, to: "given_up", at: at(2), text: "no ack" }),
+    ]);
+    expect(givenUp.map((item) => [item.kind, item.text])).toEqual([
+      ["sent", null],
+      ["given_up", "no ack"],
     ]);
   });
 
@@ -595,7 +605,7 @@ describe("the status strip", () => {
     const view = messageRow(rows, message.id);
     expect(view.history.map((item) => item.entry.id)).toEqual([resend.id]);
     // The note is not a status change: the strip ignores it.
-    expect(view.strip).toEqual([{ kind: "pending", at: null, attempt: null }]);
+    expect(view.strip).toEqual([{ kind: "pending", at: null, attempt: null, text: null }]);
   });
 
   it("the body is the text without its #n prefix", () => {
@@ -806,6 +816,22 @@ describe("open items per register entry", () => {
     // #1 is roger (closed); #2 the courier message is delivered, still open.
     expect(hans.map((item) => item.message.id)).toEqual([W.courier2]);
     expect(hans[0]).toMatchObject({ status: "delivered", givenUp: false });
+  });
+
+  it("an open item carries the message's strip, the one the timeline shows (P3-03)", () => {
+    const groups = openItems(walkthrough.entries);
+    const courier = groups.get(HANS)?.[0];
+    expect(courier?.strip).toEqual(
+      messageRow(buildTimeline(walkthrough.entries), W.courier2).strip,
+    );
+    expect(courier?.strip.map((item) => [item.kind, item.text])).toEqual([
+      ["sent", "Peter cyklede 19:10"],
+      ["delivered", "Peter tilbage 19:40, afleveret"],
+    ]);
+    const fresh = messageOut({ counterpartyId: HANS, seqNo: 9, body: "x", at: at(50) });
+    expect(openItems([...walkthrough.entries, fresh]).get(HANS)?.[0]?.strip).toEqual([
+      { kind: "pending", at: null, attempt: null, text: null },
+    ]);
   });
 
   it("is derived live: a status_change -> roger removes the item without anything else changing", () => {

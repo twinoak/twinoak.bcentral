@@ -7,7 +7,9 @@
   // in the title, oldest first, derived from the entries on every reload
   // (store/handoverView.ts): open orders, given-up messages with the three decisions on the
   // row (retry, send by courier, close with a reason), unanswered incoming messages with
-  // Reply, and quiet radios with "Send status request" ("#n Meld status"). Reply and "send
+  // Reply, and quiet radios with "Send status request" ("#n Meld status"). An outgoing row
+  // carries the journal's status column (P3-03, StatusSlots.svelte) under the same header
+  // labels, and its age after the time. Reply and "send
   // by courier" open a compose card between the head and the lists holding the journal's
   // tab the action belongs to (P3-01, lib/composePrefill.ts): MeshCore (ComposeForm) for a
   // reply to an incoming mesh message, New record (ManualEntryForm) for a reply to one by
@@ -24,8 +26,8 @@
   import { courierPrefill, replyPrefill, type ComposePrefill } from "../lib/composePrefill.ts";
   import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
-  import { chipClass, DIRECTION_GLYPH, stripChip } from "../lib/journalRows.ts";
-  import { formatDateTime, formatShortTime, incidentName, stripText } from "../lib/journalText.ts";
+  import { chipClass, DIRECTION_GLYPH } from "../lib/journalRows.ts";
+  import { formatDateTime, formatShortTime, incidentName } from "../lib/journalText.ts";
   import { openPopover } from "../lib/popover.svelte.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { hasOperatorName, settings } from "../lib/settings.svelte.ts";
@@ -49,6 +51,8 @@
   import ComposeForm from "../components/ComposeForm.svelte";
   import Icon from "../components/Icon.svelte";
   import ManualEntryForm, { type Recorded } from "../components/ManualEntryForm.svelte";
+  import StatusColumnHead from "../components/StatusColumnHead.svelte";
+  import StatusSlots from "../components/StatusSlots.svelte";
 
   let incidents: Incident[] = $state([]);
   let register: RegisterEntry[] = $state([]);
@@ -362,11 +366,14 @@
   }
 </script>
 
-<!-- The time of an entry, and the counterparty with the direction glyph and the transport
-     when it is not the radio: the journal's cells (components/Timeline.svelte). -->
+<!-- The time of an entry with its age after it, and the counterparty with the direction
+     glyph and the transport when it is not the radio: the journal's cells
+     (components/Timeline.svelte). -->
 {#snippet timeCell(entry: JournalEntry)}
   <span class="row-time" title={formatDateTime(entry.timestamp)}>
-    {formatShortTime(entry.timestamp)}
+    {formatShortTime(entry.timestamp)}<span class="row-meta age" title={t("handover.column.age")}
+      >{age(entry.timestamp)}</span
+    >
   </span>
 {/snippet}
 
@@ -382,26 +389,14 @@
   </span>
 {/snippet}
 
-<!-- An outgoing message's strip (a dot-chip per state, the in-flight words while the outbox
-     or the queue holds it) with the age at its end. -->
+<!-- An outgoing message's status column: the three slots, with the in-flight words in the
+     tooltip while the outbox or the queue holds it. -->
 {#snippet stripCell(view: MessageView)}
-  {@const inflightText = inflight(view.entry.id)}
-  <span class="row-strip strip">
-    {#each view.strip as item, index (index)}
-      {@const look = stripChip(item.kind)}
-      <span
-        class="chip {chipClass(look.tint)}"
-        data-kind={item.kind}
-        title={item.at === null ? undefined : formatDateTime(item.at)}
-      >
-        <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}></span>{stripText(
-          item,
-          inflightText,
-        )}
-      </span>
-    {/each}
-    <span class="row-time age" title={t("handover.column.age")}>{age(view.entry.timestamp)}</span>
-  </span>
+  <StatusSlots
+    strip={view.strip}
+    transport={view.entry.transport}
+    inflightText={inflight(view.entry.id)}
+  />
 {/snippet}
 
 <!-- The page heading is for assistive technology; the bar's navigation names the screen. -->
@@ -585,6 +580,7 @@
           <p class="msg">{t("handover.open.empty")}</p>
         {:else}
           <div class="rows-box list-box">
+            <StatusColumnHead />
             <ol class="rows">
               {#each lists.open as view (view.entry.id)}
                 <li data-entry-id={view.entry.id}>
@@ -613,6 +609,7 @@
           <p class="msg">{t("handover.givenUp.empty")}</p>
         {:else}
           <div class="rows-box list-box">
+            <StatusColumnHead />
             <ol class="rows rows-actions-always">
               {#each lists.givenUp as view (view.entry.id)}
                 <li data-entry-id={view.entry.id} data-status="given_up">
@@ -705,11 +702,6 @@
                   {@render timeCell(entry)}
                   {@render whoCell(entry, "in")}
                   <span class="row-body">{text(entry)}</span>
-                  <span class="row-strip strip">
-                    <span class="row-time age" title={t("handover.column.age")}
-                      >{age(entry.timestamp)}</span
-                    >
-                  </span>
                   <span class="row-actions no-print">
                     <button type="button" class="btn btn-quiet" onclick={() => reply(entry)}>
                       <Icon name="reply" />{t("journal.action.reply")}
