@@ -36,14 +36,21 @@ describe("message_out over the radio", () => {
   });
 });
 
-describe("message_out by hand", () => {
-  it("a courier message: Mark, Correct — never Retry", () => {
+describe("message_out by hand (P3-07: a plain record, no status chain)", () => {
+  it("a courier, phone or verbal message: Correct only — never Retry, never Mark", () => {
+    for (const transport of ["courier", "phone", "verbal"] as const) {
+      expect(messageActions({ transport, status: null, canRetry: false, inflight: false })).toEqual(
+        ["correct"],
+      );
+    }
+    // Even an inconsistent input (a status on a non-mesh transport, or none on the radio)
+    // never offers Mark: the chain is the radio's and a null is nothing to mark.
     expect(
       messageActions({ transport: "courier", status: "sent", canRetry: false, inflight: false }),
-    ).toEqual(["mark", "correct"]);
+    ).toEqual(["correct"]);
     expect(
-      messageActions({ transport: "phone", status: "delivered", canRetry: false, inflight: false }),
-    ).toEqual(["mark", "correct"]);
+      messageActions({ transport: "mesh", status: null, canRetry: false, inflight: false }),
+    ).toEqual(["correct"]);
   });
 });
 

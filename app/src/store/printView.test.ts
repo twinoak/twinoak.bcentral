@@ -45,7 +45,7 @@ function entry(
 }
 
 describe("printRows on the walkthrough", () => {
-  it("prints the walkthrough oldest first in the screen's folding: six rows, the message rows with their strips", () => {
+  it("prints the walkthrough oldest first in the screen's folding: six rows, the radio message with its strip, the courier record with none (P3-07)", () => {
     const rows = printRows(walkthrough.entries, { since: null, oldestFirst: true });
     expect(rows.map((row) => [row.kind, row.id])).toEqual([
       ["message", W.order1],
@@ -64,10 +64,9 @@ describe("printRows on the walkthrough", () => {
     const note = rows[3];
     expect(note?.kind === "entry" && note.corrections.map((c) => c.id)).toEqual([W.noteCorrection]);
     const courier = rows[4];
-    expect(courier?.kind === "message" && courier.message.strip.map((s) => s.kind)).toEqual([
-      "sent",
-      "delivered",
-    ]);
+    expect(courier?.kind === "message" && courier.message.status).toBeNull();
+    expect(courier?.kind === "message" && courier.message.strip).toEqual([]);
+    expect(courier?.kind === "message" && courier.message.history).toEqual([]);
   });
 
   it("newest first is the screen's order exactly", () => {
@@ -233,28 +232,46 @@ describe("printPoints (P3-05)", () => {
   });
   const entries = [...walkthrough.entries, open, closedPoint, closed];
 
-  it("the whole journal: the open points, then the closed ones with their reason and origin", () => {
+  // The walkthrough's own point: on the courier record, closed 19:40 (the contract's example
+  // of a follow-up on a message by hand, P3-07).
+  const COURIER_POINT = "Peter med pumpe til nr 4 — tilbage?";
+
+  it("the whole journal: the open points, then the closed ones newest closed first with their reason and origin", () => {
     const points = printPoints(entries, null);
     expect(points.open.map((view) => view.title)).toEqual(["Kælder i nr 4: pumpe"]);
     expect(points.open[0]?.origin?.id).toBe(W.freeTextIn);
-    expect(points.closed.map((view) => view.title)).toEqual(["Ring til forsyningen igen"]);
+    expect(points.closed.map((view) => view.title)).toEqual([
+      "Ring til forsyningen igen",
+      COURIER_POINT,
+    ]);
     expect(points.closed[0]).toMatchObject({
       reason: "Kommunens vagt ringede",
       closedAt: "2026-10-28T19:45:00Z",
       closedBy: "Thomas",
     });
     expect(points.closed[0]?.origin?.id).toBe(W.note);
+    expect(points.closed[1]).toMatchObject({
+      reason: "Peter tilbage 19:40, pumpen afleveret",
+      closedAt: "2026-10-28T19:40:00Z",
+    });
+    expect(points.closed[1]?.origin?.id).toBe(W.courier2);
   });
 
   it("since last print: only the points opened, closed or reopened since", () => {
     const since = printPoints(entries, "2026-10-28T19:30:00Z");
     expect(since.open).toEqual([]);
-    expect(since.closed.map((view) => view.title)).toEqual(["Ring til forsyningen igen"]);
+    expect(since.closed.map((view) => view.title)).toEqual([
+      "Ring til forsyningen igen",
+      COURIER_POINT,
+    ]);
+    expect(printPoints(entries, "2026-10-28T19:40:01Z").closed.map((view) => view.title)).toEqual([
+      "Ring til forsyningen igen",
+    ]);
     expect(printPoints(entries, "2026-10-28T19:45:00Z").closed).toHaveLength(1);
     expect(printPoints(entries, "2026-10-28T19:45:01Z").closed).toEqual([]);
     const both = printPoints(entries, "2026-10-28T19:00:00Z");
     expect(both.open).toHaveLength(1);
-    expect(both.closed).toHaveLength(1);
+    expect(both.closed).toHaveLength(2);
   });
 
   it("a point is never a row of the printed journal, nor are its status changes", () => {

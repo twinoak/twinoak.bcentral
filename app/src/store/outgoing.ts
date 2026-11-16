@@ -1,14 +1,21 @@
 // Outgoing messages above the store (P0-05): the "#n <text>" form and the 160-byte rule from
-// contract/text-protocol.md, composing a message_out with its reserved #n, and the manual
-// status changes the operator records. A message_out is stored alone: pending is what a
-// message with no status_change is (status.ts), so none is written (P1-01). In a drill
-// incident (P1-05) the text is "ØVELSE #n <text>" on every transport; the prefix is part of
-// the stored text, so the journal shows exactly what went on the air. The radio side
-// (sending, acks, retries) is src/radio/outbox.svelte.ts.
+// contract/text-protocol.md, composing a mesh message_out with its reserved #n, and the
+// manual status changes the operator records on one. A message_out is stored alone: pending
+// is what a mesh message with no status_change is (status.ts), so none is written (P1-01).
+// In a drill incident (P1-05) a radio message's text is "ØVELSE #n <text>"; the prefix is
+// part of the stored text, so the journal shows exactly what went on the air.
+//
+// The number and the status chain are the radio's (P3-07; contract/text-protocol.md,
+// "Non-mesh transports have no status chain"): a message_out by phone, courier or verbal is
+// a plain record of something that happened — its text as typed, no #n, no prefix, no byte
+// limit, no status_change ever referring to it, and nothing to mark by hand. Follow-up on
+// one is a point (points.ts). The radio side (sending, acks, retries) is
+// src/radio/outbox.svelte.ts.
 
 import { mintId, type JournalStore } from "./journalStore.ts";
 import { isDrill } from "./incidents.ts";
 import { hasRadio } from "./register.ts";
+import { hasStatusChain } from "./status.ts";
 import type { JournalEntry, RadioContact, Status, Transport } from "./types.ts";
 
 // A MeshCore text message is at most 160 bytes of UTF-8 (text-protocol.md; MAX_TEXT_LEN in
@@ -62,16 +69,25 @@ export class EmptyMessageError extends Error {
 // MAX_MESSAGE_BYTES in total, the drill prefix included; this is the store path's refusal of
 // a 161-byte message (the UI disables Send before it gets here).
 export function composeText(seqNo: number, body: string, drill = false): string {
-  const trimmed = body.trim();
-  if (trimmed === "") {
-    throw new EmptyMessageError();
-  }
+  const trimmed = plainText(body);
   const text = messagePrefix(seqNo, drill) + trimmed;
   const bytes = byteLength(text);
   if (bytes > MAX_MESSAGE_BYTES) {
     throw new MessageTooLongError(bytes);
   }
   return text;
+}
+
+// The text of a message by phone, courier or verbal as stored (P3-07): the body with its
+// surrounding whitespace removed and nothing else — no number, no drill prefix (the prefix
+// is for the phones that read the air, text-protocol.md), no byte limit (the 160 bytes are
+// the radio's). Empty is refused like a radio message's.
+export function plainText(body: string): string {
+  const trimmed = body.trim();
+  if (trimmed === "") {
+    throw new EmptyMessageError();
+  }
+  return trimmed;
 }
 
 // What the compose screen shows while typing: the predicted prefix (the recipient's last #n
@@ -158,11 +174,17 @@ async function isDrillIncident(store: JournalStore, incidentId: string): Promise
   return isDrill(await store.getIncident(incidentId));
 }
 
-// Reserves the recipient's next #n and stores the message_out in one transaction, and nothing
-// else: its status is pending until the radio or the operator records a status_change. A body
-// over the limit throws MessageTooLongError and leaves the counter where it was. A reply
-// (refersTo) is checked against the store first: its target must be a message_in. In a drill
-// incident the text gets the ØVELSE prefix (P1-05), on every transport.
+// Stores the message_out and nothing else. A reply (refersTo) is checked against the store
+// first: its target must be a message_in.
+//
+// Over the radio: reserves the recipient's next #n and stores the message in one
+// transaction; its status is pending until the radio or the operator records a
+// status_change. A body over the limit throws MessageTooLongError and leaves the counter
+// where it was. In a drill incident the text gets the ØVELSE prefix (P1-05).
+//
+// By phone, courier or verbal (P3-07): a plain record — the text as typed, no number
+// reserved, no prefix, no status; the counter is not touched. The schema refuses a seqNo or
+// a batchId on it, so a batch is the radio's only (composeBatch).
 export async function composeMessage(store: JournalStore, input: ComposeInput): Promise<Composed> {
   if (input.refersTo !== undefined) {
     const target = await store.getEntry(input.refersTo);
@@ -173,12 +195,25 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
       throw new ReplyTargetError(`entry ${input.refersTo} is a ${target.type}, not a message_in`);
     }
   }
+  if (input.transport !== "mesh") {
+    const message = await store.appendEntry({
+      incidentId: input.incidentId,
+      operator: input.operator,
+      type: "message_out",
+      transport: input.transport,
+      counterpartyId: input.counterpartyId,
+      batchId: input.batchId,
+      refersTo: input.refersTo,
+      text: plainText(input.body),
+    });
+    return { message };
+  }
   const drill = await isDrillIncident(store, input.incidentId);
   const message = await store.appendMessageOut(
     {
       incidentId: input.incidentId,
       operator: input.operator,
-      transport: input.transport,
+      transport: "mesh",
       counterpartyId: input.counterpartyId,
       batchId: input.batchId,
       refersTo: input.refersTo,
@@ -299,9 +334,20 @@ export async function composeBatch(store: JournalStore, input: BatchComposeInput
   return stored;
 }
 
+// Thrown by appendStatusChange for a message that has no status chain: a message_out by
+// phone, courier or verbal (P3-07; the schema cannot see the referenced entry's transport,
+// so this is where the contract's "status_change refers to mesh messages only" is enforced).
+export class StatusChainError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StatusChainError";
+  }
+}
+
 // The one way a message's status moves: a status_change referring to it. `text` is the
-// reason or detail (an error code, a round-trip time, the resend attempt "attempt 2/3", what
-// the courier said); omitted when there is nothing to say.
+// reason or detail (an error code, a round-trip time, the resend attempt "attempt 2/3", the
+// operator's reason); omitted when there is nothing to say. Refused on a message without a
+// chain (status.ts hasStatusChain): nothing is written.
 export async function appendStatusChange(
   store: JournalStore,
   message: JournalEntry,
@@ -309,6 +355,11 @@ export async function appendStatusChange(
   text?: string,
   operator: string = message.operator,
 ): Promise<JournalEntry> {
+  if (!hasStatusChain(message)) {
+    throw new StatusChainError(
+      `entry ${message.id} (${message.type}${message.transport === undefined ? "" : ` by ${message.transport}`}) has no status chain; only a mesh message_out has one`,
+    );
+  }
   return await store.appendEntry({
     incidentId: message.incidentId,
     operator,
@@ -319,20 +370,12 @@ export async function appendStatusChange(
   });
 }
 
-// The statuses the operator may set by hand on a non-mesh message (text-protocol.md: "the
-// operator sets sent, delivered and roger by hand"; given_up when the courier came back with
-// the note). roger is final, so nothing may be set after it.
-export const MANUAL_STATUSES: readonly Status[] = ["sent", "delivered", "roger", "given_up"];
-
-// On a mesh message, sent and delivered come from the radio only. The operator may still
-// give up by hand (a message stuck at sent after a reload mid-flight has no other way out)
-// and record a roger that reached the staff another way (a phone call). P0-07 reconciliation
-// of the P0-05 rule that refused every manual status on mesh.
-export const MESH_MANUAL_STATUSES: readonly Status[] = ["roger", "given_up"];
-
-export function manualStatusesFor(transport: Transport): readonly Status[] {
-  return transport === "mesh" ? MESH_MANUAL_STATUSES : MANUAL_STATUSES;
-}
+// The statuses the operator may set by hand, on a mesh message: sent and delivered come
+// from the radio only, but the operator may give up (a message stuck at sent after a reload
+// mid-flight has no other way out) and record a roger that reached the staff another way (a
+// phone call). roger is final, so nothing may be set after it. A message by phone, courier
+// or verbal has no status to set (P3-07); the Mark action is not offered on it.
+export const MANUAL_STATUSES: readonly Status[] = ["roger", "given_up"];
 
 export class ManualStatusError extends Error {
   constructor(message: string) {
@@ -352,8 +395,13 @@ export async function recordManualStatus(
   if (message.type !== "message_out") {
     throw new ManualStatusError(`entry ${message.id} is a ${message.type}, not a message_out`);
   }
-  if (message.transport === undefined || !manualStatusesFor(message.transport).includes(newStatus)) {
-    throw new ManualStatusError(`${newStatus} is not a status the operator sets by hand on a ${message.transport} message`);
+  if (!hasStatusChain(message)) {
+    throw new ManualStatusError(
+      `a ${message.transport} message has no status; the chain is the radio's (P3-07)`,
+    );
+  }
+  if (!MANUAL_STATUSES.includes(newStatus)) {
+    throw new ManualStatusError(`${newStatus} is not a status the operator sets by hand`);
   }
   const text = options.text.trim();
   if (text === "") {

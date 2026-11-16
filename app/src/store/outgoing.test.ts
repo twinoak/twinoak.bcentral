@@ -5,12 +5,14 @@ import {
   BatchComposeError,
   DRILL_PREFIX,
   EmptyMessageError,
+  MANUAL_STATUSES,
   MAX_MESSAGE_BYTES,
   ManualStatusError,
   MessageTooLongError,
   REPLY_SNIPPET_LENGTH,
   RecipientError,
   ReplyTargetError,
+  StatusChainError,
   appendStatusChange,
   batchPreview,
   byteLength,
@@ -18,8 +20,8 @@ import {
   composeMeshMessage,
   composeMessage,
   composeText,
-  manualStatusesFor,
   messagePrefix,
+  plainText,
   previewText,
   recordManualStatus,
   replySnippet,
@@ -71,6 +73,12 @@ describe("the #n prefix and the byte limit", () => {
   it("refuses an empty body", () => {
     expect(() => composeText(1, "")).toThrow(EmptyMessageError);
     expect(() => composeText(1, "   \n")).toThrow(EmptyMessageError);
+  });
+
+  it("a plain record's text is the body trimmed, with no prefix and no limit (P3-07)", () => {
+    expect(plainText("  Pumpe på vej med Peter på cykel \n")).toBe("Pumpe på vej med Peter på cykel");
+    expect(plainText("x".repeat(500))).toBe("x".repeat(500));
+    expect(() => plainText("   ")).toThrow(EmptyMessageError);
   });
 
   it("sends exactly 160 bytes including the prefix and refuses 161", () => {
@@ -151,11 +159,29 @@ describe("drill mode: the ØVELSE prefix (P1-05)", () => {
     expect(batchPreview([2, 8], bodyOfBytes(9, 160 - DRILL_BYTES), true).tooLong).toBe(false);
   });
 
-  it("a message in a drill incident is stored as 'ØVELSE #n …' on every transport; a real incident's has no prefix", async () => {
+  it("a radio message in a drill incident is stored as 'ØVELSE #n …'; a real incident's has no prefix; a record by hand never has one (P3-07)", async () => {
     const store = await openTestStore();
     const drill = await store.createIncident({ name: "Øvelse 2. november", createdBy: "Thomas", drill: true });
     const real = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
-    for (const transport of ["mesh", "courier", "phone", "verbal"] as const) {
+    const first = await composeMessage(store, {
+      incidentId: drill.id,
+      operator: "Thomas",
+      counterpartyId: HANS,
+      transport: "mesh",
+      body: "Meld status",
+    });
+    expect(first.message.text).toBe("ØVELSE #1 Meld status");
+    const second = await composeMessage(store, {
+      incidentId: drill.id,
+      operator: "Thomas",
+      counterpartyId: HANS,
+      transport: "mesh",
+      body: "Kør til nr 4",
+    });
+    expect(second.message.text).toBe("ØVELSE #2 Kør til nr 4");
+    // A message by phone, courier or verbal is a plain record in a drill too: the prefix is
+    // for the phones that read the air, and there is no #n to put it before.
+    for (const transport of ["courier", "phone", "verbal"] as const) {
       const { message } = await composeMessage(store, {
         incidentId: drill.id,
         operator: "Thomas",
@@ -163,10 +189,11 @@ describe("drill mode: the ØVELSE prefix (P1-05)", () => {
         transport,
         body: "Meld status",
       });
-      expect(message.text).toBe(`ØVELSE #${message.seqNo} Meld status`);
+      expect(message.text).toBe("Meld status");
       expect(message.transport).toBe(transport);
+      expect(message.seqNo).toBeUndefined();
     }
-    expect(await store.lastSeqNo(HANS)).toBe(4);
+    expect(await store.lastSeqNo(HANS)).toBe(2);
     const { message: plain } = await composeMessage(store, {
       incidentId: real.id,
       operator: "Thomas",
@@ -175,7 +202,7 @@ describe("drill mode: the ØVELSE prefix (P1-05)", () => {
       body: "Meld status",
     });
     // The counter is per recipient, shared across incidents (text-protocol.md: never reset).
-    expect(plain.text).toBe("#5 Meld status");
+    expect(plain.text).toBe("#3 Meld status");
     // An incident the store does not know is not a drill.
     const { message: unknown } = await compose(store, "Meld status", PETER);
     expect(unknown.text).toBe("#1 Meld status");
@@ -382,13 +409,30 @@ describe("composeMessage", () => {
     store.close();
   });
 
-  it("a non-mesh message is stored alone too; its derived status is pending", async () => {
+  it("a message by phone, courier or verbal is a plain record: no seqNo, no prefix, no status, the counter untouched (P3-07)", async () => {
     const store = await openTestStore();
-    const { message } = await compose(store, "Pumpe på vej med Peter på cykel", HANS, "courier");
-    expect(message.transport).toBe("courier");
-    expect(message.text).toBe("#1 Pumpe på vej med Peter på cykel");
-    expect(await store.statusOf(message.id)).toBe("pending");
+    const { message } = await compose(store, "  Pumpe på vej med Peter på cykel ", HANS, "courier");
+    expect(message).toMatchObject({
+      type: "message_out",
+      transport: "courier",
+      counterpartyId: HANS,
+      text: "Pumpe på vej med Peter på cykel",
+    });
+    expect("seqNo" in message).toBe(false);
+    expect("batchId" in message).toBe(false);
+    expect(await store.statusOf(message.id)).toBeNull();
+    expect(await store.entriesReferringTo(message.id)).toEqual([]);
+    expect(await store.lastSeqNo(HANS)).toBe(0);
     expect(await store.allEntries()).toHaveLength(1);
+    // The next radio message to Hans is #1: the record took no number.
+    const { message: radio } = await compose(store, "Meld status");
+    expect(radio.text).toBe("#1 Meld status");
+    // Over the radio's limit is fine by hand: a courier note can be long.
+    const { message: long } = await compose(store, "x".repeat(400), HANS, "phone");
+    expect(long.text).toBe("x".repeat(400));
+    // Empty is refused like a radio message, and nothing is written.
+    await expect(compose(store, "  \n", HANS, "verbal")).rejects.toBeInstanceOf(EmptyMessageError);
+    expect(await store.allEntries()).toHaveLength(3);
     store.close();
   });
 
@@ -490,7 +534,7 @@ describe("reply from the row (P1-02)", () => {
     store.close();
   });
 
-  it("a courier note is answered by courier when the form says so; the transport is the caller's", async () => {
+  it("a courier note is answered by courier when the form says so; the answer is a plain record with the link", async () => {
     const store = await openTestStore();
     const note = await incoming(store, "Kælderen er tør nu", "courier");
     const { message } = await composeMessage(store, {
@@ -503,6 +547,9 @@ describe("reply from the row (P1-02)", () => {
     });
     expect(message.transport).toBe("courier");
     expect(message.refersTo).toBe(note.id);
+    expect(message.text).toBe("Tak, kom tilbage til staben");
+    expect(message.seqNo).toBeUndefined();
+    expect(await store.lastSeqNo(HANS)).toBe(0);
     store.close();
   });
 
@@ -561,44 +608,58 @@ describe("status changes", () => {
     store.close();
   });
 
-  it("the operator sets sent, delivered, roger and given_up by hand on a courier message", async () => {
+  it("a message by phone, courier or verbal has no chain: appendStatusChange throws and writes nothing (P3-07)", async () => {
+    const store = await openTestStore();
+    for (const transport of ["courier", "phone", "verbal"] as const) {
+      const { message } = await compose(store, "Pumpe på vej", HANS, transport);
+      const before = await store.lastDeviceSeq();
+      for (const status of ["pending", "sent", "delivered", "roger", "given_up", "closed"] as const) {
+        await expect(appendStatusChange(store, message, status, "r")).rejects.toBeInstanceOf(
+          StatusChainError,
+        );
+      }
+      expect(await store.lastDeviceSeq()).toBe(before);
+      expect(await store.entriesReferringTo(message.id)).toEqual([]);
+      expect(await store.statusOf(message.id)).toBeNull();
+    }
+    // Nor does anything else have one: a note, an incoming message.
+    const note = await store.appendEntry({ incidentId: INCIDENT, operator: "Anne", type: "note", text: "n" });
+    await expect(appendStatusChange(store, note, "sent")).rejects.toBeInstanceOf(StatusChainError);
+    store.close();
+  });
+
+  it("the operator cannot mark a message by hand on a non-radio transport: there is nothing to mark (P3-07)", async () => {
     const store = await openTestStore();
     const { message } = await compose(store, "Pumpe på vej", HANS, "courier");
-    const sent = await recordManualStatus(store, message, "sent", { operator: "Anne", text: "Peter cyklede 19:10" });
-    expect(sent.newStatus).toBe("sent");
-    expect(sent.text).toBe("Peter cyklede 19:10");
-    expect(sent.operator).toBe("Anne");
-    expect(await store.statusOf(message.id)).toBe("sent");
-
-    const delivered = await recordManualStatus(store, message, "delivered", {
-      operator: "Anne",
-      text: "  Peter tilbage 19:40  ",
-    });
-    expect(delivered.text).toBe("Peter tilbage 19:40");
-    expect(await store.statusOf(message.id)).toBe("delivered");
-
-    await recordManualStatus(store, message, "roger", { operator: "Anne", text: "sagde ok i telefonen" });
-    expect(await store.statusOf(message.id)).toBe("roger");
+    const before = await store.lastDeviceSeq();
+    for (const status of ["sent", "delivered", "roger", "given_up"] as const) {
+      await expect(
+        recordManualStatus(store, message, status, { operator: "Anne", text: "Peter cyklede 19:10" }),
+      ).rejects.toBeInstanceOf(ManualStatusError);
+    }
+    expect(await store.lastDeviceSeq()).toBe(before);
+    expect(await store.statusOf(message.id)).toBeNull();
     store.close();
   });
 
   it("a manual status change needs a reason (P0-07)", async () => {
     const store = await openTestStore();
-    const { message } = await compose(store, "x", HANS, "courier");
-    await expect(recordManualStatus(store, message, "sent", { operator: "Anne", text: "" })).rejects.toBeInstanceOf(
+    const { message } = await compose(store, "x");
+    await appendStatusChange(store, message, "sent");
+    await expect(recordManualStatus(store, message, "roger", { operator: "Anne", text: "" })).rejects.toBeInstanceOf(
       ManualStatusError,
     );
-    await expect(recordManualStatus(store, message, "sent", { operator: "Anne", text: " \n " })).rejects.toBeInstanceOf(
+    await expect(recordManualStatus(store, message, "roger", { operator: "Anne", text: " \n " })).rejects.toBeInstanceOf(
       ManualStatusError,
     );
-    expect(await store.statusOf(message.id)).toBe("pending");
-    expect(await store.lastDeviceSeq()).toBe(1);
+    expect(await store.statusOf(message.id)).toBe("sent");
+    expect(await store.lastDeviceSeq()).toBe(2);
     store.close();
   });
 
   it("roger is final for a manual status too", async () => {
     const store = await openTestStore();
-    const { message } = await compose(store, "x", HANS, "phone");
+    const { message } = await compose(store, "x");
     await recordManualStatus(store, message, "roger", { operator: "Anne", text: "ok" });
     await expect(
       recordManualStatus(store, message, "given_up", { operator: "Anne", text: "ok" }),
@@ -609,8 +670,7 @@ describe("status changes", () => {
 
   it("on a mesh message the operator may give up or record a roger, but sent and delivered are the radio's", async () => {
     const store = await openTestStore();
-    expect(manualStatusesFor("mesh")).toEqual(["roger", "given_up"]);
-    expect(manualStatusesFor("courier")).toEqual(["sent", "delivered", "roger", "given_up"]);
+    expect(MANUAL_STATUSES).toEqual(["roger", "given_up"]);
 
     const stuck = await compose(store, "x");
     await appendStatusChange(store, stuck.message, "sent");
@@ -664,18 +724,17 @@ describe("status changes", () => {
 
   it("refuses a manual status on a non-message and a status that is not manual", async () => {
     const store = await openTestStore();
-    const courier = await compose(store, "y", HANS, "courier");
-    await expect(
-      recordManualStatus(store, courier.message, "pending", { operator: "Anne", text: "r" }),
-    ).rejects.toBeInstanceOf(ManualStatusError);
-    await expect(
-      recordManualStatus(store, courier.message, "closed", { operator: "Anne", text: "r" }),
-    ).rejects.toBeInstanceOf(ManualStatusError);
+    const radio = await compose(store, "y");
+    for (const status of ["pending", "sent", "delivered", "closed", "reopened"] as const) {
+      await expect(
+        recordManualStatus(store, radio.message, status, { operator: "Anne", text: "r" }),
+      ).rejects.toBeInstanceOf(ManualStatusError);
+    }
     const note = await store.appendEntry({ incidentId: INCIDENT, operator: "Anne", type: "note", text: "n" });
     await expect(recordManualStatus(store, note, "sent", { operator: "Anne", text: "r" })).rejects.toBeInstanceOf(
       ManualStatusError,
     );
-    expect(await store.statusOf(courier.message.id)).toBe("pending");
+    expect(await store.statusOf(radio.message.id)).toBe("pending");
     store.close();
   });
 });

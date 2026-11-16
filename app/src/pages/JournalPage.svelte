@@ -169,7 +169,7 @@
     if (message.transport !== "mesh" || inflight(message.id) !== null) {
       return false;
     }
-    const status = statusOf(entries, message.id);
+    const status = statusOf(entries, message);
     return status === "given_up" || status === "pending";
   }
 

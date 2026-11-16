@@ -1,13 +1,14 @@
 // The status column's rule (P3-03) over the contract walkthrough and one fixture per state:
-// every outgoing message has three slots, sent · delivered · confirmed, each the shape and
+// every radio message has three slots, sent · delivered · confirmed, each the shape and
 // tint the task names, with the tooltip sentence lib/journalText.ts gives it; a batch's
-// counts; no time anywhere but in a tooltip.
+// counts; no time anywhere but in a tooltip. A message by phone, courier or verbal has no
+// chain and no slots (P3-07).
 
 import { describe, expect, it } from "vitest";
 import { setLanguage } from "../i18n/index.svelte.ts";
 import { buildTimeline, statusStrip, type StripItem } from "../store/journalView.ts";
 import { messageViews } from "../store/handoverView.ts";
-import type { JournalEntry, Transport } from "../store/types.ts";
+import type { JournalEntry } from "../store/types.ts";
 import { loadWalkthrough } from "../test-support/walkthrough.ts";
 import { countSlotText, formatShortTime, slotText, stripText } from "./journalText.ts";
 import { countSlots, SLOT_NAMES, statusSlots, type Slot } from "./statusSlots.ts";
@@ -47,10 +48,10 @@ function change(to: JournalEntry["newStatus"], timestamp: string, text?: string)
   };
 }
 
-// A message's slots from its chain, as the screen derives them: statusStrip over the
+// A radio message's slots from its chain, as the screen derives them: statusStrip over the
 // status_change entries, then the rule.
-function slotsOf(chain: readonly JournalEntry[], transport: Transport = "mesh"): Slot[] {
-  return statusSlots(statusStrip(chain), transport);
+function slotsOf(chain: readonly JournalEntry[]): Slot[] {
+  return statusSlots(statusStrip(chain));
 }
 
 function shapes(slots: readonly Slot[]): string[] {
@@ -159,32 +160,28 @@ describe("one slot per state of the chain", () => {
     expect(shapes(slots)).toEqual(["filled ok", "filled ok", "hollow neutral"]);
   });
 
-  it("by hand (a non-mesh transport): the same symbols, the tooltip says so with the reason", () => {
-    const slots = slotsOf(
-      [
-        change("sent", at(10), "Peter cyklede 19:10"),
-        change("delivered", at(40), "Peter tilbage 19:40, afleveret"),
-      ],
-      "courier",
-    );
-    expect(shapes(slots)).toEqual(["filled ok", "filled ok", "hollow neutral"]);
-    expect(slots.map((slot) => slot.byHand)).toEqual([true, true, true]);
-    expect(titles(slots)).toEqual([
-      `Sent ${clock(at(10))} · by hand (Peter cyklede 19:10)`,
-      `Delivered ${clock(at(40))} · by hand (Peter tilbage 19:40, afleveret)`,
-      "Not yet confirmed",
+  it("a roger or given-up recorded by hand on a radio message: the same symbols, the reason as the slot's text (P3-07: nothing is 'by hand' by transport any more)", () => {
+    const roger = slotsOf([
+      change("sent", at(10)),
+      change("delivered", at(11)),
+      change("roger", at(40), "Hans rang: modtaget"),
     ]);
-    // A manual status with no reason stored (imported data) still says by hand.
-    const bare = slotsOf([change("sent", at(10))], "phone");
-    expect(titles(bare)[0]).toBe(`Sent ${clock(at(10))} · by hand`);
-    // Given up by hand: the reason in the by-hand brackets.
-    const givenUp = slotsOf(
-      [change("sent", at(10), "ringede"), change("given_up", at(12), "intet svar")],
-      "phone",
-    );
-    expect(titles(givenUp)[1]).toBe(`Given up ${clock(at(12))} · by hand (intet svar)`);
-    // On the radio nothing is by hand.
-    expect(slotsOf([change("sent", at(10))]).every((slot) => !slot.byHand)).toBe(true);
+    expect(shapes(roger)).toEqual(["filled ok", "filled ok", "check ok"]);
+    expect(roger[2]?.text).toBe("Hans rang: modtaget");
+    // The confirmed slot's sentence is the time alone; the reason is in the history.
+    expect(titles(roger)[2]).toBe(`Confirmed ${clock(at(40))}`);
+    // Given up by hand: the reason after the time, as the radio's detail would be.
+    const givenUp = slotsOf([change("sent", at(10)), change("given_up", at(12), "intet svar")]);
+    expect(titles(givenUp)[1]).toBe(`Given up ${clock(at(12))} · intet svar`);
+    // A slot is its name, shape, tint, time, text and attempt — nothing about who set it.
+    expect(Object.keys(givenUp[0] ?? {}).sort()).toEqual([
+      "at",
+      "attempt",
+      "name",
+      "shape",
+      "text",
+      "tint",
+    ]);
   });
 
   it("the five shapes are five, and the tints never tell two shapes apart on their own", () => {
@@ -205,23 +202,22 @@ describe("one slot per state of the chain", () => {
 });
 
 describe("the walkthrough and the batch", () => {
-  it("renders every outgoing message of the walkthrough with the three slots, in order", () => {
+  it("renders the walkthrough's radio message with the three slots; its courier record has no chain and no slots (P3-07)", () => {
     const views = messageViews(buildTimeline(walkthrough.entries));
     expect(views).toHaveLength(2);
-    for (const view of views) {
-      const slots = statusSlots(view.strip, view.entry.transport);
-      expect(slots.map((slot) => slot.name)).toEqual(["sent", "delivered", "roger"]);
-    }
-    const slotsFor = (id: string) => {
-      const view = views.find((candidate) => candidate.entry.id === id);
-      return view === undefined ? [] : statusSlots(view.strip, view.entry.transport);
-    };
-    const order1 = slotsFor("01JB8ZK3QX9V2M4N6P8R0T2W51");
-    const courier2 = slotsFor("01JB8ZK3QX9V2M4N6P8R0T2W59");
-    expect(shapes(order1)).toEqual(["filled ok", "filled ok", "check ok"]);
-    expect(shapes(courier2)).toEqual(["filled ok", "filled ok", "hollow neutral"]);
-    expect(courier2.every((slot) => slot.byHand)).toBe(true);
-    expect(order1.every((slot) => !slot.byHand)).toBe(true);
+    const viewOf = (id: string) => views.find((candidate) => candidate.entry.id === id);
+    const order1 = viewOf("01JB8ZK3QX9V2M4N6P8R0T2W51");
+    const courier2 = viewOf("01JB8ZK3QX9V2M4N6P8R0T2W59");
+    expect(order1?.status).toBe("roger");
+    const slots = statusSlots(order1?.strip ?? []);
+    expect(slots.map((slot) => slot.name)).toEqual(["sent", "delivered", "roger"]);
+    expect(shapes(slots)).toEqual(["filled ok", "filled ok", "check ok"]);
+    // The screen renders the column only while the status is not null; the courier record
+    // has nothing to render.
+    expect(courier2?.entry.transport).toBe("courier");
+    expect(courier2?.status).toBeNull();
+    expect(courier2?.strip).toEqual([]);
+    expect(courier2?.history).toEqual([]);
   });
 
   it("a batch row counts per slot, in the done tint only when every recipient is there", () => {

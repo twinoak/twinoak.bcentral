@@ -213,7 +213,8 @@ export async function addCorrection(target: JournalEntry, text: string): Promise
 }
 
 // The New record tab (P3-01): a note, an incoming or an outgoing message by hand, on a
-// non-radio transport. An outgoing record reserves #n like any message_out; nothing is sent.
+// non-radio transport. An outgoing record is a plain record with no number and no status
+// (P3-07); nothing is sent.
 export async function recordByHand(input: Omit<RecordInput, "operator">): Promise<JournalEntry> {
   const store = await journalStore();
   return await recordWithStoreByHand(store, { ...input, operator: settings.operatorName.trim() });
@@ -247,8 +248,9 @@ export async function lastHeardByCounterparty(): Promise<Map<string, string>> {
 
 // --- outgoing messages (P0-05) ----------------------------------------------------------
 
-// Reserves #n, stores the message_out (and, for mesh, its pending status). Sending is the
-// outbox's job (src/radio/index.ts).
+// Stores the message_out: over the radio with its reserved #n (pending until the outbox
+// moves it), by hand as a plain record (P3-07). Sending is the outbox's job
+// (src/radio/index.ts).
 export async function composeMessage(input: Omit<ComposeInput, "operator">): Promise<Composed> {
   const store = await journalStore();
   return await composeWithStore(store, { ...input, operator: settings.operatorName.trim() });
@@ -261,7 +263,7 @@ export async function composeMeshMessage(input: Omit<MeshComposeInput, "operator
   return await composeMeshWithStore(store, { ...input, operator: settings.operatorName.trim() });
 }
 
-// The operator's own status change on a message, with the reason (required).
+// The operator's own roger or given-up on a radio message, with the reason (required).
 export async function recordManualStatus(message: JournalEntry, newStatus: Status, text: string): Promise<JournalEntry> {
   const store = await journalStore();
   return await recordWithStore(store, message, newStatus, { operator: settings.operatorName.trim(), text });
@@ -302,9 +304,9 @@ export async function sendStatusRequest(incidentId: string, counterpartyId: stri
   });
 }
 
-// The decision "send by courier" on a given-up message, recorded from the New record tab
-// (P3-01): the copy on the chosen non-radio transport with the text as recorded, and the
-// original closed with the reason "sent via ‹transport› as #n".
+// The decision "send by courier" on a given-up radio message, recorded from the New record
+// tab (P3-01): the copy on the chosen non-radio transport with the text as recorded, a
+// point on it (P3-07), and the original closed with the reason "sent via ‹transport›".
 export async function resendByHand(
   message: JournalEntry,
   input: { transport: Transport; body: string },
@@ -314,11 +316,7 @@ export async function resendByHand(
     operator: settings.operatorName.trim(),
     transport: input.transport,
     body: input.body,
-    reason: (copy) =>
-      t("handover.givenUp.resentReason", {
-        via: t(`send.transport.${input.transport}`),
-        n: copy.seqNo ?? 0,
-      }),
+    reason: t("handover.givenUp.resentReason", { via: t(`send.transport.${input.transport}`) }),
   });
 }
 

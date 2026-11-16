@@ -1,9 +1,9 @@
 // The journal screen's derivations against contract/examples/walkthrough.json and a
 // send-to-all fixture: the phase-0 walkthrough as a stack of slips, newest on top, with the
-// status strip on each outgoing message and its transitions folded into a history (P1-01);
-// the batch row with its counters; the open items per register entry; "last heard from".
-// Everything is a pure function of the entries, so "derived live" is shown by appending an
-// entry to the array and deriving again.
+// status strip on each radio message and its transitions folded into a history (P1-01), the
+// courier record a plain row with none (P3-07); the batch row with its counters; the open
+// items per register entry; "last heard from". Everything is a pure function of the entries,
+// so "derived live" is shown by appending an entry to the array and deriving again.
 
 import { describe, expect, it } from "vitest";
 import { loadWalkthrough } from "../test-support/walkthrough.ts";
@@ -53,8 +53,8 @@ const W = {
   freeTextIn: "01JB8ZK3QX9V2M4N6P8R0T2W57",
   note: "01JB8ZK3QX9V2M4N6P8R0T2W58",
   courier2: "01JB8ZK3QX9V2M4N6P8R0T2W59",
-  courier2Sent: "01JB8ZK3QX9V2M4N6P8R0T2W60",
-  courier2Delivered: "01JB8ZK3QX9V2M4N6P8R0T2W61",
+  courier2Point: "01JB8ZK3QX9V2M4N6P8R0T2W60",
+  courier2PointClosed: "01JB8ZK3QX9V2M4N6P8R0T2W61",
   noteCorrection: "01JB8ZK3QX9V2M4N6P8R0T2W62",
   incidentClosed: "01JB8ZK3QX9V2M4N6P8R0T2W63",
 };
@@ -110,7 +110,6 @@ function messageOut(options: {
   at: string;
   batchId?: string;
   refersTo?: string;
-  transport?: JournalEntry["transport"];
 }): JournalEntry {
   seq += 1;
   return {
@@ -122,12 +121,37 @@ function messageOut(options: {
     clockTrust: "manual",
     operator: "Thomas",
     type: "message_out",
-    transport: options.transport ?? "mesh",
+    transport: "mesh",
     counterpartyId: options.counterpartyId,
     seqNo: options.seqNo,
     batchId: options.batchId,
     refersTo: options.refersTo,
     text: `#${options.seqNo} ${options.body}`,
+  };
+}
+
+// A message by phone, courier or verbal: a plain record, no number, no prefix (P3-07).
+function plainOut(options: {
+  counterpartyId: string;
+  text: string;
+  at: string;
+  transport: "phone" | "courier" | "verbal";
+  refersTo?: string;
+}): JournalEntry {
+  seq += 1;
+  return {
+    id: id(seq),
+    incidentId: INCIDENT,
+    deviceId: DEVICE,
+    deviceSeq: seq,
+    timestamp: options.at,
+    clockTrust: "manual",
+    operator: "Thomas",
+    type: "message_out",
+    transport: options.transport,
+    counterpartyId: options.counterpartyId,
+    refersTo: options.refersTo,
+    text: options.text,
   };
 }
 
@@ -254,7 +278,7 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     }
   });
 
-  it("an outgoing message carries its strip: #1 sent · delivered · roger, courier #2 sent · delivered", () => {
+  it("a radio message carries its strip: #1 sent · delivered · roger; the courier record has no status, no strip (P3-07)", () => {
     const order1 = messageRow(rows, W.order1);
     expect(order1.status).toBe("roger");
     expect(strip(order1)).toEqual([
@@ -263,14 +287,14 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
       "roger 2026-10-28T19:03:40Z",
     ]);
     const courier2 = messageRow(rows, W.courier2);
-    expect(courier2.status).toBe("delivered");
-    expect(strip(courier2)).toEqual([
-      "sent 2026-10-28T19:10:00Z",
-      "delivered 2026-10-28T19:40:00Z",
-    ]);
+    expect(courier2.entry.transport).toBe("courier");
+    expect(courier2.entry.seqNo).toBeUndefined();
+    expect(courier2.entry.text).toBe("Pumpe på vej til nr 4 med Peter på cykel");
+    expect(courier2.status).toBeNull();
+    expect(courier2.strip).toEqual([]);
   });
 
-  it("the transitions are the row's history, oldest first, with operator and reason; a stored pending is not among them", () => {
+  it("the transitions are the row's history, oldest first, with operator and reason; a stored pending is not among them; a plain record has none", () => {
     const order1 = messageRow(rows, W.order1);
     expect(order1.history.map((item) => item.entry.id)).toEqual([
       W.order1Sent,
@@ -279,10 +303,10 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     ]);
     expect(order1.history.every((item) => item.corrections.length === 0)).toBe(true);
     const courier2 = messageRow(rows, W.courier2);
-    expect(courier2.history.map((item) => [item.entry.operator, item.entry.text])).toEqual([
-      ["Thomas", "Peter cyklede 19:10"],
-      ["Thomas", "Peter tilbage 19:40, afleveret"],
-    ]);
+    expect(courier2.history).toEqual([]);
+    // Its follow-up is the walkthrough's point, which is no row and no history.
+    expect(entry(W.courier2Point).type).toBe("point");
+    expect(entry(W.courier2PointClosed).refersTo).toBe(W.courier2Point);
   });
 
   it("a correction never changes the original entry; the row reads the correction's text as its current one (P3-02)", () => {
@@ -333,9 +357,9 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
     expect(findRow(withOrphan, orphan.id)).toBeUndefined();
   });
 
-  it("a message with no status change is pending, with a pending strip and no history", () => {
-    const only = buildTimeline([entry(W.courier2)]);
-    const view = messageRow(only, W.courier2);
+  it("a radio message with no status change is pending, with a pending strip and no history", () => {
+    const only = buildTimeline([entry(W.order1)]);
+    const view = messageRow(only, W.order1);
     expect(view.status).toBe("pending");
     expect(view.strip).toEqual([{ kind: "pending", at: null, attempt: null, text: null }]);
     expect(view.history).toEqual([]);
@@ -346,15 +370,73 @@ describe("timeline of the phase-0 walkthrough (P1-01)", () => {
       ...entry(W.noteCorrection),
       id: "01JB8ZK3QX9V2M4N6P8R0T2X07",
       deviceSeq: 14,
-      refersTo: W.courier2Sent,
-      text: "Det var Anne, ikke Peter",
+      refersTo: W.order1Sent,
+      text: "Sendt til den forkerte radio",
     };
-    const view = messageRow(buildTimeline([...walkthrough.entries, correction]), W.courier2);
+    const view = messageRow(buildTimeline([...walkthrough.entries, correction]), W.order1);
     expect(view.history[0]?.corrections.map((c) => c.id)).toEqual([correction.id]);
     expect(view.corrections).toEqual([]);
     expect(findRow(buildTimeline([...walkthrough.entries, correction]), correction.id)?.id).toBe(
-      W.courier2,
+      W.order1,
     );
+  });
+});
+
+describe("a message by phone, courier or verbal is a plain record (P3-07)", () => {
+  const byPhone = plainOut({
+    counterpartyId: HANS,
+    text: "Ringede: kør til nr 4",
+    at: at(1),
+    transport: "phone",
+  });
+
+  it("is a message row with null status, no strip, no history, and never an open item", () => {
+    const rows = buildTimeline([...walkthrough.entries, byPhone]);
+    const view = messageRow(rows, byPhone.id);
+    expect(view).toMatchObject({ status: null, strip: [], history: [], answers: null });
+    expect(bodyOf(byPhone)).toBe("Ringede: kør til nr 4");
+    expect(isDrillText(byPhone)).toBe(false);
+    expect(openItems([...walkthrough.entries, byPhone]).get(HANS)).toBeUndefined();
+    // The walkthrough's courier record likewise: no open item for Hans at all.
+    expect(openItems(walkthrough.entries)).toEqual(new Map());
+  });
+
+  it("a status change referring to it is not its history and not a row; a note referring to it is a plain row", () => {
+    // The store never writes either (appendStatusChange refuses); were one in the data, it
+    // is ignored like a stray status change on a point.
+    const stray = statusChange({ refersTo: byPhone.id, to: "sent", at: at(2) });
+    const resend = note({ text: "ringede igen", at: at(3), refersTo: byPhone.id });
+    const rows = buildTimeline([...walkthrough.entries, byPhone, stray, resend]);
+    expect(messageRow(rows, byPhone.id)).toMatchObject({ status: null, strip: [], history: [] });
+    expect(findRow(rows, stray.id)).toBeUndefined();
+    expect(rowFor(rows, resend.id).kind).toBe("entry");
+    expect(openItems([...walkthrough.entries, byPhone, stray])).toEqual(new Map());
+  });
+
+  it("a reply by phone links to the incoming message like a radio reply", () => {
+    const reply = plainOut({
+      counterpartyId: HANS,
+      text: "Pumpe på vej",
+      at: at(5),
+      transport: "phone",
+      refersTo: W.freeTextIn,
+    });
+    const rows = buildTimeline([...walkthrough.entries, reply]);
+    expect(messageRow(rows, reply.id).answers?.id).toBe(W.freeTextIn);
+    const incoming = rowFor(rows, W.freeTextIn);
+    expect(incoming.kind === "entry" && incoming.answeredBy.map((e) => e.id)).toEqual([reply.id]);
+  });
+
+  it("the walkthrough's point sits on its courier record: the glyph on the row, closed with its reason", () => {
+    const views = pointsFor(walkthrough.entries);
+    expect(views).toHaveLength(1);
+    expect(pointOf(views, W.courier2)).toMatchObject({
+      title: "Peter med pumpe til nr 4 — tilbage?",
+      state: "closed",
+      closedAt: "2026-10-28T19:40:00Z",
+      reason: "Peter tilbage 19:40, pumpen afleveret",
+    });
+    expect(pointOf(views, W.courier2)?.origin?.id).toBe(W.courier2);
   });
 });
 
@@ -417,21 +499,26 @@ describe("the current text of a corrected entry (P3-02)", () => {
   });
 
   it("an open item carries the message's corrected text", () => {
-    const courier = entry(W.courier2);
+    const order = messageOut({
+      counterpartyId: HANS,
+      seqNo: 2,
+      body: "Pumpe til Nørregade 4",
+      at: "2026-10-28T19:50:00Z",
+    });
     const correction: JournalEntry = {
       ...first,
       id: "01JB8ZK3QX9V2M4N6P8R0T2W97",
       deviceSeq: 15,
-      refersTo: courier.id,
+      refersTo: order.id,
       text: "#2 Pumpe til Nørregade 4, afleveres til Hans",
     };
     expect(
-      openItems(walkthrough.entries)
+      openItems([...walkthrough.entries, order])
         .get(HANS)
         ?.map((item) => item.text),
-    ).toEqual([courier.text]);
+    ).toEqual([order.text]);
     expect(
-      openItems([...walkthrough.entries, correction])
+      openItems([...walkthrough.entries, order, correction])
         .get(HANS)
         ?.map((item) => item.text),
     ).toEqual(["#2 Pumpe til Nørregade 4, afleveres til Hans"]);
@@ -480,10 +567,9 @@ describe("reply from the row (P1-02): the link both ways", () => {
   });
 
   it("two answers to one incoming message are both listed, oldest first", () => {
-    const second = messageOut({
+    const second = plainOut({
       counterpartyId: HANS,
-      seqNo: 4,
-      body: "Peter er der om 10 min",
+      text: "Peter er der om 10 min",
       at: "2026-10-28T19:12:00Z",
       refersTo: W.freeTextIn,
       transport: "courier",
@@ -830,23 +916,33 @@ describe("send-to-all as one row (P1-01)", () => {
 });
 
 describe("open items per register entry", () => {
-  it("lists pending, sent and delivered messages; flags given up; hides roger", () => {
-    const groups = openItems(walkthrough.entries);
-    const hans = groups.get(HANS) ?? [];
-    // #1 is roger (closed); #2 the courier message is delivered, still open.
-    expect(hans.map((item) => item.message.id)).toEqual([W.courier2]);
+  // The walkthrough plus one radio message to Hans, sent and delivered: the one open item.
+  const order2 = messageOut({ counterpartyId: HANS, seqNo: 2, body: "Kør til nr 4", at: at(10) });
+  const order2Chain = [
+    statusChange({ refersTo: order2.id, to: "sent", at: at(10, 2) }),
+    statusChange({
+      refersTo: order2.id,
+      to: "delivered",
+      at: at(10, 9),
+      text: "round trip 800 ms",
+    }),
+  ];
+  const withOrder2 = [...walkthrough.entries, order2, ...order2Chain];
+
+  it("lists pending, sent and delivered radio messages; flags given up; hides roger; never a message by hand (P3-07)", () => {
+    // The walkthrough alone: #1 is roger (closed) and the courier record has no status.
+    expect(openItems(walkthrough.entries)).toEqual(new Map());
+    const hans = openItems(withOrder2).get(HANS) ?? [];
+    expect(hans.map((item) => item.message.id)).toEqual([order2.id]);
     expect(hans[0]).toMatchObject({ status: "delivered", givenUp: false });
   });
 
   it("an open item carries the message's strip, the one the timeline shows (P3-03)", () => {
-    const groups = openItems(walkthrough.entries);
-    const courier = groups.get(HANS)?.[0];
-    expect(courier?.strip).toEqual(
-      messageRow(buildTimeline(walkthrough.entries), W.courier2).strip,
-    );
-    expect(courier?.strip.map((item) => [item.kind, item.text])).toEqual([
-      ["sent", "Peter cyklede 19:10"],
-      ["delivered", "Peter tilbage 19:40, afleveret"],
+    const item = openItems(withOrder2).get(HANS)?.[0];
+    expect(item?.strip).toEqual(messageRow(buildTimeline(withOrder2), order2.id).strip);
+    expect(item?.strip.map((entry) => [entry.kind, entry.text])).toEqual([
+      ["sent", null],
+      ["delivered", "round trip 800 ms"],
     ]);
     const fresh = messageOut({ counterpartyId: HANS, seqNo: 9, body: "x", at: at(50) });
     expect(openItems([...walkthrough.entries, fresh]).get(HANS)?.[0]?.strip).toEqual([
@@ -856,30 +952,30 @@ describe("open items per register entry", () => {
 
   it("is derived live: a status_change -> roger removes the item without anything else changing", () => {
     const roger = statusChange({
-      refersTo: W.courier2,
+      refersTo: order2.id,
       to: "roger",
       at: "2026-10-28T21:30:00Z",
       text: "Hans rang",
     });
-    expect(openItems(walkthrough.entries).get(HANS)).toHaveLength(1);
-    expect(openItems([...walkthrough.entries, roger]).get(HANS)).toBeUndefined();
-    const timeline = buildTimeline([...walkthrough.entries, roger]);
-    expect(messageRow(timeline, W.courier2).status).toBe("roger");
+    expect(openItems(withOrder2).get(HANS)).toHaveLength(1);
+    expect(openItems([...withOrder2, roger]).get(HANS)).toBeUndefined();
+    const timeline = buildTimeline([...withOrder2, roger]);
+    expect(messageRow(timeline, order2.id).status).toBe("roger");
   });
 
   it("flags a given-up message instead of hiding it, and a retry puts it back among the open", () => {
     const givenUp = statusChange({
-      refersTo: W.courier2,
+      refersTo: order2.id,
       to: "given_up",
       at: "2026-10-28T21:30:00Z",
-      text: "Peter kom tilbage med sedlen",
+      text: "no ack after 3 attempts",
     });
-    const flagged = openItems([...walkthrough.entries, givenUp]).get(HANS) ?? [];
+    const flagged = openItems([...withOrder2, givenUp]).get(HANS) ?? [];
     expect(flagged).toHaveLength(1);
     expect(flagged[0]).toMatchObject({ status: "given_up", givenUp: true });
 
-    const retried = statusChange({ refersTo: W.courier2, to: "sent", at: "2026-10-28T21:35:00Z" });
-    const open = openItems([...walkthrough.entries, givenUp, retried]).get(HANS) ?? [];
+    const retried = statusChange({ refersTo: order2.id, to: "sent", at: "2026-10-28T21:35:00Z" });
+    const open = openItems([...withOrder2, givenUp, retried]).get(HANS) ?? [];
     expect(open[0]).toMatchObject({ status: "sent", givenUp: false });
   });
 
@@ -897,17 +993,20 @@ describe("open items per register entry", () => {
       body: "Nyt",
       at: "2026-10-28T19:50:00Z",
     });
-    const groups = openItems([...walkthrough.entries, toPeter, toHansLater]);
-    // Hans has the newest open item, so his group comes first; within it the newest first.
+    const groups = openItems([...withOrder2, toPeter, toHansLater]);
+    // Hans has the newest open item (#2 at 20:10), so his group comes first; within it the
+    // newest first.
     expect([...groups.keys()]).toEqual([HANS, peter]);
-    expect(groups.get(HANS)?.map((item) => item.message.id)).toEqual([toHansLater.id, W.courier2]);
+    expect(groups.get(HANS)?.map((item) => item.message.id)).toEqual([order2.id, toHansLater.id]);
     expect(groups.get(peter)?.[0]?.status).toBe("pending");
   });
 });
 
 describe("points (P3-05)", () => {
-  // The walkthrough plus two points: one on the free-text reply, open; one on the note,
+  // The walkthrough — which carries one point of its own, on the courier record, closed
+  // 19:40 (P3-07) — plus two points: one on the free-text reply, open; one on the note,
   // closed with a reason.
+  const COURIER_POINT = "Peter med pumpe til nr 4 — tilbage?";
   const onReply = point({
     refersTo: W.freeTextIn,
     text: "Kælder i nr 4: pumpe",
@@ -929,7 +1028,17 @@ describe("points (P3-05)", () => {
 
   it("pointsFor: every point oldest first with its origin, state, times and reason", () => {
     const views = pointsFor([...entries].reverse());
-    expect(views.map((view) => view.point.id)).toEqual([onReply.id, onNote.id]);
+    expect(views.map((view) => view.point.id)).toEqual([onReply.id, onNote.id, W.courier2Point]);
+    expect(views[2]).toMatchObject({
+      title: COURIER_POINT,
+      state: "closed",
+      openedAt: "2026-10-28T19:10:00Z",
+      closedAt: "2026-10-28T19:40:00Z",
+      closedBy: "Thomas",
+      reason: "Peter tilbage 19:40, pumpen afleveret",
+      changedAt: "2026-10-28T19:40:00Z",
+    });
+    expect(views[2]?.origin?.id).toBe(W.courier2);
     expect(views[0]).toMatchObject({
       title: "Kælder i nr 4: pumpe",
       state: "open",
@@ -956,6 +1065,7 @@ describe("points (P3-05)", () => {
     const views = pointsFor(entries);
     expect(pointOf(views, W.note)?.point.id).toBe(onNote.id);
     expect(pointOf(views, W.freeTextIn)?.point.id).toBe(onReply.id);
+    expect(pointOf(views, W.courier2)?.point.id).toBe(W.courier2Point);
     expect(pointOf(views, W.order1)).toBeUndefined();
     expect(pointOf(views, onNote.id)).toBeUndefined();
   });
@@ -973,6 +1083,7 @@ describe("points (P3-05)", () => {
     expect(closedPoints(views).map((view) => view.title)).toEqual([
       "Følg op på #1",
       "Ring til forsyningen igen",
+      COURIER_POINT,
     ]);
   });
 
@@ -1034,9 +1145,13 @@ describe("points (P3-05)", () => {
     expect(openItems(entries)).toEqual(openItems(walkthrough.entries));
   });
 
-  it("an incident without points has none", () => {
-    expect(pointsFor(walkthrough.entries)).toEqual([]);
+  it("the walkthrough's one point is the courier record's, closed; an empty journal has none", () => {
+    expect(pointsFor(walkthrough.entries).map((view) => [view.title, view.state])).toEqual([
+      [COURIER_POINT, "closed"],
+    ]);
+    expect(openPoints(pointsFor(walkthrough.entries))).toEqual([]);
     expect(pointsFor([])).toEqual([]);
+    expect(pointsFor(walkthrough.entries.filter((e) => e.id !== W.courier2Point))).toEqual([]);
   });
 });
 

@@ -326,6 +326,8 @@ describe("outbox", () => {
 
     await expect(outbox.send("01JB8ZK3QX9V2M4N6P8R0T2W99")).rejects.toBeInstanceOf(OutboxError);
 
+    // A courier record is a plain record with no number and no status (P3-07); the outbox
+    // refuses it before anything is looked up.
     const courier = await composeMessage(store, {
       incidentId: INCIDENT,
       operator: "Thomas",
@@ -333,7 +335,9 @@ describe("outbox", () => {
       transport: "courier",
       body: "med bud",
     });
+    expect(courier.message.text).toBe("med bud");
     await expect(outbox.send(courier.message.id)).rejects.toBeInstanceOf(OutboxError);
+    expect(await store.entriesReferringTo(courier.message.id)).toEqual([]);
 
     const note = await store.appendEntry({ incidentId: INCIDENT, operator: "Thomas", type: "note", text: "n" });
     await expect(outbox.send(note.id)).rejects.toBeInstanceOf(OutboxError);

@@ -110,7 +110,7 @@ describe("correcting a note by editing it", () => {
 });
 
 describe("correcting a message_out", () => {
-  it("keeps '#n ' fixed in front of the box and present in the stored text", async () => {
+  it("keeps '#n ' fixed in front of the box and present in the stored text of a radio message", async () => {
     const store = await openTestStore();
     const hans = await store.createRegisterEntry({
       publicKey: "7a".repeat(32),
@@ -122,7 +122,7 @@ describe("correcting a message_out", () => {
         incidentId: INCIDENT,
         operator: "Anne",
         counterpartyId: hans.id,
-        transport: "courier",
+        transport: "mesh",
         body: `besked ${n}`,
       });
     }
@@ -130,7 +130,7 @@ describe("correcting a message_out", () => {
       incidentId: INCIDENT,
       operator: "Anne",
       counterpartyId: hans.id,
-      transport: "courier",
+      transport: "mesh",
       body: "Meld status for Nørregade",
     });
     expect(message.text).toBe("#12 Meld status for Nørregade");
@@ -149,6 +149,35 @@ describe("correcting a message_out", () => {
     expect(currentText(after.entry, correctionsOf(after))).toBe("#12 Meld status for Søndergade");
     // The message's status and strip are untouched by the correction.
     expect(after.kind === "message" && after.message.status).toBe("pending");
+    store.close();
+  });
+
+  it("a courier record has no prefix to keep: the box opens with the whole text (P3-07)", async () => {
+    const store = await openTestStore();
+    const hans = await store.createRegisterEntry({ label: "Hans", phone: "12 34 56 78" });
+    const { message } = await composeMessage(store, {
+      incidentId: INCIDENT,
+      operator: "Anne",
+      counterpartyId: hans.id,
+      transport: "courier",
+      body: "Pumpe på vej til nr 4 med Peter",
+    });
+    expect(message.text).toBe("Pumpe på vej til nr 4 med Peter");
+    const row = rowOf(buildTimeline(await store.entriesForIncident(INCIDENT)), message.id);
+    const form = correctionForm(row.entry, correctionsOf(row));
+    expect(form.prefix).toBe("");
+    expect(form.body).toBe("Pumpe på vej til nr 4 med Peter");
+    const correction = await correctFromRow(store, message.id, "Pumpe på vej til nr 4 med Anne");
+    expect(correction.text).toBe("Pumpe på vej til nr 4 med Anne");
+    const after = rowOf(buildTimeline(await store.entriesForIncident(INCIDENT)), message.id);
+    expect(currentText(after.entry, correctionsOf(after))).toBe("Pumpe på vej til nr 4 med Anne");
+    // The record has no status; the versions are its only history.
+    expect(after.kind === "message" && after.message.status).toBeNull();
+    expect(after.kind === "message" && after.message.history).toEqual([]);
+    expect(textVersions(after.entry, correctionsOf(after)).map((v) => v.text)).toEqual([
+      "Pumpe på vej til nr 4 med Peter",
+      "Pumpe på vej til nr 4 med Anne",
+    ]);
     store.close();
   });
 });

@@ -1,13 +1,12 @@
 // The "New record" tab (P3-01): everything the operator writes into the journal by hand — a
 // note, an incoming message, an outgoing message — the two message kinds on a non-radio
 // transport (phone, courier, verbal). One function routes the form's input to the entry it
-// is: a note (manual.ts), a message_in as typed (manual.ts), or a message_out with the
-// recipient's next #n (outgoing.ts), stored exactly as the compose form stored a non-mesh
-// message before: the per-recipient counter is shared across transports
-// (contract/text-protocol.md, "Non-mesh transports"), the status is set by the operator from
-// the row afterwards. Nothing here goes near the radio: mesh is refused on both message
-// kinds (a mesh message_in comes from the inbox with a dedupe key, a mesh message_out from
-// the MeshCore tab).
+// is: a note (manual.ts), a message_in as typed (manual.ts), or a message_out as typed
+// (outgoing.ts composeMessage): a plain record with no number, no prefix and no status
+// (P3-07; contract/text-protocol.md, "Non-mesh transports have no status chain") — the
+// phone call was the delivery; what needs following up gets a point. Nothing here goes near
+// the radio: mesh is refused on both message kinds (a mesh message_in comes from the inbox
+// with a dedupe key, a mesh message_out from the MeshCore tab).
 
 import type { JournalStore } from "./journalStore.ts";
 import { ManualEntryError, NON_MESH_TRANSPORTS, appendMessageIn, appendNote } from "./manual.ts";

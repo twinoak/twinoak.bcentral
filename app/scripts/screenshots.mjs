@@ -7,11 +7,13 @@
 // its compose card on each tab (P3-01), with a corrected row open on its history, with the
 // correction form open (P3-02), with a given-up row open on its history and actions and
 // with the send-to-all row open on its recipients (P3-04), with a row open on its point and
-// with the Open point form open (P3-05; the seed holds one open and one closed point, so the
-// Points card, the handover's first list and the print block show them), the handover with
-// a given-up row open, the register as its list, with the Add contact form open and
-// filtered to the contacts without a radio (P3-06), the journal at the largest size and in
-// high contrast, the two long pages whole, the three print pages as A4 PDFs too. The files
+// with the Open point form open (P3-05; the seed holds one open and two closed points, so
+// the Points card, the handover's first list and the print block show them), with the
+// walkthrough's courier record open (P3-07: a message by hand has no status column, no
+// history and no Mark, only its point and Correct; the seed also holds a reply by phone),
+// the handover with a given-up row open, the register as its list, with the Add contact
+// form open and filtered to the contacts without a radio (P3-06), the journal at the largest
+// size and in high contrast, the two long pages whole, the three print pages as A4 PDFs too. The files
 // go to tasks/phase-2/reports/screens/ and are
 // committed, so the reviewer can look at every screen without running the app. On the way
 // every row of the seeded journal is measured at rest, hovered and focused (P3-04: a row's
@@ -249,14 +251,16 @@ function seedEnvelope() {
   );
   inbound(drill.id, idBefore, "Lise", drillAt("10:12:00"), "Er ved nr 2, alt roligt");
 
-  // The walkthrough's own entries, re-numbered after the drill's; the closing left out.
+  // The walkthrough's own entries, re-numbered after the drill's; the incident's closing left
+  // out (the closing of its point stays: the point is closed).
   for (const entry of walkthrough.entries) {
-    if (entry.newStatus === "closed") {
+    if (entry.newStatus === "closed" && entry.refersTo === real.id) {
       continue;
     }
     add({ ...entry });
   }
-  seqNos.set(hansId, 2);
+  // Hans's #1 is the walkthrough's only number: its courier record has none (P3-07).
+  seqNos.set(hansId, 1);
 
   // The evening: open orders, given-up messages, unanswered and answered incoming messages,
   // a roger, a note, a phone call.
@@ -340,8 +344,10 @@ function seedEnvelope() {
       roger(real.id, id, message, entry.label, at(`19:41:${String(10 + i * 7).padStart(2, "0")}`));
     }
   });
-  // A call from a contact without a radio (P3-06): recorded against her on New record.
-  add({
+  // A call from a contact without a radio (P3-06): recorded against her on New record, and
+  // the staff's answer by phone: a plain record with no number and no status (P3-07),
+  // linked to her call.
+  const fromGrethe = add({
     id: id(),
     incidentId: real.id,
     timestamp: at("19:42:00"),
@@ -349,6 +355,16 @@ function seedEnvelope() {
     transport: "phone",
     counterpartyId: byLabel("Grethe"),
     text: "Ringede: der står vand i kælderen i nr 12, kan I komme",
+  });
+  add({
+    id: id(),
+    incidentId: real.id,
+    timestamp: at("19:42:30"),
+    type: "message_out",
+    transport: "phone",
+    counterpartyId: byLabel("Grethe"),
+    refersTo: fromGrethe.id,
+    text: "Ringede tilbage: Peter kommer med pumpen, når nr 4 er tømt",
   });
   const phoneCall = add({
     id: id(),
@@ -631,6 +647,18 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor({
     state: "hidden",
   });
+
+  // A message by hand (P3-07): the walkthrough's courier record open — no status column, no
+  // history, no Mark; its point line (closed) and Reopen point · Correct.
+  const courierRecord = page.locator(
+    '.rows-box .rows > li[data-entry-id="01JB8ZK3QX9V2M4N6P8R0T2W59"]',
+  );
+  await courierRecord.scrollIntoViewIfNeeded();
+  await line(courierRecord).click();
+  await courierRecord.locator('[data-point-action="reopenPoint"]').waitFor();
+  await shot("journal-by-hand");
+  await page.keyboard.press("Escape");
+  await courierRecord.locator(".row-area").waitFor({ state: "hidden" });
 
   // Points (P3-05): the phone call (the newest incoming row) open on its point line and
   // "Luk punkt"; then the newest note open on the Open point form, the title prefilled.

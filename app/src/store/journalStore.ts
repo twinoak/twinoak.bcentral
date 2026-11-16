@@ -195,11 +195,13 @@ export class JournalStore {
     }
   }
 
-  // A message_out with the recipient's next #n, reserved and stored in one transaction
+  // A mesh message_out with the recipient's next #n, reserved and stored in one transaction
   // (P0-05): the counter is read, `compose(n)` builds the text ("#n <text>"), the entry is
   // validated and stored, and the counter moves to n. If compose throws (the text would be
   // over the 160-byte limit), the transaction is aborted and the counter is untouched, so a
   // refused send never leaves a gap in n (text-protocol.md: increments by 1, never reused).
+  // Only the radio's messages are numbered (P3-07): a message_out on any other transport is
+  // appended through appendEntry as a plain record, and the schema refuses it with a seqNo.
   async appendMessageOut(input: NewMessageOut, compose: (seqNo: number) => string): Promise<JournalEntry> {
     const reading = this.clock();
     const tx = this.db.transaction(["entries", "meta"], "readwrite");
@@ -284,9 +286,15 @@ export class JournalStore {
     return await this.db.getFromIndex("entries", "by-dedupeKey", dedupeKey);
   }
 
-  // Derived status of an outgoing message: see status.ts.
-  async statusOf(messageOutId: string): Promise<Status> {
-    return statusOf(await this.entriesReferringTo(messageOutId), messageOutId);
+  // Derived status of a stored outgoing message: see status.ts. Null for a message by phone,
+  // courier or verbal, which has no status chain (P3-07). An id that is not in the journal
+  // has no status to derive and is refused.
+  async statusOf(messageOutId: string): Promise<Status | null> {
+    const message = await this.getEntry(messageOutId);
+    if (message === undefined) {
+      throw new RangeError(`entry ${messageOutId} is not in the journal`);
+    }
+    return statusOf(await this.entriesReferringTo(messageOutId), message);
   }
 
   // When this register entry was last heard from: the timestamp of the latest message_in

@@ -6,12 +6,26 @@
 // MeshCore second, one job each (P3-01) — the setup card is shown while no operator name
 // is set and the gate sends every route there.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const srcDir = fileURLToPath(new URL(".", import.meta.url));
+
+// Every source file under src/: .ts, .svelte, .json (the catalogs), .css.
+function sourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...sourceFiles(path));
+    } else if (/\.(ts|svelte|json|css)$/.test(entry.name)) {
+      files.push(path);
+    }
+  }
+  return files;
+}
 
 const JOURNAL_FILES = [
   "pages/JournalPage.svelte",
@@ -292,9 +306,10 @@ describe("the journal screen", () => {
 
   it("the status is a fixed column of three symbol slots, no time in the list (P3-03)", () => {
     const timeline = read("components/Timeline.svelte");
-    // A message row and a batch row carry the column; the strip of chips is gone.
-    expect(timeline).toContain(
-      "<StatusSlots strip={view.strip} transport={entry.transport} {inflightText} />",
+    // A radio message row and a batch row carry the column; the strip of chips is gone. A
+    // message by phone, courier or verbal has no status and leaves the column empty (P3-07).
+    expect(timeline).toMatch(
+      /\{#if view\.status !== null\}\s*<StatusSlots strip=\{view\.strip\} \{inflightText\} \/>\s*\{\/if\}/,
     );
     expect(timeline).toContain("<StatusSlots counters={row.counters} />");
     expect(timeline).not.toContain("stripChip");
@@ -325,7 +340,7 @@ describe("the journal screen", () => {
     expect(css).not.toContain(".strip {");
     // The slots: the rule, the symbol per slot, the words in title and aria-label only.
     const slots = read("components/StatusSlots.svelte");
-    expect(slots).toContain("statusSlots(strip, transport)");
+    expect(slots).toContain("statusSlots(strip)");
     expect(slots).toContain("countSlots(counters)");
     expect(slots).toContain('<span class="row-strip slots" data-slots="message">');
     expect(slots).toContain('<span class="row-strip slots slots-counts" data-slots="counts">');
@@ -415,7 +430,7 @@ describe("the journal screen", () => {
     expect(handover).toContain('<span class="row-meta age" title={t("handover.column.age")}');
     expect(handover).not.toContain('class="row-strip strip"');
     const open = read("components/OpenItemsPanel.svelte");
-    expect(open).toContain("<StatusSlots strip={item.strip} transport={item.message.transport} />");
+    expect(open).toContain("<StatusSlots strip={item.strip} />");
     expect(open).not.toContain("statusChip");
     // The queue's table keeps its chip, with the column's symbol in it instead of the dot
     // (the counter chips in the card's title keep theirs: nothing more changes there).
@@ -462,14 +477,14 @@ describe("the journal screen", () => {
     expect(meshcore).not.toContain("TRANSPORTS");
     expect(meshcore).toContain("composeMeshMessage({");
     expect(meshcore).toContain('{t("send.send")}');
-    expect(meshcore).not.toContain("send.record");
+    expect(meshcore).not.toContain("journal.add.save");
     expect(meshcore).toContain('t("send.bytes"');
 
     const record = read("components/ManualEntryForm.svelte");
     expect(record).toContain("{#each RECORD_TYPES as option (option)}");
     expect(record).toContain("{#each NON_MESH_TRANSPORTS as option (option)}");
     expect(record).not.toContain("send.transport.mesh");
-    expect(record).toContain('{t("send.record")}');
+    expect(record).toContain('{t("journal.add.save")}');
     expect(record).not.toContain("send.bytes");
     // From on an incoming message, To on an outgoing one; both and Via only for messages.
     expect(record).toContain(
@@ -477,6 +492,52 @@ describe("the journal screen", () => {
     );
     expect(record).toContain("{#if isMessage}");
     expect(record).toContain("resendByHand(closes, { transport, body: text })");
+  });
+
+  it("#n and the status chain are the radio's: a message by hand has an empty column, no Mark, no history, no number (P3-07)", () => {
+    const timeline = read("components/Timeline.svelte");
+    // The Mark form offers the radio's two manual statuses and nothing per transport.
+    expect(timeline).toContain("{#each MANUAL_STATUSES as next (next)}");
+    expect(timeline).not.toContain("manualStatusesFor");
+    // Mark comes from the pure rule, which offers it on a radio message only.
+    const actions = read("lib/rowActions.ts");
+    expect(actions).toContain('input.transport === "mesh" &&');
+    expect(actions).toContain("input.status !== null &&");
+    // The New record tab: one button, "Add to journal", no #n preview and no byte counter.
+    const record = read("components/ManualEntryForm.svelte");
+    expect(record).toContain('{t("journal.add.save")}');
+    expect(record).not.toMatch(/previewText|seqNoPrefix|messagePrefix|send\.bytes|send\.textHelp/);
+    // The print page writes the strip sentence and the status word for a radio message only.
+    const print = read("pages/PrintPage.svelte");
+    expect(print).toMatch(/view\.status === null\s*\?\s*null\s*:\s*view\.strip\.map/);
+    expect(print).toContain('{view.status === null ? "" : t(`journal.status.${view.status}`)}');
+    // The handover's courier copy carries no number in its toast or its reason.
+    expect(read("pages/HandoverPage.svelte")).not.toContain("recorded.entry.seqNo");
+    expect(read("store/index.ts")).not.toContain("copy.seqNo");
+    for (const catalog of ["i18n/en.json", "i18n/da.json"]) {
+      const text = read(catalog);
+      expect(text, catalog).toMatch(/"handover\.givenUp\.resentReason": "[^"]*\{via\}"/);
+      expect(text, catalog).not.toMatch(/"handover\.givenUp\.resent(Done|Reason)": "[^"]*\{n\}/);
+    }
+    // The dead code and strings are gone from every source under src/.
+    const gone = [
+      "manualStatusesFor",
+      "MESH_MANUAL_STATUSES",
+      "byHand",
+      "send.record",
+      "send.manual.sent",
+      "send.manual.delivered",
+      "journal.slot.byHand",
+    ];
+    for (const file of sourceFiles(srcDir)) {
+      if (file.endsWith("journal.test.ts")) {
+        continue;
+      }
+      const text = readFileSync(file, "utf8");
+      for (const word of gone) {
+        expect(text, `${file} still says ${word}`).not.toContain(word);
+      }
+    }
   });
 
   it("the side cards are cards with the count in the title", () => {

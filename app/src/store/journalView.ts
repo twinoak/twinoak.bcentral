@@ -4,13 +4,14 @@
 // "last heard from" are read off the entries every time (contract: status is derived, never
 // stored).
 //
-// The journal reads like a stack of message slips, newest on top (P1-01). A message is one
-// row that carries its own delivery chain as a strip (sent, delivered, roger, each with its
-// time) derived from the status_change entries that refer to it — the screen shows it as
+// The journal reads like a stack of message slips, newest on top (P1-01). A radio message is
+// one row that carries its own delivery chain as a strip (sent, delivered, roger, each with
+// its time) derived from the status_change entries that refer to it — the screen shows it as
 // three symbol slots (lib/statusSlots.ts, P3-03), the print view as the words with times;
 // those entries, and the old resend notes, are never rows of their own but the row's
-// history, shown when the row is expanded. The messages of one send-to-all (one batchId)
-// fold into one row with counters.
+// history, shown when the row is expanded. A message by phone, courier or verbal is a plain
+// record (P3-07): its status is null, its strip and history empty, and it is never an open
+// item. The messages of one send-to-all (one batchId) fold into one row with counters.
 // A corrected entry shows its latest correction's text as its text (currentText, P3-02), with
 // the original and every correction one click away; a status_change that refers to the
 // incident (closed / reopened) is a row, because it is an event of the incident itself.
@@ -22,7 +23,7 @@
 // latest closed / reopened status_change that refers to it, derived like a message's status.
 
 import { DRILL_PREFIX, messagePrefix } from "./outgoing.ts";
-import { isLater, latestStatusChange, statusOf } from "./status.ts";
+import { hasStatusChain, isLater, latestStatusChange, statusOf } from "./status.ts";
 import type { JournalEntry, RegisterEntry, Status } from "./types.ts";
 
 // Oldest first: the ordering status.ts uses to pick the latest status change: timestamp,
@@ -182,9 +183,12 @@ export interface HistoryItem {
 
 export interface MessageView {
   entry: JournalEntry;
-  status: Status;
+  // The chain's status of a radio message; null for a message by phone, courier or verbal,
+  // which has none (P3-07): its column is empty and nothing lists it as open.
+  status: Status | null;
+  // The current run of a radio message's chain; empty for a message without a chain.
   strip: StripItem[];
-  // Every transition, oldest first, the order the strip reads in.
+  // Every transition, oldest first, the order the strip reads in; none without a chain.
   history: HistoryItem[];
   // Corrections of the message itself, oldest first.
   corrections: JournalEntry[];
@@ -266,10 +270,12 @@ const RANK: Readonly<Record<Status, number>> = {
   reopened: 5,
 };
 
+// A batch is radio messages only (composeBatch), so every status here is one of the chain's;
+// a null (no chain) cannot occur in a batch and counts for nothing.
 export function slowestStatus(messages: readonly MessageView[]): Status {
   let slowest: Status = "roger";
   for (const message of messages) {
-    if (RANK[message.status] < RANK[slowest]) {
+    if (message.status !== null && RANK[message.status] < RANK[slowest]) {
       slowest = message.status;
     }
   }
@@ -341,7 +347,7 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
         }
         break;
       case "status_change":
-        if (target?.type === "message_out") {
+        if (target !== undefined && hasStatusChain(target)) {
           if (entry.newStatus !== "pending") {
             file(transitions, target.id, entry);
           }
@@ -349,10 +355,12 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
           plain.push(entry);
         }
         // A status change of a message that is not in the list is telemetry of nothing
-        // shown here; it stays in the data (export) and is not a row.
+        // shown here; it stays in the data (export) and is not a row. One referring to a
+        // message without a chain (P3-07) is ignored like one referring to a point: the
+        // store never writes it.
         break;
       case "note":
-        if (target?.type === "message_out") {
+        if (target !== undefined && hasStatusChain(target)) {
           file(transitions, target.id, entry);
         } else {
           plain.push(entry);
@@ -368,16 +376,22 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
     }
   }
 
+  // A radio message's view carries its chain; a message by phone, courier or verbal has
+  // none: null status, no strip, no history (P3-07).
   function view(message: JournalEntry): MessageView {
-    const history = (transitions.get(message.id) ?? []).map((entry) => ({
-      entry,
-      corrections: corrections.get(entry.id) ?? [],
-    }));
+    const status = statusOf(entries, message);
+    const history =
+      status === null
+        ? []
+        : (transitions.get(message.id) ?? []).map((entry) => ({
+            entry,
+            corrections: corrections.get(entry.id) ?? [],
+          }));
     const target = message.refersTo === undefined ? undefined : byId.get(message.refersTo);
     return {
       entry: message,
-      status: statusOf(entries, message.id),
-      strip: statusStrip(history.map((item) => item.entry)),
+      status,
+      strip: status === null ? [] : statusStrip(history.map((item) => item.entry)),
       history,
       corrections: corrections.get(message.id) ?? [],
       answers: target?.type === "message_in" ? target : null,
@@ -454,9 +468,11 @@ export function countNewRows(rows: readonly TimelineRow[], seen: ReadonlySet<str
 
 // --- open items ------------------------------------------------------------------------------
 
-// A message_out the staff still owes attention: not yet roger (pending / sent / delivered),
-// or given up, which the panel flags rather than hides. roger is final and closes the item
-// (brainstorm §5: "Roger closes the item in the staff's queue").
+// A radio message_out the staff still owes attention: not yet roger (pending / sent /
+// delivered), or given up, which the panel flags rather than hides. roger is final and
+// closes the item (brainstorm §5: "Roger closes the item in the staff's queue"). A message
+// by phone, courier or verbal has no status and is never an item (P3-07): what it needs
+// followed up is a point.
 export const OPEN_STATUSES: readonly Status[] = ["pending", "sent", "delivered"];
 
 export interface OpenItem {
@@ -487,7 +503,8 @@ function transitionsByMessage(entries: readonly JournalEntry[]): Map<string, Jou
 
 // Open items per register entry (counterpartyId), newest first within a group, and the groups
 // in the order of their newest item, newest first (P1-01). Entries without a counterparty
-// cannot occur for a message_out (the schema requires it) and are skipped.
+// cannot occur for a message_out (the schema requires it) and are skipped; a message without
+// a status chain (null: by phone, courier or verbal) is skipped too.
 export function openItems(entries: readonly JournalEntry[]): Map<string, OpenItem[]> {
   const groups = new Map<string, OpenItem[]>();
   const corrections = correctionsByTarget(entries);
@@ -496,7 +513,10 @@ export function openItems(entries: readonly JournalEntry[]): Map<string, OpenIte
     if (entry.type !== "message_out" || entry.counterpartyId === undefined) {
       continue;
     }
-    const status = statusOf(entries, entry.id);
+    const status = statusOf(entries, entry);
+    if (status === null) {
+      continue;
+    }
     const givenUp = status === "given_up";
     if (!givenUp && !OPEN_STATUSES.includes(status)) {
       continue;

@@ -6,21 +6,22 @@
   // Via with phone, courier and verbal only: the radio is the MeshCore tab (ComposeForm).
   // The other end is any contact in the register, with a radio or without (P3-06): a caller
   // without a radio is recorded here, and only here.
-  // An outgoing record is stored as the compose form stored a non-mesh message before, with
-  // the recipient's next #n in the text (the counter is shared across transports); its
-  // status is set by the operator from the row afterwards. No byte counter: no radio limit
-  // applies here.
+  // An outgoing record is a plain record (P3-07): the text as typed, no number, no status —
+  // the call was the delivery; what needs following up gets a point from the row. No byte
+  // counter and no #n preview: nothing of the radio's applies here, and the one button says
+  // "Add to journal" for all three kinds.
   //
   // Prefilled by the parent (lib/composePrefill.ts): Reply on an incoming message by phone,
   // courier or verbal opens this tab as an outgoing message on the same transport to the
   // sender, with "Replying to: …" as an inline message and a ✕ that drops the link (the
   // record is stored with refersTo = the incoming entry's id); "Send by courier" on a
-  // given-up message (P1-08) opens it as an outgoing courier message with the original's
-  // text, and recording it closes the original (store/handover.ts). Keys (P1-09): A from
-  // anywhere puts the cursor in the text (`onreveal` lets the parent show the form first —
-  // it sits under a tab in the journal's compose card, P2-03); Esc drops the reply link;
-  // Ctrl+Enter inside the form records the entry. One line of fields and a 14 px meta line,
-  // like the MeshCore form; the look is components.css's.
+  // given-up radio message (P1-08) opens it as an outgoing courier message with the
+  // original's text, and adding it opens a point on the record and closes the original
+  // (store/handover.ts). Keys (P1-09): A from anywhere puts the cursor in the text
+  // (`onreveal` lets the parent show the form first — it sits under a tab in the journal's
+  // compose card, P2-03); Esc drops the reply link; Ctrl+Enter inside the form adds the
+  // entry. One line of fields and a 14 px meta line, like the MeshCore form; the look is
+  // components.css's.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
   import type { RecordPrefill } from "../lib/composePrefill.ts";
@@ -33,8 +34,9 @@
   import type { JournalEntry, RegisterEntry, Transport } from "../store/types.ts";
   import Icon from "./Icon.svelte";
 
-  // What one Record stored: the entry, and the status_change that closed a given-up
-  // message when the record replaced it ("send by courier"), else null.
+  // What one Add to journal stored: the entry, and the status_change that closed a given-up
+  // radio message when the record replaced it ("send by courier"; the point opened on the
+  // record then is the journal's to show), else null.
   export interface Recorded {
     entry: JournalEntry;
     closed: JournalEntry | null;
@@ -234,7 +236,8 @@
       <textarea id="manual-text" rows="1" bind:this={textField} bind:value={text}></textarea>
     </div>
 
-    <button type="submit" class="btn btn-primary" disabled={!canAdd}>{t("send.record")}</button>
+    <button type="submit" class="btn btn-primary" disabled={!canAdd}>{t("journal.add.save")}</button
+    >
   </div>
 
   <div class="meta field-help">

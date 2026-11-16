@@ -13,7 +13,6 @@
   import { ICON_NAMES } from "../lib/icons.ts";
   import { settings } from "../lib/settings.svelte.ts";
   import type { BatchCounters, StripItem, StripKind } from "../store/journalView.ts";
-  import type { Transport } from "../store/types.ts";
 
   const COLOUR_TOKENS = [
     "--bg",
@@ -64,7 +63,8 @@
   }
 
   // The status column (P3-03) in every state it has: one sample strip per state, as
-  // store/journalView.ts's statusStrip would derive it, and a batch's counters.
+  // store/journalView.ts's statusStrip would derive it for a radio message, and a batch's
+  // counters. A message by phone, courier or verbal has no column (P3-07).
   const SAMPLE_AT = "2026-10-28T19:00:00Z";
   function item(kind: StripKind, text: string | null = null): StripItem {
     return {
@@ -74,24 +74,21 @@
       text,
     };
   }
-  const SLOT_SAMPLES: { key: string; strip: StripItem[]; transport: Transport }[] = [
-    { key: "pending", strip: [item("pending")], transport: "mesh" },
+  const SLOT_SAMPLES: { key: string; strip: StripItem[] }[] = [
+    { key: "pending", strip: [item("pending")] },
     {
       key: "waiting",
       strip: [item("sent"), { ...item("waiting"), attempt: "attempt 2/3" }],
-      transport: "mesh",
     },
-    { key: "delivered", strip: [item("sent"), item("delivered")], transport: "mesh" },
-    { key: "roger", strip: [item("sent"), item("delivered"), item("roger")], transport: "mesh" },
+    { key: "delivered", strip: [item("sent"), item("delivered")] },
+    { key: "roger", strip: [item("sent"), item("delivered"), item("roger")] },
     {
       key: "given_up",
       strip: [item("sent"), item("given_up", "no ack after 3 attempts")],
-      transport: "mesh",
     },
     {
-      key: "by_hand",
-      strip: [item("sent", "Peter cyklede 19:10"), item("delivered", "Peter tilbage 19:40")],
-      transport: "courier",
+      key: "manual_roger",
+      strip: [item("sent"), item("delivered"), item("roger", "Hans rang: modtaget")],
     },
   ];
   const SAMPLE_COUNTERS: BatchCounters = {
@@ -325,9 +322,9 @@
   </div>
 </section>
 
-<!-- The status column: the three slots of an outgoing row under the header's labels, in
-     every state — pending, sent and waiting, delivered, confirmed, given up, by hand — and
-     a batch's counts. Hover a slot for its sentence. -->
+<!-- The status column: the three slots of a radio message's row under the header's labels,
+     in every state — pending, sent and waiting, delivered, confirmed, given up, a roger
+     recorded by hand — and a batch's counts. Hover a slot for its sentence. -->
 <section class="card">
   <h2 class="card-title"><code>.slots</code></h2>
   <div class="rows-box">
@@ -338,7 +335,7 @@
           <span class="row-time">19.00.00</span>
           <span class="row-who">→ {t("register.field.person")}</span>
           <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
-          <StatusSlots strip={sample.strip} transport={sample.transport} />
+          <StatusSlots strip={sample.strip} />
         </li>
       {/each}
       <li data-sample="batch">
@@ -455,7 +452,7 @@
         <span class="row-time">08:30:12</span>
         <span class="row-who">{t("register.field.person")} C</span>
         <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
-        <StatusSlots strip={[item("sent"), item("waiting")]} transport="mesh" />
+        <StatusSlots strip={[item("sent"), item("waiting")]} />
       </div>
     </li>
     <li aria-current="true">
@@ -484,7 +481,7 @@
         <span class="row-time">08:04:05</span>
         <span class="row-who">{t("register.field.person")} A</span>
         <span class="row-body">#1 {t("handover.quiet.requestHelp")}</span>
-        <StatusSlots strip={[item("sent"), item("delivered"), item("roger")]} transport="mesh" />
+        <StatusSlots strip={[item("sent"), item("delivered"), item("roger")]} />
       </div>
       <div class="row-area" id="sg-row-area">
         <div class="row-detail">

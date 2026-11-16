@@ -60,13 +60,14 @@ export function stripText(item: StripItem, inflightText: string | null): string 
 // What a slot of the status column says in its tooltip (P3-03): "Delivered 12.21", "Not yet
 // delivered", "Not yet delivered: waiting (attempt 2/3)" on the clock — while the outbox or
 // the queue holds the message its own progress text is the detail, as on the strip — "Given
-// up 12.30 · no ack after 3 attempts" on the cross; a status set by hand ends in "by hand
-// (reason)". No time is shown anywhere but here and in the history.
+// up 12.30 · no ack after 3 attempts" on the cross (the radio's detail or the operator's
+// reason). No time is shown anywhere but here and in the history. Only a radio message has
+// slots (P3-07); the words of a manual roger or given-up are its reason in the history.
 export function slotText(slot: Slot, inflightText: string | null): string {
   if (slot.shape === "cross") {
     return withDetail(
       t("journal.slot.givenUp", { time: formatShortTime(slot.at ?? "") }),
-      slot.byHand ? byHand(slot.text) : slot.text,
+      slot.text,
     );
   }
   if (slot.shape === "clock") {
@@ -83,14 +84,7 @@ export function slotText(slot: Slot, inflightText: string | null): string {
     }
     return t(`journal.slot.not.${slot.name}`);
   }
-  return withDetail(
-    t(`journal.slot.at.${slot.name}`, { time: formatShortTime(slot.at ?? "") }),
-    slot.byHand ? byHand(slot.text) : null,
-  );
-}
-
-function byHand(reason: string | null): string {
-  return reason === null ? t("journal.slot.byHand") : t("journal.slot.byHandReason", { reason });
+  return t(`journal.slot.at.${slot.name}`, { time: formatShortTime(slot.at ?? "") });
 }
 
 function withDetail(sentence: string, detail: string | null): string {

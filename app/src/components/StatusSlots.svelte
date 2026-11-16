@@ -1,24 +1,23 @@
 <script lang="ts">
-  // The status column of a row (P3-03): three fixed slots — sent · delivered · confirmed —
-  // one symbol each, always in the same place, read at a glance down the list. The rule is
-  // lib/statusSlots.ts over the message's strip and transport; the words of each slot's
-  // tooltip (the time, "not yet", the attempt, the reason, "by hand") are
-  // lib/journalText.ts's and go into `title` and `aria-label` only: no time is shown in the
-  // list. A batch row shows a count per slot instead ("23/25") and, under them, the given-up
-  // count with a cross when it is not zero. The slots are not focusable; the row is.
-  // components.css lays the column out (`.slots`) and tints the symbols; incoming rows,
-  // notes and corrections render nothing here, so their column is empty.
+  // The status column of a radio message's row (P3-03): three fixed slots — sent ·
+  // delivered · confirmed — one symbol each, always in the same place, read at a glance down
+  // the list. The rule is lib/statusSlots.ts over the message's strip; the words of each
+  // slot's tooltip (the time, "not yet", the attempt, the reason) are lib/journalText.ts's
+  // and go into `title` and `aria-label` only: no time is shown in the list. A batch row
+  // shows a count per slot instead ("23/25") and, under them, the given-up count with a
+  // cross when it is not zero. The slots are not focusable; the row is. components.css lays
+  // the column out (`.slots`) and tints the symbols; incoming rows, notes, corrections and
+  // outgoing messages by phone, courier or verbal (P3-07: no chain) render nothing here, so
+  // their column is empty.
   import { countSlotText, slotText } from "../lib/journalText.ts";
   import { countSlots, statusSlots } from "../lib/statusSlots.ts";
   import { t } from "../i18n/index.svelte.ts";
   import type { BatchCounters, StripItem } from "../store/journalView.ts";
-  import type { Transport } from "../store/types.ts";
   import SlotSymbol from "./SlotSymbol.svelte";
 
   interface Props {
-    // A message's current run and transport: the three symbols.
+    // A radio message's current run: the three symbols.
     strip?: readonly StripItem[];
-    transport?: Transport;
     // What the outbox or the queue is doing with the message right now; the detail of a
     // hollow sent slot or the clock. Null when nothing holds it.
     inflightText?: string | null;
@@ -26,9 +25,9 @@
     counters?: BatchCounters;
   }
 
-  const { strip, transport, inflightText = null, counters }: Props = $props();
+  const { strip, inflightText = null, counters }: Props = $props();
 
-  const slots = $derived(strip === undefined ? [] : statusSlots(strip, transport));
+  const slots = $derived(strip === undefined ? [] : statusSlots(strip));
   const counts = $derived(counters === undefined ? [] : countSlots(counters));
 </script>
 
