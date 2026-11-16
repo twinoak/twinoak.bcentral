@@ -3,8 +3,9 @@
 // open orders, given-up messages, unanswered incoming messages, a 25-recipient send-to-all
 // half drained and a drill incident — through the `?seed` hook of src/main.ts — and captures
 // every route at 1280 × 720 and 1440 × 900 at the normal text size, the journal also with
-// its compose card on each tab (P3-01), at the largest size and in high contrast, the two
-// long pages whole, the three print pages as A4 PDFs too. The files go to
+// its compose card on each tab (P3-01), with a corrected row's history open and with the
+// correction form open (P3-02), at the largest size and in high contrast, the two long pages
+// whole, the three print pages as A4 PDFs too. The files go to
 // tasks/phase-2/reports/screens/ and are committed, so the reviewer can look at every
 // screen without running the app.
 //
@@ -481,6 +482,28 @@ async function captureSize(browser, base, data, width, height) {
   await page.getByRole("tab", { name: da["journal.compose.title"] }).click();
   await page.locator("#panel-meshcore").waitFor();
   await shot("journal-meshcore");
+
+  // Correct by editing (P3-02): the walkthrough's corrected note with its "corrected" chip
+  // and its history open (the original and the correction), then the form in place of the
+  // newest note's text, prefilled.
+  const correctedNote = page.locator(
+    '.rows-box .rows > li[data-entry-id="01JB8ZK3QX9V2M4N6P8R0T2W58"]',
+  );
+  await correctedNote.scrollIntoViewIfNeeded();
+  await correctedNote.hover();
+  await correctedNote
+    .getByRole("button", { name: da["journal.action.history"].replace("{count}", "2") })
+    .click();
+  await correctedNote.locator(".row-detail").waitFor();
+  await shot("journal-corrected");
+  await page.locator(".rows-box").evaluate((box) => box.scrollTo(0, 0));
+  const newestNote = page.locator('.rows-box .rows > li[data-type="note"]').first();
+  await newestNote.hover();
+  await newestNote.getByRole("button", { name: da["journal.action.correct"] }).click();
+  await page.locator("#correction-text").waitFor();
+  await shot("journal-correct");
+  await page.keyboard.press("Escape");
+  await page.locator("#correction-text").waitFor({ state: "hidden" });
 
   await go("#/handover", "[data-handover-head]");
   await shot("handover");

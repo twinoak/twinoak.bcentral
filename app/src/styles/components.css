@@ -549,9 +549,9 @@ button.chip:hover {
    the keyboard cursor; accent-weak), an expanded row and the rows of its expansion
    (data-expanded / data-nested; surface-2), and hover. The row's own lines — its actions
    (`.row-actions`, shown on hover, focus and while expanded), an inline form
-   (`.row-form`), a correction (`.row-note`) and its history (`.row-detail`) — span the
-   columns under the row's cells. A `.row-button` is a row that is one button (the side
-   cards: click = go to the entry). */
+   (`.row-form`: a manual status with its reason; the correction, while the row's text is
+   hidden, P3-02) and its history (`.row-detail`) — span the columns under the row's cells.
+   A `.row-button` is a row that is one button (the side cards: click = go to the entry). */
 .rows {
   display: grid;
   /* The strip column is shared down the list (subgrid), so it is capped at a third of the
@@ -716,7 +716,9 @@ button.chip:hover {
   grid-column: 1 / -1;
 }
 
-/* An inline form on a row (a correction, a manual status with its reason). */
+/* An inline form on the line under a row: a manual status with its reason; the correction
+   (a label, the fixed "#n " of a message, the one box with the text taking the width,
+   Save, Cancel) while the row's own text is hidden. */
 .row-form {
   display: flex;
   flex-wrap: wrap;
@@ -729,9 +731,10 @@ button.chip:hover {
   flex: 1 1 14rem;
 }
 
-/* A correction under the entry it corrects: a 14 px neutral line. */
-.row-note {
-  grid-column: 3 / -1;
+/* The "corrected" chip after the time of a corrected row (P3-02). */
+.row-time .chip {
+  margin-left: var(--s-2);
+  vertical-align: baseline;
 }
 
 .row-detail {

@@ -60,7 +60,25 @@ describe("the print pages (P2-05)", () => {
     expect(journal).toContain('class="doc-status"');
     expect(journal).toContain("stripLine(view)");
     expect(journal).toContain("countersText(row.counters)");
-    expect(journal).toContain('data-nested="true" data-type="correction"');
+  });
+
+  it("prints a corrected entry's corrected text, marked, with the original beneath (P3-02)", () => {
+    const journal = read("pages/PrintPage.svelte");
+    // One snippet renders every text, off the one helper the screens use.
+    expect(journal).toContain(
+      "{#snippet docText(entry: JournalEntry, corrections: readonly JournalEntry[])}",
+    );
+    expect(journal).toContain("{currentText(entry, corrections)}");
+    expect(journal).toContain(
+      't("print.corrected", { time: formatRowTime(latest.timestamp), operator: latest.operator })',
+    );
+    // The footnote lines: the original, then any superseded correction, never the current one.
+    expect(journal).toContain("{#each versions.slice(0, -1) as version, index (version.id)}");
+    expect(journal).toContain('data-version={index === 0 ? "original" : "correction"}');
+    expect(journal).toContain('t("journal.correction.original")');
+    expect(journal.match(/@render docText\(/g)).toHaveLength(3);
+    // No correction rows of their own any more.
+    expect(journal).not.toContain('data-type="correction"');
   });
 
   it("the document and the paper rules live in the component sheet", () => {
