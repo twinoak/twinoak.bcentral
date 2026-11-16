@@ -33,6 +33,12 @@ export function formatDateTime(timestamp: string): string {
   });
 }
 
+// A row's tooltip: the full date and time, and who recorded the entry (the operator has no
+// column of its own on a slip; the print view keeps one).
+export function recordedBy(entry: JournalEntry): string {
+  return `${formatDateTime(entry.timestamp)} · ${entry.operator}`;
+}
+
 // One segment of the strip: the status and its time, or "waiting" with the latest attempt.
 // While the outbox or the queue holds the message, its own progress text replaces the
 // waiting / pending segment (the print view passes null: nothing is in flight on paper).

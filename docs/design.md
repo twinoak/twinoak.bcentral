@@ -114,8 +114,14 @@ component defines its own colours or sizes; a component `<style>` block may only
   `--surface-2`; selected `--accent-weak`. No zebra stripes.
 - **Row list** `.rows` (journal, open items, handover lists): like a table without columns
   borders — a grid per row of `time | who | body | status`, time 14 px `--ink-2` tabular,
-  who 500, body 18 px, the status column right; expanded row shows its history on
-  `--surface-2`.
+  who 500, body 18 px, the status column right. A row at rest is that one line and nothing
+  else, of a fixed height that hover never changes (hover tints the background `--surface-2`,
+  no button or glyph appears); the line is one button (`aria-expanded`). A click, Enter or
+  Space opens the row in place (P3-04): under the line, on `--surface-2`, its history with
+  times and operators, its reply links, and the action row — `.btn-quiet` buttons for exactly
+  the actions that apply, with the Mark and Correct forms taking the action row's place while
+  open. One row is open at a time; the open row's own line, another row or `Esc` closes it.
+  No history toggle anywhere.
 - **Popover** `.popover`: surface, `--r-2`, the floating shadow, max 360 px, a title line,
   a sentence, one action button. Opened from a status chip; `Esc` closes.
 - **Toast** `.toast`: bottom-left, one at a time, 4 s, neutral surface with the floating
@@ -203,14 +209,14 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   switcher is a popover-sized card with the pick, create, close/reopen, export and print
   controls, not a one-sentence popover.
 - The journal: the row list is a subgrid with the status column on a fixed width, so the
-  columns line up and the body keeps the rest; row actions are a line under the row on
-  hover, focus or expansion, not an overlay; a corrected entry reads its latest correction's
-  text with a neutral "corrected" chip (the pencil icon) after the time, the original and
-  every correction in its history, and Correct is one prefilled box on the line under the
-  row while the row's text is hidden (P3-02) — a correction is never a row or a line of its
-  own; the
-  compose card is padded `--s-4` vertically so ten one-line rows fit under it at 720 px;
-  `pending` is a warn state on a chip (the queue), three hollow slots in the column.
+  columns line up and the body keeps the rest; the row actions were a line under the row on
+  hover, focus or expansion until P3-04 made the row open on click, see below; a corrected
+  entry reads its latest correction's text with a neutral "corrected" chip (the pencil icon)
+  after the time, the original and every correction in its history, and Correct is one
+  prefilled box in the open row's area while the row's text is hidden (P3-02) — a correction
+  is never a row or a line of its own; the compose card is padded `--s-4` vertically so ten
+  one-line rows fit under it at 720 px; `pending` is a warn state on a chip (the queue),
+  three hollow slots in the column.
 - The status column (P3-03): a slot is 4 rem wide, the column 12 rem, not the 7.5 rem the
   task named — the header's 13 px labels ("Delivered", "Bekræftet", "Confirmed") need about
   60 px each, and a label that does not fit over its slot is no header. The symbols are
@@ -220,10 +226,28 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   slots pack to 1.5 rem each and there is no header: the tooltips say what the journal's
   labels say. The handover's age moved from the end of the strip to after the time. The
   queue's table keeps its state chip with the column's symbol in place of the dot.
+- Click to open (P3-04): a row's cells sit on a `.row-line` inside the row (a subgrid of the
+  row's subgrid, `components/Row.svelte`), which is the one button-like, focusable thing in
+  the row — `role="button"`, `aria-expanded`, `aria-controls` to the `.row-area` it opens —
+  so the row's padding stays on the row and the ring sits in it; the row itself cannot carry
+  `aria-expanded` (a list item's role does not support it) and cannot be a `<button>` (it
+  would hold the buttons of its area). The hover reveal of P2-03 is gone with its rules: no
+  `:hover` rule in the sheet changes a box property, and the screenshot script measures
+  every journal row at rest, hovered and focused. The reply links ("↳ answers 19:03",
+  "answered 19:03") moved from the body into the open row's area, so the line at rest holds
+  no control at all. Enter and Space are the line's own keys, as on a button, so the handover
+  page gets them without registering a shortcut; the overlay lists them under the row. The
+  handover's three entry lists are on the same `Row` with the same history list
+  (`RowHistory.svelte`), one row open at a time across the page, the actions in the open row
+  rather than always shown; its quiet-radios list is a register list, not journal rows, and
+  keeps its one button on a line under the row. An open item in the side card opens the row
+  it jumps to. A send-to-all row opens into its recipient rows, which open inside it without
+  closing it (the one exception to "one row open"), with "Retry all given up" as its own
+  action row when any recipient can be retried.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
-  queued and reopens from the queue's title; the handover's row actions are always shown and
-  its age sits at the end of the strip; the register's Print is icon-only and its Notes
+  queued and reopens from the queue's title; the handover's row actions were always shown
+  until P3-04 put them in the open row; the register's Print is icon-only and its Notes
   column is in the form, not the table; Settings has eight cards (Hub, for the phase-3 URL)
   with a Save per card of typed values.
 - Print: the document is a `.doc` block in `components.css` (a sheet on screen under a

@@ -444,34 +444,63 @@
   </div>
 </section>
 
-<!-- Row list: time | who | body | status, a current row, an expanded row with its history. -->
+<!-- Row list: time | who | body | status on the row's line (one button each, P3-04), a
+     current row, an open row with its history and its action row in the area under the
+     line. -->
 <section class="card">
   <h2 class="card-title"><code>.rows</code></h2>
   <ol class="rows">
     <li>
-      <span class="row-time">08:30:12</span>
-      <span class="row-who">{t("register.field.person")} C</span>
-      <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
-      <StatusSlots strip={[item("sent"), item("waiting")]} transport="mesh" />
+      <div class="row-line" role="button" tabindex="0" aria-expanded="false">
+        <span class="row-time">08:30:12</span>
+        <span class="row-who">{t("register.field.person")} C</span>
+        <span class="row-body">#3 {t("handover.quiet.requestHelp")}</span>
+        <StatusSlots strip={[item("sent"), item("waiting")]} transport="mesh" />
+      </div>
     </li>
     <li aria-current="true">
-      <span class="row-time">08:12:40</span>
-      <span class="row-who">{t("register.field.person")} B</span>
-      <span class="row-body">{t("handover.intro")}</span>
-      <span class="row-strip">
-        <button type="button" class="btn btn-quiet"
-          ><Icon name="reply" />{t("journal.action.reply")}</button
-        >
-      </span>
+      <div class="row-line" role="button" tabindex="0" aria-expanded="false">
+        <span class="row-time">08:12:40</span>
+        <span class="row-who">{t("register.field.person")} B</span>
+        <span class="row-body">{t("handover.intro")}</span>
+      </div>
     </li>
-    <li>
-      <span class="row-time">08:04:05</span>
-      <span class="row-who">{t("register.field.person")} A</span>
-      <span class="row-body">#1 {t("handover.quiet.requestHelp")}</span>
-      <StatusSlots strip={[item("sent"), item("delivered"), item("roger")]} transport="mesh" />
-      <div class="row-detail">
-        08:04:05 {t("journal.status.sent")} · 08:04:09 {t("journal.status.delivered")} · 08:06:51
-        {t("journal.status.roger")}
+    <li data-open="true">
+      <div
+        class="row-line"
+        role="button"
+        tabindex="0"
+        aria-expanded="true"
+        aria-controls="sg-row-area"
+      >
+        <span class="row-time">08:04:05</span>
+        <span class="row-who">{t("register.field.person")} A</span>
+        <span class="row-body">#1 {t("handover.quiet.requestHelp")}</span>
+        <StatusSlots strip={[item("sent"), item("delivered"), item("roger")]} transport="mesh" />
+      </div>
+      <div class="row-area" id="sg-row-area">
+        <div class="row-detail">
+          <ul>
+            <li>
+              <span class="row-time">08:04:05</span><span>{t("journal.status.sent")}</span>
+              <span class="row-meta">Thomas</span>
+            </li>
+            <li>
+              <span class="row-time">08:04:09</span><span>{t("journal.status.delivered")}</span>
+              <span class="row-meta">Thomas</span>
+            </li>
+            <li>
+              <span class="row-time">08:06:51</span><span>{t("journal.status.roger")}</span>
+              <span class="row-meta">Thomas</span>
+            </li>
+          </ul>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn btn-quiet"
+            ><Icon name="check" />{t("journal.action.status")}</button
+          >
+          <button type="button" class="btn btn-quiet">{t("journal.action.correct")}</button>
+        </div>
       </div>
     </li>
   </ol>

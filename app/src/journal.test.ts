@@ -62,9 +62,143 @@ describe("the journal screen", () => {
     expect(timeline).toContain('class="btn btn-quiet"');
     expect(timeline).not.toMatch(/class="(secondary|small|link|pill)"/);
     expect(timeline).toContain("<StatusColumnHead>");
-    expect(timeline).toContain('class="row-detail"');
+    expect(read("components/RowHistory.svelte")).toContain('class="row-detail"');
     expect(timeline).toContain("DIRECTION_GLYPH[direction]");
     expect(read("components/StatusColumnHead.svelte")).toContain('class="rows-top"');
+  });
+
+  // Every rule of components.css as [selector, declarations]; the rules inside a @media
+  // block come out on their own, the block's own line is skipped.
+  function cssRules(css: string): [string, string][] {
+    return [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(
+      (match) => [(match[1] ?? "").trim(), match[2] ?? ""],
+    );
+  }
+
+  // What a hover rule may change: the colours and the pointer, never a box property.
+  const HOVER_MAY_CHANGE = new Set([
+    "background",
+    "background-color",
+    "color",
+    "border-color",
+    "box-shadow",
+    "cursor",
+    "text-decoration",
+  ]);
+
+  it("a row is one line at rest and nothing appears or grows on hover (P3-04)", () => {
+    const css = read("styles/components.css");
+    const hoverRules = cssRules(css).filter(([selector]) => selector.includes(":hover"));
+    expect(hoverRules.length).toBeGreaterThan(0);
+    for (const [selector, declarations] of hoverRules) {
+      for (const declaration of declarations.split(";")) {
+        const property = declaration.split(":")[0]?.trim() ?? "";
+        if (property !== "") {
+          expect(HOVER_MAY_CHANGE.has(property), `${selector} { ${property} }`).toBe(true);
+        }
+      }
+    }
+    // The hover reveal of P2-03 is gone: the action row is never hidden, nothing keys on
+    // focus-within or on "always", and the row's hover rule tints only.
+    expect(css).not.toMatch(/\.row-actions \{[^}]*display: none/);
+    expect(css).not.toContain(":focus-within");
+    expect(css).not.toContain("rows-actions-always");
+    expect(css).not.toContain("data-expanded");
+    expect(css).toMatch(
+      /^\.rows > :hover,\s*\.rows > \[data-open="true"\],\s*\.rows > \[data-nested="true"\] \{\s*background: var\(--surface-2\);\s*\}/m,
+    );
+    // The line is a subgrid of the row with no padding of its own; the area spans the
+    // columns under it.
+    expect(css).toMatch(/^\.row-line \{\s*display: grid;\s*grid-template-columns: subgrid;/m);
+    expect(css).toMatch(/^\.row-area \{\s*grid-column: 1 \/ -1;/m);
+    expect(css).not.toMatch(/^\.row-line \{[^}]*padding/m);
+    // No "History" / "Hide history" / "Recipients" toggle anywhere, nor its keys.
+    for (const file of [
+      "components/Timeline.svelte",
+      "components/Row.svelte",
+      "components/RowHistory.svelte",
+      "pages/HandoverPage.svelte",
+    ]) {
+      expect(read(file), file).not.toMatch(/action\.history|hideHistory|batch\.(expand|collapse)/);
+      expect(read(file), file).not.toContain("rows-actions-always");
+      expect(read(file), file).not.toContain("data-expanded");
+    }
+    for (const catalog of ["i18n/en.json", "i18n/da.json"]) {
+      expect(read(catalog), catalog).not.toMatch(
+        /journal\.action\.history|journal\.action\.hideHistory|journal\.batch\.expand|journal\.batch\.collapse/,
+      );
+    }
+  });
+
+  it("the row is one button: click, Enter or Space toggles it, a link or a selection does not (P3-04)", () => {
+    const row = read("components/Row.svelte");
+    expect(row).toContain('<div\n    class="row-line"\n    role="button"');
+    expect(row).toContain("aria-expanded={openable ? open : undefined}");
+    expect(row).toContain("aria-controls={showArea ? areaId : undefined}");
+    expect(row).toContain('<div class="row-area" id={areaId}>');
+    expect(row).toContain("clickToggles(target, window.getSelection(), lineElement)");
+    expect(row).toContain('event.key === "Enter" || event.key === " "');
+    expect(row).toContain("event.preventDefault();");
+    expect(row).not.toContain("onmouseenter");
+    expect(row).not.toContain("onmouseover");
+    // The timeline keeps one row open through the pure rule; Esc closes a form, then the
+    // open row; J / K walk the lines.
+    const timeline = read("components/Timeline.svelte");
+    expect(timeline).toContain("opened = toggleRow(opened, id, place)");
+    expect(timeline).toContain("opened = closeOne(opened)");
+    expect(timeline).toContain("opened = revealRow(row, id)");
+    expect(timeline).toContain('onShortcut("cancel", closeCurrent)');
+    expect(timeline).not.toContain('onShortcut("expandRow"');
+    expect(timeline).toContain('querySelectorAll<HTMLElement>(".row-line[data-row]")');
+    expect(timeline.match(/<Row\n/g)).toHaveLength(3);
+    // The overlay says Enter or Space.
+    expect(read("lib/shortcuts.ts")).toContain(
+      '{ action: "expandRow", keys: ["Enter", "Space"], inTextField: false }',
+    );
+    expect(read("components/ShortcutHelp.svelte")).toContain('t("shortcuts.or")');
+  });
+
+  it("the open row lists its history with times and exactly the actions of its kind (P3-04)", () => {
+    const timeline = read("components/Timeline.svelte");
+    // Three areas: a message (history, the answered message, the form or the actions), a
+    // batch (Retry all given up), an entry (the versions, the answers, Reply / Correct).
+    expect(timeline.match(/\{#snippet area\(\)\}/g)).toHaveLength(3);
+    expect(timeline.match(/<RowHistory\n/g)).toHaveLength(1);
+    expect(timeline).toContain(
+      "<RowHistory {entry} corrections={row.corrections} {byId} onjump={scrollToEntry} />",
+    );
+    expect(timeline).toContain("messageActions({");
+    expect(timeline).toContain("entryActions(entry.type)");
+    expect(timeline).toContain("batchActions(canRetryAll.length)");
+    expect(timeline).toContain('actions.includes("retry") || actions.includes("send")');
+    expect(timeline).toContain('{#if actions.includes("mark")}');
+    expect(timeline).toContain('{#if actions.includes("reply")}');
+    expect(timeline).toContain('{#if actions.includes("correct")}');
+    expect(timeline).toContain('t("queue.retryAll", { count: canRetryAll.length })');
+    // The forms replace the action row while they are open.
+    expect(timeline).toMatch(
+      /\{#if changingStatus === entry\.id\}\s*\{@render statusForm\(entry\)\}\s*\{:else if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}\s*\{:else\}\s*<div class="row-actions">/,
+    );
+    // The reply links sit in the area, not on the line.
+    expect(timeline.match(/<p class="row-links">/g)).toHaveLength(2);
+    expect(timeline).not.toMatch(/<div class="row-body">[^]*?btn-link[^]*?<\/div>\s*<StatusSlots/);
+    // The history with times and operators, the roger's source as a jump.
+    const history = read("components/RowHistory.svelte");
+    expect(history).toContain("{formatTime(item.entry.timestamp)}");
+    expect(history).toContain("{historyDetail(item.entry, byId)}");
+    expect(history).toContain('<span class="row-meta">{item.entry.operator}</span>');
+    expect(history).toContain("{#each versions as version, index (version.id)}");
+    expect(history).toContain("onclick={() => onjump(source.id)}");
+    // The handover's three entry lists and the open-items card share the behaviour: the
+    // same Row with its history, one row open at a time on the page; an open item jumps to
+    // its row, which opens.
+    const handover = read("pages/HandoverPage.svelte");
+    expect(handover.match(/<Row\n/g)).toHaveLength(3);
+    expect(handover.match(/<RowHistory/g)).toHaveLength(3);
+    expect(handover).toContain("openRow = openRow === id ? null : id");
+    expect(handover).toContain('onShortcut("cancel"');
+    expect(read("components/OpenItemsPanel.svelte")).toContain("onselect(item.message.id)");
+    expect(read("pages/JournalPage.svelte")).toContain("timeline?.scrollToEntry(id)");
   });
 
   it("the status is a fixed column of three symbol slots, no time in the list (P3-03)", () => {
@@ -79,10 +213,10 @@ describe("the journal screen", () => {
     expect(timeline).not.toContain("counterChips");
     expect(timeline).not.toContain('class="row-strip strip"');
     // An incoming row, a note and a correction render nothing in the column; the "answered"
-    // marks sit in the body.
+    // marks sit in the open row's area (P3-04), never in the column.
     expect(timeline.match(/<StatusSlots /g)).toHaveLength(2);
     expect(timeline).toMatch(
-      /<div class="row-body">[\s\S]*?\{#each row\.answeredBy as reply \(reply\.id\)\}[\s\S]*?<\/div>\s*<span class="row-actions">/,
+      /<p class="row-links">\s*\{#each row\.answeredBy as reply \(reply\.id\)\}[\s\S]*?<\/p>/,
     );
     // The header's labels are stuck to the top of the box, the "N new" chip at their left.
     expect(timeline).toMatch(
@@ -143,12 +277,13 @@ describe("the journal screen", () => {
     );
     expect(timeline).toContain("<span data-prefix>{correction.prefix.trimEnd()}</span>");
     expect(timeline).not.toContain('placeholder={t("journal.correction.text")}');
-    // The row's own text is hidden while the form is open under the row: one copy on screen.
+    // The row's own text is hidden while the form is open in the row's area (P3-04): one
+    // copy on screen.
     expect(
       timeline.match(/<div class="row-body">\s*\{#if correcting !== entry\.id\}/g),
     ).toHaveLength(2);
     expect(
-      timeline.match(/\{#if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}/g),
+      timeline.match(/if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}/g),
     ).toHaveLength(2);
     expect(timeline).toContain("{currentText(entry, view.corrections)}");
     expect(timeline).toContain("{currentText(entry, row.corrections)}");
@@ -156,18 +291,18 @@ describe("the journal screen", () => {
     // The chip after the time, the versions in the history, the 14 px line gone.
     expect(timeline).toContain("data-corrected={latest.id}");
     expect(timeline).toContain('<Icon name="edit" />{t("journal.correction.corrected")}');
-    expect(timeline).toContain(
-      "{#snippet versionLines(entry: JournalEntry, corrections: readonly JournalEntry[])}",
-    );
-    expect(timeline.match(/@render versionLines\(/g)).toHaveLength(2);
+    const history = read("components/RowHistory.svelte");
+    expect(history).toContain("textVersions(entry, corrections)");
+    expect(history).toContain('data-version={index === 0 ? "original" : "correction"}');
     expect(timeline).not.toContain("row-note");
     expect(read("styles/components.css")).not.toContain(".row-note");
     // Esc cancels through the shortcut dispatcher, like every row form.
     expect(timeline).toContain('onShortcut("cancel"');
-    // Only a note, an incoming and an outgoing message are correctable.
-    expect(timeline).toContain(
-      'entry.type === "note" || entry.type === "message_in" || entry.type === "message_out"',
-    );
+    // Only a note, an incoming and an outgoing message are correctable (lib/rowActions.ts).
+    const actions = read("lib/rowActions.ts");
+    expect(actions).toContain('case "message_in":\n      return ["reply", "correct"];');
+    expect(actions).toContain('case "note":\n      return ["correct"];');
+    expect(actions).toContain('actions.push("correct");');
   });
 
   it("every screen reads a text through currentText (P3-02)", () => {

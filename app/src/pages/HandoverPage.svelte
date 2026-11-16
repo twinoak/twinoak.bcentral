@@ -5,11 +5,14 @@
   // → ‹new›", then the new name on everything), the clock-confirm box from the settings, the
   // radio's state, Print — then four cards in a 2 × 2 grid, each a row list with its count
   // in the title, oldest first, derived from the entries on every reload
-  // (store/handoverView.ts): open orders, given-up messages with the three decisions on the
-  // row (retry, send by courier, close with a reason), unanswered incoming messages with
-  // Reply, and quiet radios with "Send status request" ("#n Meld status"). An outgoing row
-  // carries the journal's status column (P3-03, StatusSlots.svelte) under the same header
-  // labels, and its age after the time. Reply and "send
+  // (store/handoverView.ts): open orders, given-up messages with the three decisions (retry,
+  // send by courier, close with a reason), unanswered incoming messages with Reply, and
+  // quiet radios with "Send status request" ("#n Meld status"). An outgoing row carries the
+  // journal's status column (P3-03, StatusSlots.svelte) under the same header labels, and
+  // its age after the time. The entry rows are the journal's rows (components/Row.svelte,
+  // P3-04): one line at rest, nothing on hover; a click opens the row with its history
+  // (RowHistory.svelte) and its actions under the line, one row open at a time across the
+  // page, Esc closes. Reply and "send
   // by courier" open a compose card between the head and the lists holding the journal's
   // tab the action belongs to (P3-01, lib/composePrefill.ts): MeshCore (ComposeForm) for a
   // reply to an incoming mesh message, New record (ManualEntryForm) for a reply to one by
@@ -31,6 +34,7 @@
   import { openPopover } from "../lib/popover.svelte.ts";
   import { hashFor } from "../lib/router.svelte.ts";
   import { hasOperatorName, settings } from "../lib/settings.svelte.ts";
+  import { onShortcut } from "../lib/shortcutDispatch.ts";
   import { showToast } from "../lib/toast.svelte.ts";
   import { capability, inbox, outbox, radio, sendQueue } from "../radio/index.ts";
   import { disconnectReasonText } from "../radio/radioStore.svelte.ts";
@@ -45,12 +49,20 @@
     recordManualStatus,
     sendStatusRequest,
   } from "../store/index.ts";
-  import { correctionsByTarget, currentText, type MessageView } from "../store/journalView.ts";
+  import {
+    correctionsByTarget,
+    currentText,
+    entriesById,
+    textVersions,
+    type MessageView,
+  } from "../store/journalView.ts";
   import { sortedByLabel } from "../store/register.ts";
   import type { Incident, JournalEntry, RegisterEntry } from "../store/types.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
   import Icon from "../components/Icon.svelte";
   import ManualEntryForm, { type Recorded } from "../components/ManualEntryForm.svelte";
+  import Row from "../components/Row.svelte";
+  import RowHistory from "../components/RowHistory.svelte";
   import StatusColumnHead from "../components/StatusColumnHead.svelte";
   import StatusSlots from "../components/StatusSlots.svelte";
 
@@ -82,6 +94,8 @@
   let lastHandover = $state<Handover | null>(null);
   // The print time, taken when Print is pressed.
   let printedAt = $state("");
+  // The one open row across the four lists (P3-04), or null.
+  let openRow: string | null = $state(null);
   // The given-up message whose close form is open, and the reason typed in it.
   let closing: string | null = $state(null);
   let reason = $state("");
@@ -95,6 +109,8 @@
   const lists = $derived(buildHandover(entries));
   // Every correction by the entry it corrects: a row's text is its current one (P3-02).
   const corrections = $derived(correctionsByTarget(entries));
+  // Every entry by id, for a roger's text in a row's history.
+  const byId = $derived(entriesById(entries));
   const blindAfterMs = $derived(settings.blindAfterMinutes * 60_000);
   const quiet = $derived(quietRadios(register, heard, { nowMs, blindAfterMs }));
   const radioState = $derived(radio.state());
@@ -170,6 +186,37 @@
 
   function age(timestamp: string): string {
     return formatElapsed(nowMs - Date.parse(timestamp));
+  }
+
+  // --- the open row (P3-04) --------------------------------------------------------------
+
+  // A click, Enter or Space on a row's line opens it and closes any other; the close form
+  // goes with the row that held it.
+  function toggleRow(id: string) {
+    openRow = openRow === id ? null : id;
+    closing = null;
+    reason = "";
+  }
+
+  // Esc: the close form first, then the open row.
+  $effect(() =>
+    onShortcut("cancel", () => {
+      if (closing !== null) {
+        cancelClose();
+        return true;
+      }
+      if (openRow === null) {
+        return false;
+      }
+      openRow = null;
+      return true;
+    }),
+  );
+
+  // How many lines a row's history has: an outgoing message's transitions and the versions
+  // of a corrected text. A row with none and no action is a plain line.
+  function historyLines(view: MessageView): number {
+    return view.history.length + textVersions(view.entry, view.corrections).length;
   }
 
   // --- the handover ----------------------------------------------------------------------
@@ -583,12 +630,28 @@
             <StatusColumnHead />
             <ol class="rows">
               {#each lists.open as view (view.entry.id)}
-                <li data-entry-id={view.entry.id}>
-                  {@render timeCell(view.entry)}
-                  {@render whoCell(view.entry, "out")}
-                  <span class="row-body">{currentText(view.entry, view.corrections)}</span>
-                  {@render stripCell(view)}
-                </li>
+                <Row
+                  id={view.entry.id}
+                  type="message_out"
+                  openable={historyLines(view) > 0}
+                  open={openRow === view.entry.id}
+                  ontoggle={() => toggleRow(view.entry.id)}
+                >
+                  {#snippet line()}
+                    {@render timeCell(view.entry)}
+                    {@render whoCell(view.entry, "out")}
+                    <span class="row-body">{currentText(view.entry, view.corrections)}</span>
+                    {@render stripCell(view)}
+                  {/snippet}
+                  {#snippet area()}
+                    <RowHistory
+                      entry={view.entry}
+                      history={view.history}
+                      corrections={view.corrections}
+                      {byId}
+                    />
+                  {/snippet}
+                </Row>
               {/each}
             </ol>
           </div>
@@ -610,67 +673,83 @@
         {:else}
           <div class="rows-box list-box">
             <StatusColumnHead />
-            <ol class="rows rows-actions-always">
+            <ol class="rows">
               {#each lists.givenUp as view (view.entry.id)}
-                <li data-entry-id={view.entry.id} data-status="given_up">
-                  {@render timeCell(view.entry)}
-                  {@render whoCell(view.entry, "out")}
-                  <span class="row-body">{currentText(view.entry, view.corrections)}</span>
-                  {@render stripCell(view)}
-                  <span class="row-actions no-print">
-                    {#if canRetry(view)}
-                      <button
-                        type="button"
-                        class="btn btn-quiet"
-                        disabled={busy}
-                        onclick={() => retry(view)}
-                      >
-                        <Icon name="retry" />{t("send.retry")}
-                      </button>
+                <Row
+                  id={view.entry.id}
+                  type="message_out"
+                  status="given_up"
+                  open={openRow === view.entry.id}
+                  ontoggle={() => toggleRow(view.entry.id)}
+                >
+                  {#snippet line()}
+                    {@render timeCell(view.entry)}
+                    {@render whoCell(view.entry, "out")}
+                    <span class="row-body">{currentText(view.entry, view.corrections)}</span>
+                    {@render stripCell(view)}
+                  {/snippet}
+                  {#snippet area()}
+                    <RowHistory
+                      entry={view.entry}
+                      history={view.history}
+                      corrections={view.corrections}
+                      {byId}
+                    />
+                    {#if closing === view.entry.id}
+                      <form class="row-form no-print" onsubmit={(event) => close(view, event)}>
+                        <div class="field">
+                          <input
+                            type="text"
+                            placeholder={t("journal.manual.reason")}
+                            aria-label={t("journal.manual.reason")}
+                            bind:value={reason}
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          class="btn btn-primary"
+                          disabled={busy || reason.trim() === ""}
+                        >
+                          {t("handover.givenUp.close")}
+                        </button>
+                        <button type="button" class="btn" onclick={cancelClose}>
+                          {t("journal.action.cancel")}
+                        </button>
+                      </form>
+                    {:else}
+                      <span class="row-actions no-print">
+                        {#if canRetry(view)}
+                          <button
+                            type="button"
+                            class="btn btn-quiet"
+                            disabled={busy}
+                            onclick={() => retry(view)}
+                          >
+                            <Icon name="retry" />{t("send.retry")}
+                          </button>
+                        {/if}
+                        <button
+                          type="button"
+                          class="btn btn-quiet"
+                          title={t("handover.givenUp.courierHelp")}
+                          disabled={busy}
+                          onclick={() => courier(view)}
+                        >
+                          <Icon name="send" />{t("handover.givenUp.courier")}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-quiet"
+                          title={t("handover.givenUp.closeHelp")}
+                          disabled={busy}
+                          onclick={() => startClose(view)}
+                        >
+                          <Icon name="check" />{t("handover.givenUp.close")}
+                        </button>
+                      </span>
                     {/if}
-                    <button
-                      type="button"
-                      class="btn btn-quiet"
-                      title={t("handover.givenUp.courierHelp")}
-                      disabled={busy}
-                      onclick={() => courier(view)}
-                    >
-                      <Icon name="send" />{t("handover.givenUp.courier")}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-quiet"
-                      title={t("handover.givenUp.closeHelp")}
-                      disabled={busy}
-                      aria-expanded={closing === view.entry.id}
-                      onclick={() => startClose(view)}
-                    >
-                      <Icon name="check" />{t("handover.givenUp.close")}
-                    </button>
-                  </span>
-                  {#if closing === view.entry.id}
-                    <form class="row-form no-print" onsubmit={(event) => close(view, event)}>
-                      <div class="field">
-                        <input
-                          type="text"
-                          placeholder={t("journal.manual.reason")}
-                          aria-label={t("journal.manual.reason")}
-                          bind:value={reason}
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        class="btn btn-primary"
-                        disabled={busy || reason.trim() === ""}
-                      >
-                        {t("handover.givenUp.close")}
-                      </button>
-                      <button type="button" class="btn" onclick={cancelClose}>
-                        {t("journal.action.cancel")}
-                      </button>
-                    </form>
-                  {/if}
-                </li>
+                  {/snippet}
+                </Row>
               {/each}
             </ol>
           </div>
@@ -696,18 +775,28 @@
           <p class="msg">{t("handover.unanswered.empty")}</p>
         {:else}
           <div class="rows-box list-box">
-            <ol class="rows rows-actions-always">
+            <ol class="rows">
               {#each lists.unanswered as entry (entry.id)}
-                <li data-entry-id={entry.id} data-type="message_in">
-                  {@render timeCell(entry)}
-                  {@render whoCell(entry, "in")}
-                  <span class="row-body">{text(entry)}</span>
-                  <span class="row-actions no-print">
-                    <button type="button" class="btn btn-quiet" onclick={() => reply(entry)}>
-                      <Icon name="reply" />{t("journal.action.reply")}
-                    </button>
-                  </span>
-                </li>
+                <Row
+                  id={entry.id}
+                  type="message_in"
+                  open={openRow === entry.id}
+                  ontoggle={() => toggleRow(entry.id)}
+                >
+                  {#snippet line()}
+                    {@render timeCell(entry)}
+                    {@render whoCell(entry, "in")}
+                    <span class="row-body">{text(entry)}</span>
+                  {/snippet}
+                  {#snippet area()}
+                    <RowHistory {entry} corrections={corrections.get(entry.id) ?? []} {byId} />
+                    <span class="row-actions no-print">
+                      <button type="button" class="btn btn-quiet" onclick={() => reply(entry)}>
+                        <Icon name="reply" />{t("journal.action.reply")}
+                      </button>
+                    </span>
+                  {/snippet}
+                </Row>
               {/each}
             </ol>
           </div>
@@ -726,7 +815,9 @@
           <p class="msg">{t("handover.quiet.empty", { minutes: settings.blindAfterMinutes })}</p>
         {:else}
           <div class="rows-box list-box">
-            <ol class="rows rows-2 rows-actions-always">
+            <!-- Register rows, not journal rows: the one action sits on a line under the
+                 row, always. -->
+            <ol class="rows rows-2">
               {#each quiet as row (row.entry.id)}
                 <li
                   data-register-id={row.entry.id}

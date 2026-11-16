@@ -3,7 +3,8 @@
   // styled as a popover-sized card under the bar's ? button (P2-02, `.popover-dialog` in
   // components.css). Opened by ?, by the top bar's ? button and from the settings page;
   // closed by Esc (the dialog's own cancel, and the global cancel), its Close button, or a
-  // click outside.
+  // click outside. Two keys of a chord read "G then J", the two of a combination "Ctrl +
+  // Enter", two alternatives "Enter or Space" (the row, P3-04).
   import { t } from "../i18n/index.svelte.ts";
   import { SHORTCUTS } from "../lib/shortcuts.ts";
   import { closeHelp, helpOpen } from "../lib/shortcutHelp.svelte.ts";
@@ -45,7 +46,11 @@
           <td class="keys">
             {#each shortcut.keys as key, index (index)}
               {#if index > 0}<small class="then"
-                  >{shortcut.action === "send" ? "+" : t("shortcuts.then")}</small
+                  >{shortcut.action === "send"
+                    ? "+"
+                    : shortcut.action === "expandRow"
+                      ? t("shortcuts.or")
+                      : t("shortcuts.then")}</small
                 >{/if}<kbd>{key}</kbd>
             {/each}
           </td>
