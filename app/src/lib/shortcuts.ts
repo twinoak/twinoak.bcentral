@@ -2,15 +2,17 @@
 // documented set, shown on the `?` overlay (components/ShortcutHelp.svelte):
 //
 //   N            new message (the compose text)       J / K   next / previous journal row
-//   R            reply to the current incoming row    Enter   expand the current row
-//   A            add a note                           Esc     cancel (forms, links, overlay)
+//   R            reply to the current incoming row    Enter / Space   open or close the current row
+//   A            add a note                           Esc     cancel (forms, the open row, links, overlay)
 //   Ctrl+Enter   send / record the form               ?       this overlay
 //   G then J / R / H / S   go to Journal / Register / Handover / Settings
 //
 // Nothing fires while a text field has the focus except Ctrl+Enter and Esc. A key with
 // Ctrl, Alt or Meta held is the browser's (Ctrl+R reloads), except Ctrl+Enter. The G prefix
 // is armed for GO_PREFIX_TIMEOUT_MS; any other key clears it. The wiring to the window and
-// to the screens is lib/shortcutDispatch.ts.
+// to the screens is lib/shortcutDispatch.ts. Enter and Space on a row are the row's own
+// (components/Row.svelte handles them on the focused line, as a button would) and are
+// listed here so the overlay documents them; the resolver names them all the same.
 
 export type ShortcutAction =
   | "newMessage"
@@ -59,7 +61,7 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
   { action: "addNote", keys: ["A"], inTextField: false },
   { action: "nextRow", keys: ["J"], inTextField: false },
   { action: "previousRow", keys: ["K"], inTextField: false },
-  { action: "expandRow", keys: ["Enter"], inTextField: false },
+  { action: "expandRow", keys: ["Enter", "Space"], inTextField: false },
   { action: "send", keys: ["Ctrl", "Enter"], inTextField: true },
   { action: "cancel", keys: ["Esc"], inTextField: true },
   { action: "goJournal", keys: ["G", "J"], inTextField: false },
@@ -113,7 +115,7 @@ export function resolveShortcut(input: KeyInput, state: ShortcutState, nowMs: nu
   if (key === "?") {
     return { action: "help", state: IDLE };
   }
-  if (key === "Enter") {
+  if (key === "Enter" || key === " ") {
     return { action: "expandRow", state: IDLE };
   }
   return { action: SINGLE_KEYS[key] ?? null, state: IDLE };

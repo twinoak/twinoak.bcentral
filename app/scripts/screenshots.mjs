@@ -3,11 +3,14 @@
 // open orders, given-up messages, unanswered incoming messages, a 25-recipient send-to-all
 // half drained and a drill incident — through the `?seed` hook of src/main.ts — and captures
 // every route at 1280 × 720 and 1440 × 900 at the normal text size, the journal also with
-// its compose card on each tab (P3-01), with a corrected row's history open and with the
-// correction form open (P3-02), at the largest size and in high contrast, the two long pages
-// whole, the three print pages as A4 PDFs too. The files go to
-// tasks/phase-2/reports/screens/ and are committed, so the reviewer can look at every
-// screen without running the app.
+// its compose card on each tab (P3-01), with a corrected row open on its history, with the
+// correction form open (P3-02), with a given-up row open on its history and actions and
+// with the send-to-all row open on its recipients (P3-04), the handover with a given-up row
+// open, the journal at the largest size and in high contrast, the two long pages whole, the
+// three print pages as A4 PDFs too. The files go to tasks/phase-2/reports/screens/ and are
+// committed, so the reviewer can look at every screen without running the app. On the way
+// every row of the seeded journal is measured at rest, hovered and focused (P3-04: a row's
+// height never changes under the pointer); a difference fails the run like a page error.
 //
 // `npm run screenshots`. Not part of `npm run test`: it needs a browser and a build.
 // playwright-core drives the first Chromium it finds: Playwright's own download when one is
@@ -371,6 +374,35 @@ async function run() {
   }
 }
 
+// A row's rendered height at rest, under the pointer and with the focus on its line, for
+// every row of the journal's list; any difference is reported like a page error (P3-04).
+async function measureRows(page, size) {
+  const rows = page.locator(".rows-box .rows > li");
+  const count = await rows.count();
+  const heightOf = (row) => row.evaluate((element) => element.getBoundingClientRect().height);
+  let differing = 0;
+  for (let i = 0; i < count; i++) {
+    const row = rows.nth(i);
+    await row.scrollIntoViewIfNeeded();
+    const rest = await heightOf(row);
+    await row.hover();
+    const hovered = await heightOf(row);
+    await row.locator(".row-line").focus();
+    const focused = await heightOf(row);
+    if (rest !== hovered || rest !== focused) {
+      differing += 1;
+      pageErrors.push(
+        `${size}: row ${i} is ${rest} px at rest, ${hovered} px hovered, ${focused} px focused`,
+      );
+    }
+  }
+  // Back to the calm list: no pointer on a row, no focus, the top.
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.locator(".rows-box").evaluate((box) => box.scrollTo(0, 0));
+  console.log(`${size}: ${count} rows measured at rest, hovered and focused; ${differing} differ`);
+}
+
 async function captureSize(browser, base, data, width, height) {
   const size = `${width}x${height}`;
   const context = await browser.newContext({
@@ -483,30 +515,65 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator("#panel-meshcore").waitFor();
   await shot("journal-meshcore");
 
-  // Correct by editing (P3-02): the walkthrough's corrected note with its "corrected" chip
-  // and its history open (the original and the correction), then the form in place of the
-  // newest note's text, prefilled.
+  // Click to open (P3-04), correct by editing (P3-02): the walkthrough's corrected note
+  // opened on its history (the original and the correction) with its "corrected" chip, then
+  // the form in place of the newest note's text, prefilled, from the open row's Correct.
+  const line = (row) => row.locator(".row-line");
   const correctedNote = page.locator(
     '.rows-box .rows > li[data-entry-id="01JB8ZK3QX9V2M4N6P8R0T2W58"]',
   );
   await correctedNote.scrollIntoViewIfNeeded();
-  await correctedNote.hover();
-  await correctedNote
-    .getByRole("button", { name: da["journal.action.history"].replace("{count}", "2") })
-    .click();
+  await line(correctedNote).click();
   await correctedNote.locator(".row-detail").waitFor();
   await shot("journal-corrected");
+  // Esc closes the open row (the focus is on its line).
+  await page.keyboard.press("Escape");
+  await correctedNote.locator(".row-area").waitFor({ state: "hidden" });
   await page.locator(".rows-box").evaluate((box) => box.scrollTo(0, 0));
   const newestNote = page.locator('.rows-box .rows > li[data-type="note"]').first();
-  await newestNote.hover();
+  await line(newestNote).click();
   await newestNote.getByRole("button", { name: da["journal.action.correct"] }).click();
   await page.locator("#correction-text").waitFor();
   await shot("journal-correct");
+  // Esc cancels the form, a second Esc closes the row.
   await page.keyboard.press("Escape");
   await page.locator("#correction-text").waitFor({ state: "hidden" });
+  await page.keyboard.press("Escape");
+  await newestNote.locator(".row-area").waitFor({ state: "hidden" });
+
+  // A given-up radio message open: its history with the times, Retry · Mark · Correct.
+  const givenUp = page
+    .locator('.rows-box .rows > li[data-type="message_out"]:has(.slot[data-shape="cross"])')
+    .first();
+  await givenUp.scrollIntoViewIfNeeded();
+  await line(givenUp).click();
+  await givenUp.getByRole("button", { name: da["send.retry"] }).waitFor();
+  await shot("journal-open");
+  // The send-to-all row open: one row per recipient under it (opening it closed the other).
+  const batch = page.locator('.rows-box .rows > li[data-type="batch"]').first();
+  await batch.scrollIntoViewIfNeeded();
+  await line(batch).click();
+  await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor();
+  await givenUp.locator(".row-area").waitFor({ state: "hidden" });
+  await shot("journal-batch");
+  await page.keyboard.press("Escape");
+  await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor({
+    state: "hidden",
+  });
+
+  // Every row is one line at rest and stays one line hovered and focused (P3-04). Last on
+  // this page: the focus walks the rows, and the cursor it leaves goes with the navigation.
+  await measureRows(page, size);
 
   await go("#/handover", "[data-handover-head]");
   await shot("handover");
+  // A given-up row open on the handover: its history, then send by courier and close.
+  const handoverGivenUp = page.locator('[data-list="givenUp"] .rows > li').first();
+  await line(handoverGivenUp).click();
+  await handoverGivenUp.locator(".row-detail").waitFor();
+  await shot("handover-open");
+  await page.keyboard.press("Escape");
+  await handoverGivenUp.locator(".row-area").waitFor({ state: "hidden" });
 
   // The queue holds the batch's pending messages, restored on load; the compose card is open
   // on load — a street ticked — and folded for the queue itself.

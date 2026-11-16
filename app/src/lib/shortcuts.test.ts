@@ -44,6 +44,7 @@ describe("single keys outside a text field, silent inside one", () => {
     ["j", "nextRow"],
     ["k", "previousRow"],
     ["Enter", "expandRow"],
+    [" ", "expandRow"],
     ["?", "help"],
   ];
 
@@ -75,7 +76,7 @@ describe("single keys outside a text field, silent inside one", () => {
   it("an unassigned key is nothing", () => {
     expect(resolve(press("x")).action).toBeNull();
     expect(resolve(press("ArrowDown")).action).toBeNull();
-    expect(resolve(press(" ")).action).toBeNull();
+    expect(resolve(press("Tab")).action).toBeNull();
   });
 });
 
@@ -187,6 +188,14 @@ describe("the documented set", () => {
       expect(enCatalog[`shortcuts.${shortcut.action}`]).toBeTruthy();
       expect(daCatalog[`shortcuts.${shortcut.action}`]).toBeTruthy();
     }
+    expect(enCatalog["shortcuts.or"]).toBeTruthy();
+    expect(daCatalog["shortcuts.or"]).toBeTruthy();
+  });
+
+  it("the row opens on Enter or Space, no History toggle (P3-04)", () => {
+    const row = SHORTCUTS.find((shortcut) => shortcut.action === "expandRow");
+    expect(row?.keys).toEqual(["Enter", "Space"]);
+    expect(en["shortcuts.expandRow"]).not.toMatch(/history toggle|recipients/i);
   });
 });
 

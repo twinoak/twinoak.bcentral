@@ -81,8 +81,8 @@
   cursor: default;
 }
 
-/* A compact button (28 px, 14 px text) for a line of row actions and for a table cell, so
-   the row stays low. `.row-actions .btn` is compact by itself (P2-03). */
+/* A compact button (28 px, 14 px text) for the action row of an open journal row and for a
+   table cell, so the row stays low. `.row-actions .btn` is compact by itself (P2-03). */
 .btn-compact,
 .row-actions .btn {
   min-height: 1.75rem;
@@ -618,14 +618,16 @@ button.chip:hover {
    body | status — and every child is a row laid on the same columns (subgrid), so the
    columns line up down the list the way a table's do; time 14 px ink-2 tabular, who 500,
    body 18 px, the status column (`.slots`, P3-03) at the right on a fixed width. `.rows-3`
-   is time | body | status and `.rows-2` body | end, for the side cards. Nothing is tinted
-   but the current row (aria-current="true", the keyboard cursor; accent-weak), an expanded
-   row and the rows of its expansion (data-expanded / data-nested; surface-2), and hover.
-   The row's own lines — its actions (`.row-actions`, shown on hover, focus and while
-   expanded), an inline form (`.row-form`: a manual status with its reason; the correction,
-   while the row's text is hidden, P3-02) and its history (`.row-detail`) — span the columns
-   under the row's cells. A `.row-button` is a row that is one button (the side cards:
-   click = go to the entry). */
+   is time | body | status and `.rows-2` body | end, for the side cards. A row's cells sit
+   on its line (`.row-line`, components/Row.svelte, P3-04): one button-like line of fixed
+   height that the pointer only tints — nothing appears or grows on hover. A click opens the
+   row: its area (`.row-area`) spans the columns under the line with the history
+   (`.row-detail`), the reply links (`.row-links`), the action row (`.row-actions`) or an
+   inline form (`.row-form`: a manual status with its reason; the correction, while the
+   row's text is hidden, P3-02). Nothing is tinted but the current row (aria-current="true",
+   the keyboard cursor; accent-weak), the open row and the rows of its expansion (data-open
+   / data-nested; surface-2), and hover. A `.row-button` is a row that is one button (the
+   side cards: click = go to the entry). */
 .rows {
   --slot-w: 4rem;
   display: grid;
@@ -669,8 +671,10 @@ button.chip:hover {
   border-bottom: 1px solid var(--rule);
 }
 
+/* Hover tints the row and nothing else: no box property changes, so the list never jumps
+   under the pointer (P3-04). */
 .rows > :hover,
-.rows > [data-expanded="true"],
+.rows > [data-open="true"],
 .rows > [data-nested="true"] {
   background: var(--surface-2);
 }
@@ -690,9 +694,31 @@ button.chip:hover {
   outline-offset: -2px;
 }
 
-/* A focused row (the keyboard cursor, P1-09) keeps the ring inside the scrolling box. */
-.rows > [tabindex]:focus-visible {
-  outline-offset: -2px;
+/* The row's line: its cells on the list's columns (a subgrid of the row's subgrid), the one
+   thing in the row that takes the focus and the click. Its ring (base.css) sits in the
+   row's padding. */
+.row-line {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  gap: var(--s-1) var(--s-4);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.row-line[role="button"] {
+  cursor: pointer;
+}
+
+/* The open row's area under its line: the history, the links, the action row or a form,
+   stacked. */
+.row-area {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+  margin-top: var(--s-1);
 }
 
 .rows > :has(> .row-button) {
@@ -768,32 +794,34 @@ button.chip:hover {
   justify-self: end;
 }
 
-/* The row's actions, under its body and strip: hidden until the pointer or the focus is on
-   the row, always shown on an expanded row. Compact quiet buttons, so the line is low. */
+/* The action row of an open row: compact quiet buttons at the right end, so the line is
+   low. In a list whose rows do not open (the handover's quiet radios) it is a line under
+   the row's cells. */
 .row-actions {
-  display: none;
-  grid-column: 3 / -1;
+  display: flex;
   flex-wrap: wrap;
   gap: var(--s-1);
   justify-content: flex-end;
 }
 
-.rows > :hover > .row-actions,
-.rows > :focus-within > .row-actions,
-.rows > [data-expanded="true"] > .row-actions,
-.rows-actions-always > * > .row-actions {
-  display: flex;
-}
-
-/* In the two- and three-column lists the actions line spans the row. */
-.rows-3 .row-actions,
-.rows-2 .row-actions {
+.rows > * > .row-actions {
   grid-column: 1 / -1;
 }
 
-/* An inline form on the line under a row: a manual status with its reason; the correction
-   (a label, the fixed "#n " of a message, the one box with the text taking the width,
-   Save, Cancel) while the row's own text is hidden. */
+/* The reply links of an open row: "↳ answers 19:03" on a reply, "answered 19:03" on the
+   incoming message it answers (P1-02). */
+.row-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-3);
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+/* An inline form in the open row's area, in place of the action row: a manual status with
+   its reason; the correction (a label, the fixed "#n " of a message, the one box with the
+   text taking the width, Save, Cancel) while the row's own text is hidden. */
 .row-form {
   display: flex;
   flex-wrap: wrap;
@@ -821,7 +849,7 @@ button.chip:hover {
   font-size: var(--fs-14);
 }
 
-.rows > [data-expanded="true"] > .row-detail {
+.rows > [data-open="true"] .row-detail {
   background: var(--surface);
 }
 
@@ -1266,7 +1294,7 @@ button.chip:hover {
   }
 
   .rows > :hover,
-  .rows > [data-expanded="true"],
+  .rows > [data-open="true"],
   .rows > [data-nested="true"],
   .rows > [aria-current="true"] {
     background: transparent;
