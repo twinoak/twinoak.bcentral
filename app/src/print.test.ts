@@ -143,6 +143,8 @@ describe("the print pages (P2-05)", () => {
       '"journal-drill"',
       '"journal-largest"',
       '"journal-contrast"',
+      '"journal-point"',
+      '"journal-point-form"',
       '"print-handover"',
     ]) {
       expect(script).toContain(`shot(${name}`);

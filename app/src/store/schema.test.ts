@@ -61,6 +61,48 @@ describe("contract schema validators", () => {
     expect(validateJournalEntry({ ...out, refersTo: "not-a-ulid" })).toBe(false);
   });
 
+  it("allow a point with refersTo and text only, and closed / reopened referring to it (P3-05)", () => {
+    const walkthrough = loadWalkthrough();
+    const note = walkthrough.entries.find((e) => e.type === "note");
+    const base = {
+      id: "01JB8ZK3QX9V2M4N6P8R0T2X20",
+      incidentId: walkthrough.incidents[0]?.id,
+      deviceId: walkthrough.deviceId,
+      deviceSeq: 20,
+      timestamp: "2026-10-28T19:50:00Z",
+      clockTrust: "manual",
+      operator: "Thomas",
+    };
+    const point = { ...base, type: "point", refersTo: note?.id, text: "Ring til forsyningen igen" };
+    expect(validateJournalEntry(point)).toBe(true);
+    expect(validateJournalEntry({ ...point, text: undefined })).toBe(false);
+    expect(validateJournalEntry({ ...point, refersTo: undefined })).toBe(false);
+    for (const extra of [
+      { transport: "phone" },
+      { counterpartyId: walkthrough.register[0]?.id },
+      { seqNo: 1 },
+      { batchId: "01JB8ZK3QX9V2M4N6P8R0T2X10" },
+      { newStatus: "closed" },
+      { dedupeKey: "0".repeat(64) },
+    ]) {
+      expect(validateJournalEntry({ ...point, ...extra }), JSON.stringify(extra)).toBe(false);
+    }
+    const closed = {
+      ...base,
+      id: "01JB8ZK3QX9V2M4N6P8R0T2X21",
+      deviceSeq: 21,
+      type: "status_change",
+      refersTo: point.id,
+      newStatus: "closed",
+      text: "Forsyningen ringede tilbage",
+    };
+    expect(validateJournalEntry(closed)).toBe(true);
+    expect(validateJournalEntry({ ...closed, newStatus: "reopened", text: undefined })).toBe(true);
+    expect(
+      validateEnvelope({ ...walkthrough, entries: [...walkthrough.entries, point, closed] }),
+    ).toBe(true);
+  });
+
   it("check the date-time format", () => {
     const [entry] = loadWalkthrough().entries;
     expect(validateJournalEntry({ ...entry, timestamp: "2026-10-28 19:00" })).toBe(false);

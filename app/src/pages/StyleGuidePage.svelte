@@ -460,7 +460,15 @@
     </li>
     <li aria-current="true">
       <div class="row-line" role="button" tabindex="0" aria-expanded="false">
-        <span class="row-time">08:12:40</span>
+        <span class="row-time"
+          >08:12:40<span
+            class="row-point"
+            data-state="open"
+            role="img"
+            title={t("journal.point.glyph.open", { title: t("handover.quiet.title") })}
+            aria-label={t("journal.point.glyph.open", { title: t("handover.quiet.title") })}>◆</span
+          ></span
+        >
         <span class="row-who">{t("register.field.person")} B</span>
         <span class="row-body">{t("handover.intro")}</span>
       </div>

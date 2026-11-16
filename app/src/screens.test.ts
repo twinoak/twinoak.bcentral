@@ -89,11 +89,13 @@ describe("the other screens (P2-04)", () => {
     }
   });
 
-  it("the handover is a slim card over four row-list cards with quiet actions", () => {
+  it("the handover is a slim card over five row-list cards with quiet actions", () => {
     const page = read("pages/HandoverPage.svelte");
     expect(page).toContain('class="card head no-print"');
+    // The four of P2-04 and the points card of P3-05, which spans the grid's width.
     expect(page.match(/class="card list-card"/g)).toHaveLength(4);
-    expect(page.match(/<ol class="rows[^"]*">/g)).toHaveLength(4);
+    expect(page).toContain('class="card list-card points-card"');
+    expect(page.match(/<ol class="rows[^"]*">/g)).toHaveLength(5);
     expect(page).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(page).toContain('class="btn btn-quiet"');
     expect(page).toContain('class="row-actions no-print"');

@@ -840,6 +840,50 @@ button.chip:hover {
   vertical-align: baseline;
 }
 
+/* The point glyph after the time of a line that has a point (P3-05): a small diamond, filled
+   and accent while the point is open, hollow and ink-2 once closed (two shapes, so the state
+   is never colour alone); the title is its tooltip. Inline in the time cell at the time's
+   size, so the line's height is what it was. */
+.row-point {
+  margin-left: var(--s-2);
+  font-size: var(--fs-14);
+  line-height: 1;
+  color: var(--ink-2);
+  cursor: help;
+}
+
+.row-point[data-state="open"] {
+  color: var(--accent);
+}
+
+:root[data-contrast="high"] .row-point {
+  color: var(--ink);
+}
+
+/* The point line of an open row (P3-05): what the point is and since when, over the action
+   row, in the links' 14 px ink-2; its glyph as on the line. */
+.row-point-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-2);
+  margin: 0;
+  font-size: var(--fs-14);
+  color: var(--ink-2);
+}
+
+.row-point-line .row-point {
+  margin-left: 0;
+}
+
+/* A side-card row that is a jump button with its own action line under it (the Points
+   card's Close, P3-05): the row's padding is on the button, so the action line and the form
+   take the same inset. */
+.rows > :has(> .row-button) > .row-actions,
+.rows > :has(> .row-button) > .row-form {
+  padding: 0 var(--s-3) var(--s-2);
+}
+
 .row-detail {
   grid-column: 1 / -1;
   padding: var(--s-2) var(--s-3);
@@ -1276,10 +1320,12 @@ button.chip:hover {
     display: none;
   }
 
-  /* The status column's shapes carry the state in black; its header does not stick. */
+  /* The status column's shapes carry the state in black; its header does not stick. The
+     point glyph keeps its two shapes in black. */
   .slot,
   .slots-counts .slot,
-  .slots-head .slot {
+  .slots-head .slot,
+  .row-point {
     color: var(--ink);
   }
 

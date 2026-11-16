@@ -28,6 +28,13 @@ Deterministic, but one more click on every incoming message at 03:00, and a cont
 
 **Until decided:** nothing is changed in the app. Test with one incident open at a time.
 
+**Built meanwhile (2026-11-16, P3-05): points.** Any journal line can be opened as a *point*
+(*punkt*) with a title — "this is now open until handled" — closed with a reason and
+reopened; the open points are a card in the journal's side column and the first list on the
+handover page. That is the light answer to "several things going on in one journal": the
+things to follow up on are named and listed, without cases, labels or an inbox. The question
+itself — one journal or one per incident — stays open for the users.
+
 ## 2. Open items: newest first, or most overdue first? (raised 2026-10-29)
 
 **Today:** the open-items panel (messages not yet roger'd) is newest first, like every other

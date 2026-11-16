@@ -31,6 +31,11 @@ import { closeIncident as closeWithStore, reopenIncident as reopenWithStore } fr
 import { appendCorrection, appendNote } from "./manual.ts";
 import { lastHeardFrom } from "./journalView.ts";
 import {
+  closePoint as closePointWithStore,
+  openPoint as openPointWithStore,
+  reopenPoint as reopenPointWithStore,
+} from "./points.ts";
+import {
   composeStatusRequest,
   recordHandover,
   resendByHand as resendWithStore,
@@ -225,6 +230,25 @@ export async function addCorrection(target: JournalEntry, text: string): Promise
 export async function recordByHand(input: Omit<RecordInput, "operator">): Promise<JournalEntry> {
   const store = await journalStore();
   return await recordWithStoreByHand(store, { ...input, operator: settings.operatorName.trim() });
+}
+
+// --- points (P3-05) ---------------------------------------------------------------------
+
+// A follow-up opened from any entry with a title; one per origin entry (store/points.ts).
+export async function openPoint(origin: JournalEntry, title: string): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await openPointWithStore(store, origin, { operator: settings.operatorName.trim(), title });
+}
+
+// Closed with a reason (required); the point stays in the journal, closed.
+export async function closePoint(point: JournalEntry, reason: string): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await closePointWithStore(store, point, { operator: settings.operatorName.trim(), reason });
+}
+
+export async function reopenPoint(point: JournalEntry): Promise<JournalEntry> {
+  const store = await journalStore();
+  return await reopenPointWithStore(store, point, { operator: settings.operatorName.trim() });
 }
 
 // When every register entry was last heard from, over the whole journal: a radio's silence

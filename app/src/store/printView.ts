@@ -1,12 +1,17 @@
 // What the print view shows (P1-04): the incident's timeline in P1-01's folding (one line per
 // message with its strip, a batch as one block, corrections in place), oldest first by
 // default because a printed journal reads top-down, and optionally only what is new since
-// the last print. Pure functions over the entries, like journalView.ts.
+// the last print; then the points as a block at the end (P3-05), the open ones first. Pure
+// functions over the entries, like journalView.ts.
 
 import {
   buildTimeline,
+  closedPoints,
+  openPoints,
+  pointsFor,
   sortedOldestFirst,
   type MessageView,
+  type PointView,
   type TimelineRow,
 } from "./journalView.ts";
 import type { Incident, JournalEntry } from "./types.ts";
@@ -65,6 +70,23 @@ export function isSince(row: TimelineRow, since: string | null): boolean {
 export function printRows(entries: readonly JournalEntry[], options: PrintOptions): TimelineRow[] {
   const rows = buildTimeline(entries).filter((row) => isSince(row, options.since));
   return options.oldestFirst ? rows.reverse() : rows;
+}
+
+export interface PrintPoints {
+  // The open points oldest first, then the closed ones newest closed first, as the cards
+  // list them.
+  open: PointView[];
+  closed: PointView[];
+}
+
+// The points block at the end of the print (P3-05). Whole by default; "since last print"
+// keeps a point when it was opened, closed or reopened at or after `since` (its changedAt),
+// so a point closed since the last print is printed again with its reason.
+export function printPoints(entries: readonly JournalEntry[], since: string | null): PrintPoints {
+  const points = pointsFor(entries).filter(
+    (view) => since === null || Date.parse(view.changedAt) >= Date.parse(since),
+  );
+  return { open: openPoints(points), closed: closedPoints(points) };
 }
 
 // The operators who wrote into the incident, in order of first appearance, the one who

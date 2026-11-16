@@ -40,6 +40,7 @@ describe("single keys outside a text field, silent inside one", () => {
   const cases: [string, ShortcutAction][] = [
     ["n", "newMessage"],
     ["r", "reply"],
+    ["p", "point"],
     ["a", "addNote"],
     ["j", "nextRow"],
     ["k", "previousRow"],
@@ -168,6 +169,7 @@ describe("the documented set", () => {
     expect(actions).toEqual([
       "newMessage",
       "reply",
+      "point",
       "addNote",
       "nextRow",
       "previousRow",
@@ -196,6 +198,13 @@ describe("the documented set", () => {
     const row = SHORTCUTS.find((shortcut) => shortcut.action === "expandRow");
     expect(row?.keys).toEqual(["Enter", "Space"]);
     expect(en["shortcuts.expandRow"]).not.toMatch(/history toggle|recipients/i);
+  });
+
+  it("P is the point action of the current row (P3-05)", () => {
+    const point = SHORTCUTS.find((shortcut) => shortcut.action === "point");
+    expect(point).toEqual({ action: "point", keys: ["P"], inTextField: false });
+    expect(en["shortcuts.point"]).toMatch(/point/i);
+    expect(da["shortcuts.point"]).toMatch(/punkt/i);
   });
 });
 

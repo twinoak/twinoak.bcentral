@@ -3,11 +3,13 @@
   // opens first. A slim card on top — the incident and how long it has been open, the
   // operator name field where changing the name is the handover (one note "handover: ‹old›
   // → ‹new›", then the new name on everything), the clock-confirm box from the settings, the
-  // radio's state, Print — then four cards in a 2 × 2 grid, each a row list with its count
-  // in the title, oldest first, derived from the entries on every reload
-  // (store/handoverView.ts): open orders, given-up messages with the three decisions (retry,
-  // send by courier, close with a reason), unanswered incoming messages with Reply, and
-  // quiet radios with "Send status request" ("#n Meld status"). An outgoing row carries the
+  // radio's state, Print — then five cards, each a row list with its count in the title,
+  // oldest first, derived from the entries on every reload (store/handoverView.ts): the open
+  // points (P3-05, first of the five and across the width: the to-do list, each with its
+  // title, age, origin and Close with a reason), then in a 2 × 2 grid open orders, given-up
+  // messages with the three decisions (retry, send by courier, close with a reason),
+  // unanswered incoming messages with Reply, and quiet radios with "Send status request"
+  // ("#n Meld status"). An outgoing row carries the
   // journal's status column (P3-03, StatusSlots.svelte) under the same header labels, and
   // its age after the time. The entry rows are the journal's rows (components/Row.svelte,
   // P3-04): one line at rest, nothing on hover; a click opens the row with its history
@@ -41,6 +43,7 @@
   import { buildHandover, quietRadios } from "../store/handoverView.ts";
   import { incidentStateOf, isDrill } from "../store/incidents.ts";
   import {
+    closePoint,
     entriesForIncident,
     handOver,
     lastHeardByCounterparty,
@@ -55,6 +58,7 @@
     entriesById,
     textVersions,
     type MessageView,
+    type PointView,
   } from "../store/journalView.ts";
   import { sortedByLabel } from "../store/register.ts";
   import type { Incident, JournalEntry, RegisterEntry } from "../store/types.ts";
@@ -94,9 +98,10 @@
   let lastHandover = $state<Handover | null>(null);
   // The print time, taken when Print is pressed.
   let printedAt = $state("");
-  // The one open row across the four lists (P3-04), or null.
+  // The one open row across the five lists (P3-04), or null.
   let openRow: string | null = $state(null);
-  // The given-up message whose close form is open, and the reason typed in it.
+  // The given-up message, or the point (P3-05), whose close form is open, and the reason
+  // typed in it.
   let closing: string | null = $state(null);
   let reason = $state("");
 
@@ -316,6 +321,49 @@
     } finally {
       busy = false;
     }
+  }
+
+  // --- points (P3-05) --------------------------------------------------------------------
+
+  function startClosePoint(view: PointView) {
+    actionError = null;
+    closing = view.point.id;
+    reason = "";
+  }
+
+  // Close point with the reason: the point leaves the list; the journal keeps it, closed.
+  async function closePointRow(view: PointView, event: SubmitEvent) {
+    event.preventDefault();
+    if (busy || reason.trim() === "") {
+      return;
+    }
+    busy = true;
+    actionError = null;
+    try {
+      await closePoint(view.point, reason);
+      closing = null;
+      reason = "";
+      await changed();
+    } catch (failure) {
+      actionError = t("journal.point.failed", { error: describe(failure) });
+    } finally {
+      busy = false;
+    }
+  }
+
+  // The line a point was opened from: the direction glyph and the counterparty of a
+  // message, the operator of a note, then its time.
+  function originText(view: PointView): string {
+    const origin = view.origin;
+    if (origin === undefined) {
+      return "";
+    }
+    const time = formatShortTime(origin.timestamp);
+    if (origin.type === "message_in" || origin.type === "message_out") {
+      const glyph = DIRECTION_GLYPH[origin.type === "message_in" ? "in" : "out"];
+      return `${glyph} ${label(origin)} · ${time}`;
+    }
+    return `${origin.operator} · ${time}`;
   }
 
   // The compose card opens between the head and the lists with the tab the action decided,
@@ -619,6 +667,83 @@
     {/if}
 
     <div class="lists">
+      <!-- The open points (P3-05): the to-do list, first and across the width; a row opens
+           on its Close with the reason field in place. -->
+      <section
+        class="card list-card points-card"
+        aria-labelledby="handover-points-heading"
+        data-list="points"
+      >
+        <h2 id="handover-points-heading" class="card-title" title={t("handover.points.help")}>
+          <span>{t("handover.points.title")} <span class="count">{lists.points.length}</span></span>
+        </h2>
+        {#if lists.points.length === 0}
+          <p class="msg">{t("handover.points.empty")}</p>
+        {:else}
+          <div class="rows-box list-box">
+            <ol class="rows rows-3">
+              {#each lists.points as view (view.point.id)}
+                <Row
+                  id={view.point.id}
+                  type="point"
+                  open={openRow === view.point.id}
+                  ontoggle={() => toggleRow(view.point.id)}
+                >
+                  {#snippet line()}
+                    <span class="row-time" title={formatDateTime(view.openedAt)}>
+                      {formatShortTime(view.openedAt)}<span
+                        class="row-meta age"
+                        title={t("handover.column.age")}>{age(view.openedAt)}</span
+                      >
+                    </span>
+                    <span class="row-body">{view.title}</span>
+                    <span class="row-meta">{originText(view)}</span>
+                  {/snippet}
+                  {#snippet area()}
+                    {#if closing === view.point.id}
+                      <form
+                        class="row-form no-print"
+                        onsubmit={(event) => closePointRow(view, event)}
+                      >
+                        <div class="field">
+                          <input
+                            type="text"
+                            placeholder={t("journal.manual.reason")}
+                            aria-label={t("journal.manual.reason")}
+                            bind:value={reason}
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          class="btn btn-primary"
+                          disabled={busy || reason.trim() === ""}
+                        >
+                          {t("journal.point.close")}
+                        </button>
+                        <button type="button" class="btn" onclick={cancelClose}>
+                          {t("journal.action.cancel")}
+                        </button>
+                      </form>
+                    {:else}
+                      <span class="row-actions no-print">
+                        <button
+                          type="button"
+                          class="btn btn-quiet"
+                          disabled={busy}
+                          onclick={() => startClosePoint(view)}
+                        >
+                          <Icon name="check" />{t("journal.point.close")}
+                        </button>
+                      </span>
+                    {/if}
+                  {/snippet}
+                </Row>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+      </section>
+
       <section class="card list-card" aria-labelledby="handover-open-heading" data-list="open">
         <h2 id="handover-open-heading" class="card-title" title={t("handover.open.help")}>
           <span>{t("handover.open.title")} <span class="count">{lists.open.length}</span></span>
@@ -855,9 +980,10 @@
 {/if}
 
 <style>
-  /* Layout only (docs/design.md §Screens → Handover): the slim card, then the four cards in a
-     2 × 2 grid that takes the rest of the viewport, each list scrolling in its card; one
-     column under 60 rem, where the page scrolls. */
+  /* Layout only (docs/design.md §Screens → Handover): the slim card, then the points card
+     across the width, as tall as its rows up to a cap, and the four cards in a 2 × 2 grid
+     that takes the rest of the viewport, each list scrolling in its card; one column under
+     60 rem, where the page scrolls. */
   .print-only {
     display: none;
   }
@@ -926,10 +1052,18 @@
   .lists {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto repeat(2, minmax(0, 1fr));
     gap: var(--s-4);
     flex: 1 1 auto;
     min-height: 0;
+  }
+
+  .points-card {
+    grid-column: 1 / -1;
+  }
+
+  .points-card .list-box {
+    max-height: 30vh;
   }
 
   .list-card {
@@ -984,13 +1118,14 @@
       grid-template-rows: auto;
     }
 
-    .list-box {
+    .list-box,
+    .points-card .list-box {
       max-height: 50vh;
     }
   }
 
   /* On paper (styles/base.css hides the bar; the controls are no-print): the header with the
-     time and both names, then the four lists one after the other, as plain rows. */
+     time and both names, then the five lists one after the other, as plain rows. */
   @media print {
     .print-only {
       display: block;
@@ -1027,7 +1162,8 @@
       break-inside: avoid;
     }
 
-    .list-box {
+    .list-box,
+    .points-card .list-box {
       max-height: none;
       overflow: visible;
       border-width: 0;

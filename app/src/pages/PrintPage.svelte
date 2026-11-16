@@ -4,7 +4,8 @@
   // strip, a batch as one block with its counters and one line per recipient, a corrected
   // entry with its corrected text marked "(corrected ‹time› · ‹operator›)" and the earlier
   // versions as footnote lines beneath (P3-02), oldest first by default (a printed journal
-  // reads top-down).
+  // reads top-down); then the points as a block at the end (P3-05): the open ones, then the
+  // closed ones with their reasons, each with the line it was opened from.
   // "Since last print" prints only the rows with something newer than the previous print's
   // time (store/printView.ts) and is the routine: on by default when there was a previous
   // print. The controls are a no-print toolbar on the components; the document is `.doc`
@@ -38,8 +39,15 @@
     listRegister,
     recordPrint,
   } from "../store/index.ts";
-  import { currentText, textVersions, type MessageView } from "../store/journalView.ts";
-  import { operatorsOf, printRows } from "../store/printView.ts";
+  import { DIRECTION_GLYPH } from "../lib/journalRows.ts";
+  import {
+    correctionsByTarget,
+    currentText,
+    textVersions,
+    type MessageView,
+    type PointView,
+  } from "../store/journalView.ts";
+  import { operatorsOf, printPoints, printRows } from "../store/printView.ts";
   import type { Incident, JournalEntry } from "../store/types.ts";
   import Icon from "../components/Icon.svelte";
 
@@ -58,6 +66,12 @@
 
   const since = $derived(sinceMode ? previousPrint : null);
   const rows = $derived(printRows(entries, { since, oldestFirst }));
+  // The points block (P3-05): whole, or since the last print only what changed; the block
+  // is left out of a "since" print when nothing changed.
+  const points = $derived(printPoints(entries, since));
+  const showPoints = $derived(since === null || points.open.length + points.closed.length > 0);
+  // Every correction by the entry it corrects: a point's origin line reads its current text.
+  const corrections = $derived(correctionsByTarget(entries));
   const operators = $derived(incident === null ? [] : operatorsOf(incident, entries));
   // Dates on every time when the incident spans more than one day; the time alone otherwise.
   const multiDay = $derived(
@@ -125,6 +139,21 @@
 
   function stripLine(view: MessageView): string {
     return view.strip.map((item) => stripText(item, null)).join(" · ");
+  }
+
+  // The line a point was opened from: its time, the counterparty of a message with the
+  // direction glyph or the operator of a note, then its text as it reads now.
+  function originLine(view: PointView): string {
+    const origin = view.origin;
+    if (origin === undefined) {
+      return "";
+    }
+    const who =
+      origin.type === "message_in" || origin.type === "message_out"
+        ? `${DIRECTION_GLYPH[origin.type === "message_in" ? "in" : "out"]} ${labels.get(origin.counterpartyId ?? "") ?? ""}`
+        : origin.operator;
+    const text = currentText(origin, corrections.get(origin.id) ?? []);
+    return `${formatRowTime(origin.timestamp)} · ${who}: ${text}`;
   }
 </script>
 
@@ -309,6 +338,60 @@
           {/each}
         </tbody>
       </table>
+    {/if}
+
+    <!-- The points at the end (P3-05): the open ones oldest first, then the closed ones
+         newest closed first with their reasons; each with the line it was opened from. -->
+    {#if showPoints}
+      <section class="doc-points" aria-labelledby="print-points-heading" data-points>
+        <h2 id="print-points-heading">{t("print.points.title")}</h2>
+        {#if points.open.length === 0 && points.closed.length === 0}
+          <p class="msg">{t("print.points.none")}</p>
+        {:else}
+          <table class="table">
+            <thead>
+              <tr>
+                <th scope="col">{t("print.points.title")}</th>
+                <th scope="col">{t("journal.timeline.status")}</th>
+                <th scope="col">{t("print.points.origin")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each points.open as view (view.point.id)}
+                <tr data-point-state="open">
+                  <td class="doc-text">{view.title}</td>
+                  <td>
+                    {t("print.points.open")}
+                    <div class="doc-meta">
+                      {t("print.points.opened", {
+                        time: formatRowTime(view.openedAt),
+                        operator: view.point.operator,
+                      })}
+                    </div>
+                  </td>
+                  <td class="doc-meta">{originLine(view)}</td>
+                </tr>
+              {/each}
+              {#each points.closed as view (view.point.id)}
+                <tr data-point-state="closed">
+                  <td class="doc-text">{view.title}</td>
+                  <td>
+                    {t("print.points.closed")}
+                    <div class="doc-meta">
+                      {t("journal.points.closedAt", {
+                        time: formatRowTime(view.closedAt ?? view.point.timestamp),
+                        operator: view.closedBy ?? view.point.operator,
+                        reason: view.reason ?? "",
+                      })}
+                    </div>
+                  </td>
+                  <td class="doc-meta">{originLine(view)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </section>
     {/if}
   </article>
 {/if}

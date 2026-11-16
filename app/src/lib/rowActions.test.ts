@@ -2,7 +2,7 @@
 // hand, an incoming message, a note, a send-to-all row — and the rows that offer nothing.
 
 import { describe, expect, it } from "vitest";
-import { batchActions, entryActions, messageActions } from "./rowActions.ts";
+import { batchActions, entryActions, messageActions, pointAction } from "./rowActions.ts";
 
 describe("message_out over the radio", () => {
   it("given up: Retry, Mark, Correct", () => {
@@ -64,5 +64,13 @@ describe("the other rows", () => {
   it("a send-to-all row: Retry all given up, only when any can be retried", () => {
     expect(batchActions(2)).toEqual(["retryAll"]);
     expect(batchActions(0)).toEqual([]);
+  });
+});
+
+describe("the point action of a row (P3-05)", () => {
+  it("Open point while the entry has no point, Close point while it is open, Reopen point once closed", () => {
+    expect(pointAction(undefined)).toBe("openPoint");
+    expect(pointAction("open")).toBe("closePoint");
+    expect(pointAction("closed")).toBe("reopenPoint");
   });
 });

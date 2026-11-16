@@ -19,6 +19,7 @@ const JOURNAL_FILES = [
   "components/ComposeForm.svelte",
   "components/ManualEntryForm.svelte",
   "components/OpenItemsPanel.svelte",
+  "components/PointsPanel.svelte",
   "components/LastHeardPanel.svelte",
   "components/SetupCard.svelte",
 ];
@@ -175,9 +176,10 @@ describe("the journal screen", () => {
     expect(timeline).toContain('{#if actions.includes("reply")}');
     expect(timeline).toContain('{#if actions.includes("correct")}');
     expect(timeline).toContain('t("queue.retryAll", { count: canRetryAll.length })');
-    // The forms replace the action row while they are open.
+    // The forms replace the action row while they are open (the two point forms of P3-05
+    // after the Mark and Correct forms).
     expect(timeline).toMatch(
-      /\{#if changingStatus === entry\.id\}\s*\{@render statusForm\(entry\)\}\s*\{:else if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}\s*\{:else\}\s*<div class="row-actions">/,
+      /\{#if changingStatus === entry\.id\}\s*\{@render statusForm\(entry\)\}\s*\{:else if correcting === entry\.id\}\s*\{@render correctionForm\(\)\}\s*\{:else if pointing === entry\.id\}\s*\{@render pointForm\(entry\)\}\s*\{:else if closingPoint === entry\.id && point !== undefined\}\s*\{@render closePointForm\(point\)\}\s*\{:else\}\s*<div class="row-actions">/,
     );
     // The reply links sit in the area, not on the line.
     expect(timeline.match(/<p class="row-links">/g)).toHaveLength(2);
@@ -193,12 +195,99 @@ describe("the journal screen", () => {
     // same Row with its history, one row open at a time on the page; an open item jumps to
     // its row, which opens.
     const handover = read("pages/HandoverPage.svelte");
-    expect(handover.match(/<Row\n/g)).toHaveLength(3);
+    // The three entry lists and the points list (P3-05); a point has no history.
+    expect(handover.match(/<Row\n/g)).toHaveLength(4);
     expect(handover.match(/<RowHistory/g)).toHaveLength(3);
     expect(handover).toContain("openRow = openRow === id ? null : id");
     expect(handover).toContain('onShortcut("cancel"');
     expect(read("components/OpenItemsPanel.svelte")).toContain("onselect(item.message.id)");
     expect(read("pages/JournalPage.svelte")).toContain("timeline?.scrollToEntry(id)");
+  });
+
+  it("a point can be opened from any line, closed with a reason and reopened; the line shows a glyph (P3-05)", () => {
+    const timeline = read("components/Timeline.svelte");
+    // The glyph after the time, with the title as its tooltip; two shapes by state.
+    expect(timeline).toContain('class="row-point"');
+    expect(timeline).toContain("{POINT_GLYPH[point.state]}");
+    expect(timeline).toContain("title={glyphText(point)}");
+    expect(read("lib/journalRows.ts")).toContain('{ open: "◆", closed: "◇" }');
+    // The point action first on the action line, from the pure rule; the form for opening
+    // (prefilled off the text, lib/pointTitle.ts) and for closing (a reason) in place of the
+    // action row; reopening writes at once.
+    expect(timeline).toContain("pointAction(points.get(origin.id)?.state)");
+    expect(timeline.match(/\{@render pointButton\(/g)).toHaveLength(3);
+    expect(timeline).toMatch(
+      /<div class="row-actions">\s*\{#if !nested\}\s*\{@render pointButton\(entry\)\}/,
+    );
+    expect(timeline).toMatch(/<div class="row-actions">\s*\{@render pointButton\(row\.entry\)\}/);
+    expect(timeline).toMatch(
+      /<div class="row-actions">\s*\{#if pointable\}\s*\{@render pointButton\(entry\)\}/,
+    );
+    expect(timeline).toContain("suggestedTitle(");
+    expect(timeline).toContain('data-point-form="open"');
+    expect(timeline).toContain('data-point-form="close"');
+    expect(timeline).toContain("onreopenpoint(point.point)");
+    expect(timeline.match(/\{@render pointLine\(point\)\}/g)).toHaveLength(3);
+    // P on the current row runs the same action, opening the row first.
+    expect(timeline).toContain('onShortcut("point", pointCurrent)');
+    expect(read("lib/shortcuts.ts")).toContain(
+      '{ action: "point", keys: ["P"], inTextField: false }',
+    );
+    // The incident's own status rows and an orphan correction carry no point.
+    expect(timeline).toContain(
+      'entry.type === "note" || entry.type === "message_in" || entry.type === "message_out"',
+    );
+    // The journal page derives the points once and hands them to the row list and the card.
+    const page = read("pages/JournalPage.svelte");
+    expect(page).toContain("pointsFor(entries)");
+    expect(page).toContain("points={pointsByOrigin}");
+    expect(page).toContain(
+      "<PointsPanel {points} {labels} onselect={showEntry} onclose={closePointWith} />",
+    );
+    expect(page.indexOf("<PointsPanel")).toBeLessThan(page.indexOf("<OpenItemsPanel"));
+    // The Points card: a jump button per open point with the age and the origin, Close with
+    // the reason in place, the closed ones behind a toggle.
+    const panel = read("components/PointsPanel.svelte");
+    expect(panel).toContain('{t("journal.points.openCount", { n: open.length })}');
+    expect(panel).toContain("openPoints(points)");
+    expect(panel).toContain("closedPoints(points)");
+    expect(panel).toContain('class="row-button"');
+    expect(panel).toContain("onselect(view.point.refersTo)");
+    expect(panel).toContain("{age(view.openedAt)}");
+    expect(panel).toContain("{originText(view)}");
+    expect(panel).toContain('class="row-form no-print"');
+    expect(panel).toContain("aria-pressed={showClosed}");
+    expect(panel).toContain("data-closed-points");
+    expect(panel).toContain('t("journal.points.closedAt"');
+    // The handover's first list is the open points with Close; the print page ends with the
+    // points block.
+    const handover = read("pages/HandoverPage.svelte");
+    expect(handover.indexOf('data-list="points"')).toBeLessThan(
+      handover.indexOf('data-list="open"'),
+    );
+    expect(handover).toContain("lists.points");
+    expect(handover).toContain("closePointRow(view, event)");
+    expect(handover).toContain("grid-column: 1 / -1;");
+    const print = read("pages/PrintPage.svelte");
+    expect(print).toContain("printPoints(entries, since)");
+    expect(print).toContain('data-point-state="open"');
+    expect(print).toContain('data-point-state="closed"');
+    expect(print.indexOf("data-points")).toBeGreaterThan(print.indexOf("</table>"));
+    // The sheet: the glyph's two tints, ink in high contrast and on paper; no hover rule.
+    const css = read("styles/components.css");
+    expect(css).toMatch(/^\.row-point \{[^}]*color: var\(--ink-2\);/m);
+    expect(css).toMatch(/^\.row-point\[data-state="open"\] \{\s*color: var\(--accent\);/m);
+    expect(css).toMatch(/^:root\[data-contrast="high"\] \.row-point \{\s*color: var\(--ink\);/m);
+    expect(css.slice(css.lastIndexOf("@media print"))).toMatch(
+      /\.row-point \{\s*color: var\(--ink\);/,
+    );
+    // Every string in both catalogs, the Danish words of the task.
+    const da = JSON.parse(read("i18n/da.json")) as Record<string, string>;
+    expect(da["journal.point.open"]).toBe("Åbn punkt");
+    expect(da["journal.point.reopen"]).toBe("Genåbn punkt");
+    expect(da["journal.point.close"]).toBe("Luk punkt");
+    expect(da["journal.points.title"]).toBe("Punkter");
+    expect(da["journal.points.openCount"]).toBe("{n} åbne");
   });
 
   it("the status is a fixed column of three symbol slots, no time in the list (P3-03)", () => {

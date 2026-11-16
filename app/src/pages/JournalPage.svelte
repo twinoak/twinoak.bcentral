@@ -6,8 +6,9 @@
   // above the newest-first row list (Timeline), where new rows appear; the list takes the
   // rest of the viewport and scrolls inside. Reply on a row opens the tab the incoming
   // message's transport decides (lib/composePrefill.ts). The side
-  // column holds two cards, open items and "last heard from", each with its count in the
-  // title; under 60 rem it stacks under the main column. On first run (no operator name) a
+  // column holds three cards — points (P3-05: the staff's to-do list, opened from any row),
+  // open items and "last heard from" — each with its count in the title; under 60 rem it
+  // stacks under the main column. On first run (no operator name) a
   // setup card sits at the top of the main column and goes when the name is saved. The
   // incident itself — picking, creating, closing, export, print — is the switcher in the
   // top bar (P2-02). Everything shown is derived from the incident's entries on every reload
@@ -22,18 +23,23 @@
   import { inbox, outbox, sendQueue } from "../radio/index.ts";
   import {
     addCorrection,
+    closePoint,
     entriesForIncident,
     lastHeardByCounterparty,
     listIncidents,
     listRegister,
+    openPoint,
     recordManualStatus,
+    reopenPoint,
   } from "../store/index.ts";
   import { isDrill } from "../store/incidents.ts";
   import {
     buildTimeline,
     entriesById,
     openItems,
+    pointsFor,
     sortedByLastHeard,
+    type PointView,
   } from "../store/journalView.ts";
   import { sortedByLabel } from "../store/register.ts";
   import { statusOf } from "../store/status.ts";
@@ -43,6 +49,7 @@
   import LastHeardPanel from "../components/LastHeardPanel.svelte";
   import ManualEntryForm from "../components/ManualEntryForm.svelte";
   import OpenItemsPanel from "../components/OpenItemsPanel.svelte";
+  import PointsPanel from "../components/PointsPanel.svelte";
   import SetupCard from "../components/SetupCard.svelte";
   import Timeline from "../components/Timeline.svelte";
 
@@ -71,6 +78,11 @@
   const rows = $derived(buildTimeline(entries));
   const byId = $derived(entriesById(entries));
   const open = $derived(openItems(entries));
+  // Every point of the incident, and the point of each origin entry (P3-05).
+  const points = $derived(pointsFor(entries));
+  const pointsByOrigin = $derived(
+    new Map<string, PointView>(points.map((view) => [view.point.refersTo ?? "", view])),
+  );
   const heardRows = $derived(sortedByLastHeard(register, heard));
   const active = $derived(outbox.active());
   const queued = $derived(outbox.queued());
@@ -175,6 +187,22 @@
 
   function showEntry(id: string) {
     void timeline?.scrollToEntry(id);
+  }
+
+  // The three point writes (P3-05), from the row or from the Points card.
+  async function openPointFrom(origin: JournalEntry, title: string) {
+    await openPoint(origin, title);
+    await changed();
+  }
+
+  async function closePointWith(point: JournalEntry, reason: string) {
+    await closePoint(point, reason);
+    await changed();
+  }
+
+  async function reopenPointAgain(point: JournalEntry) {
+    await reopenPoint(point);
+    await changed();
   }
 
   // Reply from the row (P1-02, rerouted in P3-01): an incoming mesh message is answered on
@@ -288,17 +316,22 @@
           {rows}
           {labels}
           {byId}
+          points={pointsByOrigin}
           {inflight}
           {canRetry}
           onretry={transmit}
           onmanual={manual}
           oncorrect={correct}
           onreply={reply}
+          onopenpoint={openPointFrom}
+          onclosepoint={closePointWith}
+          onreopenpoint={reopenPointAgain}
         />
       </section>
     </div>
 
     <aside class="side">
+      <PointsPanel {points} {labels} onselect={showEntry} onclose={closePointWith} />
       <OpenItemsPanel groups={open} {labels} onselect={showEntry} />
       <LastHeardPanel rows={heardRows} />
     </aside>

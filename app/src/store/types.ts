@@ -15,7 +15,15 @@ export type Clock = () => ClockReading;
 
 export type Transport = "mesh" | "phone" | "courier" | "verbal";
 
-export type EntryType = "message_out" | "message_in" | "note" | "status_change" | "correction";
+export type EntryType =
+  | "message_out"
+  | "message_in"
+  | "note"
+  | "status_change"
+  | "correction"
+  // Something to follow up on, opened from any entry (P3-05); refersTo is the origin entry,
+  // text the title. Open until a status_change closed refers to it, reopened by reopened.
+  | "point";
 
 export type Status = "pending" | "sent" | "delivered" | "roger" | "given_up" | "closed" | "reopened";
 
