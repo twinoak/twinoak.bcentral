@@ -13,6 +13,10 @@
 //   resendByHand  "send by courier" on a given-up radio message (store/handover.ts): the same
 //             cancel first, so a given-up message retried into the queue does not go out
 //             after its courier copy closed it.
+//   closeByHand  the staff's Close on an unconfirmed radio message with an optional note
+//             (store/outgoing.ts closeByHand, P3-09): the same cancel first — a given-up
+//             message retried into the paused queue leaves it — and refused while the
+//             message is transmitting, like a mark.
 //
 // A factory, like the outbox and the queue, so tests build one over a fake link and store;
 // radio/index.ts builds the app's.
@@ -20,7 +24,10 @@
 import { t } from "../i18n/index.svelte.ts";
 import type { JournalStore } from "../store/journalStore.ts";
 import { resendByHand as resendWithStore, type CourierHandoff } from "../store/handover.ts";
-import { recordManualStatus as recordWithStore } from "../store/outgoing.ts";
+import {
+  closeByHand as closeWithStore,
+  recordManualStatus as recordWithStore,
+} from "../store/outgoing.ts";
 import type { JournalEntry, Status, Transport } from "../store/types.ts";
 import type { Outbox } from "./outbox.svelte.ts";
 import type { SendQueue } from "./sendQueue.svelte.ts";
@@ -46,6 +53,8 @@ export interface SendActions {
     message: JournalEntry,
     input: { transport: Transport; body: string },
   ): Promise<CourierHandoff>;
+  // Close with an optional note (P3-09); the status_change `closed` written.
+  closeByHand(message: JournalEntry, note: string): Promise<JournalEntry>;
 }
 
 export function createSendActions(deps: SendActionsDeps): SendActions {
@@ -93,5 +102,11 @@ export function createSendActions(deps: SendActionsDeps): SendActions {
     });
   }
 
-  return { send, cancel, markByHand, resendByHand };
+  async function closeByHand(message: JournalEntry, note: string): Promise<JournalEntry> {
+    cancel(message.id);
+    const store = await deps.store();
+    return await closeWithStore(store, message, { operator: deps.operator(), note });
+  }
+
+  return { send, cancel, markByHand, resendByHand, closeByHand };
 }

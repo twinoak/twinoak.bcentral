@@ -15,7 +15,7 @@ import {
   parseRoger,
 } from "./incoming.ts";
 import type { JournalStore } from "./journalStore.ts";
-import { appendStatusChange } from "./outgoing.ts";
+import { appendStatusChange, closeByHand } from "./outgoing.ts";
 import type { JournalEntry, Status } from "./types.ts";
 
 const INCIDENT = "01JB8ZK3QX9V2M4N6P8R0T2W4Z";
@@ -186,6 +186,27 @@ describe("rule 1: numbered roger", () => {
     const { roger } = await receive(store, "R12");
     expect(roger).toBeNull();
     expect(await store.statusOf(message.id)).toBe("given_up");
+  });
+
+  it("R12 for a #12 the staff closed (P3-09): plain, the status stays closed — the late roger is an ordinary incoming message", async () => {
+    const store = await openTestStore();
+    const message = await out(store, 12, "delivered");
+    const closed = await closeByHand(store, message, { operator: "Anne", note: "" });
+    expect(closed.newStatus).toBe("closed");
+    const before = await statusChanges(store, message);
+    const { incoming, roger } = await receive(store, "R12");
+    expect(roger).toBeNull();
+    expect(await store.statusOf(message.id)).toBe("closed");
+    expect(await statusChanges(store, message)).toEqual(before);
+    expect(await store.getEntry(incoming.id)).toMatchObject({
+      type: "message_in",
+      text: "R12",
+      counterpartyId: HANS,
+    });
+    expect(incoming.refersTo).toBeUndefined();
+    // A bare R with nothing else open: plain too.
+    expect((await receive(store, "R")).roger).toBeNull();
+    expect(await store.statusOf(message.id)).toBe("closed");
   });
 
   it("R12 for a pending #12 (not yet handed to the radio): plain", async () => {

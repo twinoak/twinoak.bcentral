@@ -184,12 +184,48 @@ describe("one slot per state of the chain", () => {
     ]);
   });
 
-  it("the five shapes are five, and the tints never tell two shapes apart on their own", () => {
+  it("closed by the staff (P3-09): the dash in the confirmed slot, ink-2, with the time and the note; the radio's slots as they were", () => {
+    const withNote = slotsOf([
+      change("sent", at(1, 2)),
+      change("delivered", at(1, 9)),
+      change("closed", at(40), "Ole er kørt, ingen R"),
+    ]);
+    expect(shapes(withNote)).toEqual(["filled ok", "filled ok", "dash muted"]);
+    expect(titles(withNote)).toEqual([
+      `Sent ${clock(at(1, 2))}`,
+      `Delivered ${clock(at(1, 9))}`,
+      `Closed by the staff ${clock(at(40))} · Ole er kørt, ingen R`,
+    ]);
+    expect(withNote[2]?.at).toBe(at(40));
+    // Without a note: the sentence alone (the store writes "" for no note; the strip reads
+    // it as none).
+    const withoutNote = slotsOf([change("sent", at(1, 2)), change("closed", at(41), "")]);
+    expect(shapes(withoutNote)).toEqual(["filled ok", "hollow neutral", "dash muted"]);
+    expect(titles(withoutNote)).toEqual([
+      `Sent ${clock(at(1, 2))}`,
+      "Not yet delivered",
+      `Closed by the staff ${clock(at(41))}`,
+    ]);
+    expect(withoutNote[2]?.text).toBeNull();
+    // No clock: the staff stopped waiting, so nothing is waited for.
+    expect(withoutNote.some((slot) => slot.shape === "clock")).toBe(false);
+    // Closed after given up: the cross stays where the radio left it, the dash after it.
+    const afterGivenUp = slotsOf([
+      change("sent", at(1, 2)),
+      change("given_up", at(1, 40), "no ack after 3 attempts"),
+      change("closed", at(42)),
+    ]);
+    expect(shapes(afterGivenUp)).toEqual(["filled ok", "cross danger", "dash muted"]);
+    expect(titles(afterGivenUp)[1]).toBe(`Given up ${clock(at(1, 40))} · no ack after 3 attempts`);
+  });
+
+  it("the six shapes are six, and the tints never tell two shapes apart on their own", () => {
     const all = [
       ...slotsOf([]),
       ...slotsOf([change("sent", at(1))]),
       ...slotsOf([change("sent", at(1)), change("delivered", at(2)), change("roger", at(3))]),
       ...slotsOf([change("given_up", at(1))]),
+      ...slotsOf([change("sent", at(1)), change("closed", at(2))]),
     ];
     const seen = new Map<string, string>();
     for (const slot of all) {
@@ -197,7 +233,14 @@ describe("one slot per state of the chain", () => {
       expect(tint === undefined || tint === slot.tint).toBe(true);
       seen.set(slot.shape, slot.tint);
     }
-    expect([...seen.keys()].sort()).toEqual(["check", "clock", "cross", "filled", "hollow"]);
+    expect([...seen.keys()].sort()).toEqual([
+      "check",
+      "clock",
+      "cross",
+      "dash",
+      "filled",
+      "hollow",
+    ]);
   });
 });
 
@@ -228,6 +271,7 @@ describe("the walkthrough and the batch", () => {
       delivered: 23,
       roger: 18,
       givenUp: 1,
+      closed: 2,
     });
     expect(counts).toEqual([
       { name: "sent", n: 25, total: 25, tint: "ok" },
@@ -246,6 +290,7 @@ describe("the walkthrough and the batch", () => {
       delivered: 0,
       roger: 0,
       givenUp: 0,
+      closed: 0,
     });
     expect(nothing.map((slot) => `${slot.n}/${slot.total} ${slot.tint}`)).toEqual([
       "0/3 neutral",
@@ -254,9 +299,11 @@ describe("the walkthrough and the batch", () => {
     ]);
   });
 
-  it("the strip's words keep their times for print", () => {
+  it("the strip's words keep their times for print; a close is 'closed 14.40' (P3-09)", () => {
     const item: StripItem = { kind: "delivered", at: at(1, 9), attempt: null, text: null };
     expect(stripText(item, null)).toBe(`delivered ${clock(at(1, 9))}`);
     expect(clock(at(1, 9))).not.toBe("");
+    const closed: StripItem = { kind: "closed", at: at(40), attempt: null, text: "ingen R" };
+    expect(stripText(closed, null)).toBe(`closed ${clock(at(40))}`);
   });
 });

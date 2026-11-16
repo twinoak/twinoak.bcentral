@@ -61,12 +61,19 @@ export function stripText(item: StripItem, inflightText: string | null): string 
 // delivered", "Not yet delivered: waiting (attempt 2/3)" on the clock — while the outbox or
 // the queue holds the message its own progress text is the detail, as on the strip — "Given
 // up 12.30 · no ack after 3 attempts" on the cross (the radio's detail or the operator's
-// reason). No time is shown anywhere but here and in the history. Only a radio message has
-// slots (P3-07); the words of a manual roger or given-up are its reason in the history.
+// reason), "Closed by the staff 14.40 · the note" on the dash (P3-09). No time is shown
+// anywhere but here and in the history. Only a radio message has slots (P3-07); the words
+// of a manual roger or given-up are its reason in the history.
 export function slotText(slot: Slot, inflightText: string | null): string {
   if (slot.shape === "cross") {
     return withDetail(
       t("journal.slot.givenUp", { time: formatShortTime(slot.at ?? "") }),
+      slot.text,
+    );
+  }
+  if (slot.shape === "dash") {
+    return withDetail(
+      t("journal.slot.closed", { time: formatShortTime(slot.at ?? "") }),
       slot.text,
     );
   }
@@ -88,7 +95,7 @@ export function slotText(slot: Slot, inflightText: string | null): string {
 }
 
 function withDetail(sentence: string, detail: string | null): string {
-  return detail === null ? sentence : `${sentence} · ${detail}`;
+  return detail === null || detail === "" ? sentence : `${sentence} · ${detail}`;
 }
 
 // A batch row's count slot: "23 of 25 delivered".
@@ -96,10 +103,10 @@ export function countSlotText(slot: CountSlot): string {
   return t(`journal.slot.count.${slot.name}`, { n: slot.n, total: slot.total });
 }
 
-// "25 sent · 23 delivered · 18 roger · 1 given up"; zero counters omitted.
+// "25 sent · 23 delivered · 18 roger · 1 given up · 2 closed"; zero counters omitted.
 export function countersText(counters: BatchCounters): string {
   const parts: string[] = [];
-  for (const key of ["pending", "sent", "delivered", "roger", "given_up"] as const) {
+  for (const key of ["pending", "sent", "delivered", "roger", "given_up", "closed"] as const) {
     const n = key === "given_up" ? counters.givenUp : counters[key];
     if (n > 0) {
       parts.push(t(`journal.batch.counter.${key}`, { n }));
@@ -110,7 +117,8 @@ export function countersText(counters: BatchCounters): string {
 
 // What a history line says: for a status change the status, then its text; a roger's text
 // is the id of the incoming entry that caused it, shown as that entry's text when it is in
-// `byId`. For an old resend note, its text.
+// `byId`; a close by the staff (P3-09) says so in words, then the note when there is one.
+// For an old resend note, its text.
 export function historyDetail(
   entry: JournalEntry,
   byId: ReadonlyMap<string, JournalEntry>,
@@ -118,8 +126,11 @@ export function historyDetail(
   if (entry.type !== "status_change") {
     return entry.text ?? "";
   }
-  const status = t(`journal.status.${entry.newStatus ?? "pending"}`);
-  if (entry.text === undefined) {
+  const status =
+    entry.newStatus === "closed"
+      ? t("journal.history.closed")
+      : t(`journal.status.${entry.newStatus ?? "pending"}`);
+  if (entry.text === undefined || entry.text === "") {
     return status;
   }
   const referenced = entry.newStatus === "roger" ? byId.get(entry.text) : undefined;
@@ -127,6 +138,16 @@ export function historyDetail(
     return `${status} · ${t("journal.rogerFrom", { text: referenced.text ?? "" })}`;
   }
   return `${status} · ${entry.text}`;
+}
+
+// The history line of a late roger (P3-09): "R12 received 15.02, after close" — the field's
+// `Rn` that arrived after the staff had closed the message, an ordinary incoming entry by
+// the protocol.
+export function lateRogerText(incoming: JournalEntry): string {
+  return t("journal.history.afterClose", {
+    text: (incoming.text ?? "").trim(),
+    time: formatShortTime(incoming.timestamp),
+  });
 }
 
 // The incoming entry a roger came from, when it is in `byId`.

@@ -1,28 +1,58 @@
 // The action set of an open row (P3-04), one case per row kind: a mesh message, a message by
 // hand, an incoming message, a note, a send-to-all row — and the rows that offer nothing.
 // Since P3-08 a radio message's Mark is hidden by a live transmission only: a message
-// waiting in a queue (paused or not) offers Mark and Correct, never Retry.
+// waiting in a queue (paused or not) offers Mark and Correct, never Retry. Since P3-09 an
+// unconfirmed message the radio handed over or gave up on offers Close first; a closed one
+// is final and offers Correct alone.
 
 import { describe, expect, it } from "vitest";
-import { batchActions, entryActions, messageActions, pointAction } from "./rowActions.ts";
+import { batchActions, entryActions, isFinal, messageActions, pointAction } from "./rowActions.ts";
 
 describe("message_out over the radio", () => {
-  it("given up: Retry, Mark, Correct", () => {
+  it("given up: Close, Retry, Mark, Correct (P3-09: Close first, the routine way out)", () => {
     expect(
       messageActions({ transport: "mesh", status: "given_up", canRetry: true, sendState: null }),
-    ).toEqual(["retry", "mark", "correct"]);
+    ).toEqual(["close", "retry", "mark", "correct"]);
   });
 
-  it("delivered, the receipt in: Mark, Correct", () => {
+  it("delivered, the receipt in: Close, Mark, Correct", () => {
     expect(
       messageActions({ transport: "mesh", status: "delivered", canRetry: false, sendState: null }),
-    ).toEqual(["mark", "correct"]);
+    ).toEqual(["close", "mark", "correct"]);
+  });
+
+  it("sent, the receipt still out: Close, Mark, Correct", () => {
+    expect(
+      messageActions({ transport: "mesh", status: "sent", canRetry: false, sendState: null }),
+    ).toEqual(["close", "mark", "correct"]);
   });
 
   it("confirmed: Correct only (roger is final)", () => {
     expect(
       messageActions({ transport: "mesh", status: "roger", canRetry: false, sendState: null }),
     ).toEqual(["correct"]);
+  });
+
+  it("closed by the staff: Correct only — no Retry, no Mark, no Close (closed is final, P3-09)", () => {
+    expect(
+      messageActions({ transport: "mesh", status: "closed", canRetry: false, sendState: null }),
+    ).toEqual(["correct"]);
+    // Even with the page's retry rule saying yes, and whatever holds it.
+    expect(
+      messageActions({ transport: "mesh", status: "closed", canRetry: true, sendState: null }),
+    ).toEqual(["correct"]);
+    expect(
+      messageActions({
+        transport: "mesh",
+        status: "closed",
+        canRetry: false,
+        sendState: "waiting",
+      }),
+    ).toEqual(["correct"]);
+    expect(isFinal("closed")).toBe(true);
+    expect(isFinal("roger")).toBe(true);
+    expect(isFinal("given_up")).toBe(false);
+    expect(isFinal(null)).toBe(false);
   });
 
   it("transmitting (the radio has the payload, the ack is awaited): Correct only", () => {
@@ -54,7 +84,8 @@ describe("message_out over the radio", () => {
         sendState: "waiting",
       }),
     ).toEqual(["mark", "correct"]);
-    // A given-up message retried into the queue: the same.
+    // A given-up message retried into the queue: the same, plus Close (it is given up until
+    // the queue sends it; closing takes it out of the queue).
     expect(
       messageActions({
         transport: "mesh",
@@ -62,14 +93,14 @@ describe("message_out over the radio", () => {
         canRetry: true,
         sendState: "waiting",
       }),
-    ).toEqual(["mark", "correct"]);
+    ).toEqual(["close", "mark", "correct"]);
     // Confirmed stays final whatever holds it.
     expect(
       messageActions({ transport: "mesh", status: "roger", canRetry: false, sendState: "waiting" }),
     ).toEqual(["correct"]);
   });
 
-  it("never sent and nobody sending it: Send, Mark, Correct", () => {
+  it("never sent and nobody sending it: Send, Mark, Correct — no Close (pending is not closed, it is sent, marked or left)", () => {
     expect(
       messageActions({ transport: "mesh", status: "pending", canRetry: true, sendState: null }),
     ).toEqual(["send", "mark", "correct"]);

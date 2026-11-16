@@ -21,7 +21,13 @@
 // A point (P3-05) is never a row: its origin line carries a glyph, the Points card and the
 // handover list it, the print block lists it at the end; its state (open / closed) is the
 // latest closed / reopened status_change that refers to it, derived like a message's status.
+// A radio message the staff closed (P3-09: `closed`, terminal) keeps its row with the close
+// as the last item of its strip and is no open item; an `Rn` from the field that arrives
+// after the close is an ordinary incoming row (text-protocol.md), and the closed message's
+// view lists it as a late roger by the exact `Rn` match, so the open row says the
+// confirmation came after the staff had closed it.
 
+import { parseRoger } from "./incoming.ts";
 import { DRILL_PREFIX, messagePrefix } from "./outgoing.ts";
 import { hasStatusChain, isLater, latestStatusChange, statusOf } from "./status.ts";
 import type { JournalEntry, RegisterEntry, Status } from "./types.ts";
@@ -107,8 +113,9 @@ export function splitPrefix(message: JournalEntry, text: string): { prefix: stri
 
 // What one segment of a message's strip says: a status with the time it was reached, or
 // "waiting" when the latest status is sent and the receipt is still out, or "pending" when
-// nothing has happened yet.
-export type StripKind = "pending" | "sent" | "delivered" | "roger" | "given_up" | "waiting";
+// nothing has happened yet; "closed" when the staff stopped waiting (P3-09).
+export type StripKind =
+  "pending" | "sent" | "delivered" | "roger" | "given_up" | "closed" | "waiting";
 
 export interface StripItem {
   kind: StripKind;
@@ -118,15 +125,16 @@ export interface StripItem {
   // attempt. Null on every other item.
   attempt: string | null;
   // The transition's own text — the operator's reason on a manual status, the outbox's
-  // detail ("no ack after 3 attempts"), a roger's incoming entry id — for the status
-  // column's tooltips (P3-03); null when the transition has none, and on pending and waiting.
+  // detail ("no ack after 3 attempts"), a roger's incoming entry id, the staff's note on a
+  // close — for the status column's tooltips (P3-03); null when the transition has none (an
+  // empty text is none: a close without a note, P3-09), and on pending and waiting.
   text: string | null;
 }
 
 // The statuses of a message's chain that the strip shows; pending is implicit (status.ts
 // returns it when there is no status_change) and a stored `pending` from an old journal is
 // ignored, so a journal with them renders like one without.
-const CHAIN: readonly Status[] = ["sent", "delivered", "roger", "given_up"];
+const CHAIN: readonly Status[] = ["sent", "delivered", "roger", "given_up", "closed"];
 
 function inChain(entry: JournalEntry): boolean {
   return (
@@ -149,6 +157,12 @@ export function currentRun(changes: readonly JournalEntry[]): JournalEntry[] {
   return changes.slice(start);
 }
 
+// A transition's text for the strip: null when it has none or is empty (a close without a
+// note stores "", P3-09).
+function textOf(change: JournalEntry): string | null {
+  return change.text === undefined || change.text === "" ? null : change.text;
+}
+
 // The strip of a message from its chain, oldest first. The first `sent` of the run gives the
 // time; later `sent` entries (resends) only move the attempt text shown on "waiting".
 export function statusStrip(changes: readonly JournalEntry[]): StripItem[] {
@@ -164,7 +178,7 @@ export function statusStrip(changes: readonly JournalEntry[]): StripItem[] {
       attempt = change.text ?? attempt;
       continue;
     }
-    items.push({ kind, at: change.timestamp, attempt: null, text: change.text ?? null });
+    items.push({ kind, at: change.timestamp, attempt: null, text: textOf(change) });
   }
   if (run[run.length - 1]?.newStatus === "sent") {
     items.push({ kind: "waiting", at: null, attempt, text: null });
@@ -195,6 +209,10 @@ export interface MessageView {
   // The message_in this message answers (its refersTo), when that entry is in the list and is
   // a message_in; null otherwise.
   answers: JournalEntry | null;
+  // The field's `Rn` for this message that arrived after the staff closed it (P3-09), oldest
+  // first: ordinary incoming entries by the protocol, listed here by the exact match so the
+  // open row shows the confirmation came after the close. Empty unless the message is closed.
+  lateRogers: JournalEntry[];
 }
 
 export interface BatchCounters {
@@ -208,6 +226,8 @@ export interface BatchCounters {
   roger: number;
   // Currently given up.
   givenUp: number;
+  // Closed by the staff (P3-09).
+  closed: number;
 }
 
 // A row of the timeline. `entry` positions the row (time, operator): the entry itself, or
@@ -259,14 +279,15 @@ export function bodyOf(message: JournalEntry): string {
   return splitPrefix(message, message.text ?? "").body;
 }
 
-// Least advanced first; given_up before everything, since it needs a hand.
+// Least advanced first; given_up before everything, since it needs a hand. Closed (P3-09)
+// before roger: final, but not a confirmation.
 const RANK: Readonly<Record<Status, number>> = {
   given_up: 0,
   pending: 1,
   sent: 2,
   delivered: 3,
-  roger: 4,
-  closed: 5,
+  closed: 4,
+  roger: 5,
   reopened: 5,
 };
 
@@ -290,6 +311,7 @@ export function batchCounters(messages: readonly MessageView[]): BatchCounters {
     delivered: 0,
     roger: 0,
     givenUp: 0,
+    closed: 0,
   };
   for (const message of messages) {
     const reached = new Set(message.strip.map((item) => item.kind));
@@ -305,11 +327,78 @@ export function batchCounters(messages: readonly MessageView[]): BatchCounters {
     if (message.status === "given_up") {
       counters.givenUp += 1;
     }
+    if (message.status === "closed") {
+      counters.closed += 1;
+    }
     if (message.status === "pending") {
       counters.pending += 1;
     }
   }
   return counters;
+}
+
+// --- late rogers (P3-09) ----------------------------------------------------------------------
+
+// The `closed` transition of a closed message's chain: the latest one (status.ts's order),
+// or undefined while the message is not closed.
+function closingOf(changes: readonly JournalEntry[]): JournalEntry | undefined {
+  let closing: JournalEntry | undefined;
+  for (const change of changes) {
+    if (change.newStatus === "closed" && (closing === undefined || isLater(change, closing))) {
+      closing = change;
+    }
+  }
+  return closing;
+}
+
+// The incoming messages that are a late roger for a closed radio message: from the same
+// counterparty, received after the close (later than the closing status change), and
+// exactly `Rn` with n the message's own number (incoming.ts, rule 1's regex). The protocol
+// stores them as ordinary incoming messages and changes no status; this is the view's
+// reading of them, by the one exact match and nothing fuzzier — a bare `R` names no
+// message and is not listed. Empty while the message is not closed. `incoming` is the
+// counterparty's message_in entries; `changes` the message's status changes.
+export function lateRogersOf(
+  message: JournalEntry,
+  changes: readonly JournalEntry[],
+  incoming: readonly JournalEntry[],
+): JournalEntry[] {
+  const closing = closingOf(changes);
+  if (closing === undefined || message.seqNo === undefined) {
+    return [];
+  }
+  const seqNo = message.seqNo;
+  return sortedOldestFirst(
+    incoming.filter((entry) => {
+      if (
+        entry.type !== "message_in" ||
+        entry.counterpartyId !== message.counterpartyId ||
+        !isLater(entry, closing)
+      ) {
+        return false;
+      }
+      const rule = parseRoger(entry.text ?? "");
+      return rule.rule === "numbered" && rule.n === seqNo;
+    }),
+  );
+}
+
+// Every late roger of every closed radio message in the list, by the incoming entry's id:
+// what the handover's unanswered list leaves out (handoverView.ts), since a late `Rn` is
+// the field's answer to the closed message, arrived late.
+export function lateRogerIds(entries: readonly JournalEntry[]): Set<string> {
+  const ids = new Set<string>();
+  const transitions = transitionsByMessage(entries);
+  const incoming = entries.filter((entry) => entry.type === "message_in");
+  for (const message of entries) {
+    if (!hasStatusChain(message)) {
+      continue;
+    }
+    for (const late of lateRogersOf(message, transitions.get(message.id) ?? [], incoming)) {
+      ids.add(late.id);
+    }
+  }
+  return ids;
 }
 
 export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
@@ -321,6 +410,8 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
   const corrections = new Map<string, JournalEntry[]>();
   // message_in id -> the message_out entries answering it.
   const replies = new Map<string, JournalEntry[]>();
+  // Every incoming message, oldest first, for the late rogers of a closed message (P3-09).
+  const incoming: JournalEntry[] = [];
   const plain: JournalEntry[] = [];
   const messages: JournalEntry[] = [];
 
@@ -371,13 +462,18 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
         // the closed / reopened status changes referring to it are dropped above with the
         // rest of the status changes that refer to no message.
         break;
+      case "message_in":
+        incoming.push(entry);
+        plain.push(entry);
+        break;
       default:
         plain.push(entry);
     }
   }
 
   // A radio message's view carries its chain; a message by phone, courier or verbal has
-  // none: null status, no strip, no history (P3-07).
+  // none: null status, no strip, no history (P3-07). A closed message lists the field's late
+  // `Rn` for it (P3-09).
   function view(message: JournalEntry): MessageView {
     const status = statusOf(entries, message);
     const history =
@@ -387,14 +483,16 @@ export function buildTimeline(entries: readonly JournalEntry[]): TimelineRow[] {
             entry,
             corrections: corrections.get(entry.id) ?? [],
           }));
+    const changes = history.map((item) => item.entry);
     const target = message.refersTo === undefined ? undefined : byId.get(message.refersTo);
     return {
       entry: message,
       status,
-      strip: status === null ? [] : statusStrip(history.map((item) => item.entry)),
+      strip: status === null ? [] : statusStrip(changes),
       history,
       corrections: corrections.get(message.id) ?? [],
       answers: target?.type === "message_in" ? target : null,
+      lateRogers: status === "closed" ? lateRogersOf(message, changes, incoming) : [],
     };
   }
 
@@ -470,9 +568,9 @@ export function countNewRows(rows: readonly TimelineRow[], seen: ReadonlySet<str
 
 // A radio message_out the staff still owes attention: not yet roger (pending / sent /
 // delivered), or given up, which the panel flags rather than hides. roger is final and
-// closes the item (brainstorm §5: "Roger closes the item in the staff's queue"). A message
-// by phone, courier or verbal has no status and is never an item (P3-07): what it needs
-// followed up is a point.
+// closes the item (brainstorm §5: "Roger closes the item in the staff's queue"); so is
+// closed, the staff's own way out of the list (P3-09). A message by phone, courier or
+// verbal has no status and is never an item (P3-07): what it needs followed up is a point.
 export const OPEN_STATUSES: readonly Status[] = ["pending", "sent", "delivered"];
 
 export interface OpenItem {
@@ -504,7 +602,8 @@ function transitionsByMessage(entries: readonly JournalEntry[]): Map<string, Jou
 // Open items per register entry (counterpartyId), newest first within a group, and the groups
 // in the order of their newest item, newest first (P1-01). Entries without a counterparty
 // cannot occur for a message_out (the schema requires it) and are skipped; a message without
-// a status chain (null: by phone, courier or verbal) is skipped too.
+// a status chain (null: by phone, courier or verbal) is skipped too, and so is a closed one
+// (final, P3-09) like a confirmed one.
 export function openItems(entries: readonly JournalEntry[]): Map<string, OpenItem[]> {
   const groups = new Map<string, OpenItem[]>();
   const corrections = correctionsByTarget(entries);

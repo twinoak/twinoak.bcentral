@@ -1,7 +1,7 @@
 // The screens' send, mark and close over the outbox, the queue and the store (P3-08), on a
 // fake link: with the radio disconnected a sent message waits in the paused queue and can be
 // marked by hand, which takes it out so a reconnect does not send it; a live transmission
-// refuses the mark until its ack is in.
+// refuses the mark until its ack is in. The staff's Close (P3-09) takes the same path.
 
 import { describe, expect, it, vi } from "vitest";
 import { setLanguage } from "../i18n/index.svelte.ts";
@@ -236,6 +236,55 @@ describe("send actions (P3-08)", () => {
     await radio.connect("usb");
     await realWait(60);
     expect(companion.sends).toHaveLength(1);
+    await radio.disconnect();
+  });
+
+  it("close by hand (P3-09): a given-up message retried into the paused queue leaves it, closed with the note, and a reconnect does not send it", async () => {
+    const { store, radio, companion, queue, actions, compose } = await setUp({
+      onSendText: sentOnlyReply,
+    });
+    await radio.connect("usb");
+    const message = await compose("Kør til nr 4");
+    expect(await actions.send(message)).toBe("given_up");
+    await radio.disconnect();
+    queue.enqueue([message]);
+    expect(queue.phase()).toBe("paused");
+    expect(queue.isWaiting(message.id)).toBe(true);
+
+    const closed = await actions.closeByHand(message, "Hans er kørt");
+    expect(closed).toMatchObject({ newStatus: "closed", text: "Hans er kørt", operator: "Anne" });
+    expect(queue.waiting()).toEqual([]);
+    expect(await store.statusOf(message.id)).toBe("closed");
+    expect(await chain(store, message)).toEqual(["sent", "given_up", "closed"]);
+
+    await radio.connect("usb");
+    await realWait(60);
+    expect(companion.sends).toHaveLength(1);
+    await radio.disconnect();
+  });
+
+  it("close by hand without a note on a delivered message, at once; refused while the message is transmitting", async () => {
+    const { store, radio, transport, outbox, actions, compose } = await setUp({
+      onSendText: sentOnlyReply,
+      ackWindowMs: 2000,
+    });
+    await radio.connect("usb");
+    const message = await compose("x");
+    const sending = actions.send(message);
+    await vi.waitFor(() => expect(outbox.active()?.phase).toBe("awaiting_ack"), { interval: 1 });
+    await expect(actions.closeByHand(message, "")).rejects.toBeInstanceOf(OutboxError);
+    expect(await chain(store, message)).toEqual(["sent"]);
+
+    transport.push(ackFrame(FIRST_ACK, 700));
+    expect(await sending).toBe("delivered");
+    const closed = await actions.closeByHand(message, "");
+    expect(closed.newStatus).toBe("closed");
+    expect(closed.text).toBe("");
+    expect(await chain(store, message)).toEqual(["sent", "delivered", "closed"]);
+    // Final: a mark after it is the store's refusal.
+    await expect(actions.markByHand(message, "roger", "r")).rejects.toBeInstanceOf(
+      ManualStatusError,
+    );
     await radio.disconnect();
   });
 
