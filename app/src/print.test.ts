@@ -146,6 +146,7 @@ describe("the print pages (P2-05)", () => {
       '"journal-point"',
       '"journal-point-form"',
       '"journal-by-hand"',
+      '"journal-queued"',
       '"print-handover"',
     ]) {
       expect(script).toContain(`shot(${name}`);

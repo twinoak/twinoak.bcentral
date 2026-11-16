@@ -540,6 +540,65 @@ describe("the journal screen", () => {
     }
   });
 
+  it("a queued message can be marked; only a live transmission hides Mark (P3-08)", () => {
+    // The row rule reads two facts, transmitting and waiting, never one "inflight".
+    const actions = read("lib/rowActions.ts");
+    expect(actions).toContain("sendState: SendState;");
+    expect(actions).toContain('input.sendState !== "transmitting"');
+    expect(actions).toContain("input.canRetry && input.sendState === null");
+    expect(actions).not.toContain("inflight");
+    const state = read("lib/sendState.ts");
+    expect(state).toContain('export type SendState = "transmitting" | "waiting" | null;');
+    expect(state).toContain("isTransmitting(input.active, messageId)");
+    expect(read("radio/outbox.svelte.ts")).toContain(
+      'export const TRANSMITTING_PHASES: readonly SendPhase[] = ["sending", "awaiting_ack"];',
+    );
+    // The timeline feeds the rule from the page's sendState; the column keeps its words.
+    const timeline = read("components/Timeline.svelte");
+    expect(timeline).toContain("sendState: sendState(entry.id),");
+    expect(timeline).not.toContain("inflight: inflightText !== null");
+    expect(timeline).toContain("sendState(view.entry.id) === null");
+    for (const page of ["pages/JournalPage.svelte", "pages/HandoverPage.svelte"]) {
+      const text = read(page);
+      expect(text, page).toContain("sendStateOf(messageId, {");
+      // Every manual status and every send goes through the send actions, which take the
+      // message out of the queue first (or put a send without a radio into it).
+      expect(text, page).toContain("sendActions.markByHand(");
+      expect(text, page).toContain("await sendActions.send(message)");
+      expect(text, page).not.toContain("recordManualStatus");
+      expect(text, page).not.toContain("outbox.send(");
+    }
+    expect(read("components/ManualEntryForm.svelte")).toContain("sendActions.resendByHand(");
+    expect(read("store/index.ts")).not.toMatch(
+      /export async function (recordManualStatus|resendByHand)/,
+    );
+    const sendActions = read("radio/sendActions.ts");
+    expect(sendActions).toContain("const fromQueue = deps.sendQueue.cancel(messageId);");
+    expect(sendActions).toContain("const fromOutbox = deps.outbox.cancel(messageId);");
+    expect(sendActions).toContain("deps.sendQueue.enqueue([message]);");
+    // The handover hides Close and Send by courier while the radio is transmitting.
+    expect(read("pages/HandoverPage.svelte")).toContain("{#if canMark(view)}");
+    // The MeshCore tab sends without a radio and says the message will wait.
+    const compose = read("components/ComposeForm.svelte");
+    expect(compose).not.toMatch(/radioReady &&\s*!busy/);
+    expect(compose).toContain('{t("send.noRadioQueue")}');
+    expect(compose).not.toContain('{t("send.noRadio")}');
+    // The help line on the "Unconfirmed messages" card while the queue is paused.
+    const open = read("components/OpenItemsPanel.svelte");
+    expect(open).toContain("{#if pausedCount > 0}");
+    expect(open).toContain('{t("journal.open.paused", { n: pausedCount })}');
+    expect(read("pages/JournalPage.svelte")).toContain('sendQueue.phase() === "paused"');
+    expect(read("pages/JournalPage.svelte")).toContain("{pausedCount}");
+    const en = JSON.parse(read("i18n/en.json")) as Record<string, string>;
+    const da = JSON.parse(read("i18n/da.json")) as Record<string, string>;
+    expect(en["journal.open.paused"]).toBe(
+      "{n} waiting — no radio connected. Open a message to confirm or give it up by hand.",
+    );
+    expect(da["journal.open.paused"]).toContain("{n} venter");
+    expect(en["send.error.transmitting"]).toBeDefined();
+    expect(da["send.error.transmitting"]).toBeDefined();
+  });
+
   it("the side cards are cards with the count in the title", () => {
     for (const file of ["components/OpenItemsPanel.svelte", "components/LastHeardPanel.svelte"]) {
       const text = read(file);

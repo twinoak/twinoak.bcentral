@@ -9,7 +9,9 @@
   // title, age, origin and Close with a reason), then in a 2 × 2 grid open orders and
   // given-up messages — radio messages only (P3-07): a message by phone, courier or verbal
   // has no status chain, and its follow-up is a point — the given-up ones with the three
-  // decisions (retry, send by courier, close with a reason), unanswered incoming messages
+  // decisions (retry, send by courier, close with a reason; the last two take the message
+  // out of the send queue first and are hidden while the radio is transmitting it, P3-08),
+  // unanswered incoming messages
   // with Reply, and quiet radios with "Send status request" ("#n Meld status"). An outgoing
   // row carries the
   // journal's status column (P3-03, StatusSlots.svelte) under the same header labels, and
@@ -40,7 +42,8 @@
   import { hasOperatorName, settings } from "../lib/settings.svelte.ts";
   import { onShortcut } from "../lib/shortcutDispatch.ts";
   import { showToast } from "../lib/toast.svelte.ts";
-  import { capability, inbox, outbox, radio, sendQueue } from "../radio/index.ts";
+  import { sendStateOf, type SendState } from "../lib/sendState.ts";
+  import { capability, inbox, outbox, radio, sendActions, sendQueue } from "../radio/index.ts";
   import { disconnectReasonText } from "../radio/radioStore.svelte.ts";
   import { buildHandover, quietRadios } from "../store/handoverView.ts";
   import { incidentStateOf, isDrill } from "../store/incidents.ts";
@@ -51,7 +54,6 @@
     lastHeardByCounterparty,
     listIncidents,
     listRegister,
-    recordManualStatus,
     sendStatusRequest,
   } from "../store/index.ts";
   import {
@@ -253,15 +255,18 @@
 
   // --- the rows' actions (the journal screen's paths, P0-05 / P0-07 / P1-02) --------------
 
+  // Through the outbox while a radio is connected; into the paused send queue without one
+  // (P3-08, radio/sendActions.ts).
   async function transmit(message: JournalEntry) {
     try {
-      await outbox.send(message.id);
+      await sendActions.send(message);
     } catch (failure) {
       actionError = t("send.failed", { error: describe(failure) });
     }
     await changed();
   }
 
+  // The status column's words while the outbox or the queue holds the message.
   function inflight(messageId: string): string | null {
     if (active?.messageId === messageId) {
       return t(`send.inflight.${active.phase}`, {
@@ -279,8 +284,25 @@
     return null;
   }
 
+  // Transmitting, waiting or held by nobody (lib/sendState.ts, P3-08).
+  function sendState(messageId: string): SendState {
+    return sendStateOf(messageId, {
+      active,
+      outboxQueued: queued,
+      queueWaiting: waitingInQueue,
+      queueSending: handedToOutbox,
+    });
+  }
+
   function canRetry(view: MessageView): boolean {
-    return view.entry.transport === "mesh" && inflight(view.entry.id) === null && radioReady;
+    return view.entry.transport === "mesh" && sendState(view.entry.id) === null && radioReady;
+  }
+
+  // Close and "send by courier" write a status by hand, which a live transmission refuses
+  // (P3-08): both are hidden while the radio is transmitting the message; a message waiting
+  // in a queue (a retry from the queue screen) offers them and leaves the queue.
+  function canMark(view: MessageView): boolean {
+    return sendState(view.entry.id) !== "transmitting";
   }
 
   async function retry(view: MessageView) {
@@ -314,7 +336,7 @@
     busy = true;
     actionError = null;
     try {
-      await recordManualStatus(view.entry, "roger", reason);
+      await sendActions.markByHand(view.entry, "roger", reason);
       closing = null;
       reason = "";
       await changed();
@@ -850,24 +872,26 @@
                             <Icon name="retry" />{t("send.retry")}
                           </button>
                         {/if}
-                        <button
-                          type="button"
-                          class="btn btn-quiet"
-                          title={t("handover.givenUp.courierHelp")}
-                          disabled={busy}
-                          onclick={() => courier(view)}
-                        >
-                          <Icon name="send" />{t("handover.givenUp.courier")}
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn-quiet"
-                          title={t("handover.givenUp.closeHelp")}
-                          disabled={busy}
-                          onclick={() => startClose(view)}
-                        >
-                          <Icon name="check" />{t("handover.givenUp.close")}
-                        </button>
+                        {#if canMark(view)}
+                          <button
+                            type="button"
+                            class="btn btn-quiet"
+                            title={t("handover.givenUp.courierHelp")}
+                            disabled={busy}
+                            onclick={() => courier(view)}
+                          >
+                            <Icon name="send" />{t("handover.givenUp.courier")}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-quiet"
+                            title={t("handover.givenUp.closeHelp")}
+                            disabled={busy}
+                            onclick={() => startClose(view)}
+                          >
+                            <Icon name="check" />{t("handover.givenUp.close")}
+                          </button>
+                        {/if}
                       </span>
                     {/if}
                   {/snippet}

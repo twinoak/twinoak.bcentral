@@ -388,4 +388,60 @@ describe("outbox", () => {
     expect(outbox.active()).toBeNull();
     await radio.disconnect();
   });
+
+  // P3-08: a send can be taken back until the radio has the payload.
+  it("cancel: a send waiting its turn resolves null and writes nothing; the first goes on", async () => {
+    const { store, radio, companion, outbox, compose, hans, peter } = await setUp({
+      onSendText: sentOnlyReply,
+      maxAttempts: 1,
+      ackWindowMs: 150,
+    });
+    await radio.connect("usb");
+    const toHans = await compose("til Hans", hans.id);
+    const toPeter = await compose("til Peter", peter.id);
+
+    const first = outbox.send(toHans.id);
+    await vi.waitFor(() => expect(outbox.active()?.messageId).toBe(toHans.id), { interval: 1 });
+    const second = outbox.send(toPeter.id);
+    await vi.waitFor(() => expect(outbox.queued()).toEqual([toPeter.id]), { interval: 1 });
+
+    expect(outbox.transmitting(toPeter.id)).toBe(false);
+    expect(outbox.cancel(toPeter.id)).toBe(true);
+    expect(outbox.queued()).toEqual([]);
+    expect(await second).toBeNull();
+    expect(await store.entriesReferringTo(toPeter.id)).toEqual([]);
+    expect(await store.statusOf(toPeter.id)).toBe("pending");
+
+    expect(await first).toBe("given_up");
+    expect(companion.sends.map((s) => s.text)).toEqual(["#1 til Hans"]);
+    // Cancelled, the message is free to be sent again later.
+    companion.onSendText = deliveredReply;
+    expect(await outbox.send(toPeter.id)).toBe("delivered");
+    await radio.disconnect();
+  });
+
+  it("cancel refuses a transmitting send (the ack awaited) and is false once it is over", async () => {
+    const { store, radio, transport, outbox, compose } = await setUp({
+      onSendText: sentOnlyReply,
+      maxAttempts: 1,
+      ackWindowMs: 2000,
+    });
+    await radio.connect("usb");
+    const message = await compose("x");
+
+    const sending = outbox.send(message.id);
+    await vi.waitFor(() => expect(outbox.active()?.phase).toBe("awaiting_ack"), { interval: 1 });
+    expect(outbox.transmitting(message.id)).toBe(true);
+    expect(() => outbox.cancel(message.id)).toThrow(OutboxError);
+    expect(() => outbox.cancel(message.id)).toThrow(/transmitting/);
+    // The refusal changed nothing: the ack still lands.
+    transport.push(ackFrame(FIRST_ACK, 900));
+    expect(await sending).toBe("delivered");
+    expect(await chain(store, message)).toEqual(["sent", "delivered"]);
+    expect(outbox.transmitting(message.id)).toBe(false);
+    expect(outbox.cancel(message.id)).toBe(false);
+    // An id the outbox never saw.
+    expect(outbox.cancel("01JB8ZK3QX9V2M4N6P8R0T2W99")).toBe(false);
+    await radio.disconnect();
+  });
 });

@@ -20,7 +20,8 @@
   import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
   import { openPopover } from "../lib/popover.svelte.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
-  import { inbox, outbox, sendQueue } from "../radio/index.ts";
+  import { sendStateOf, type SendState } from "../lib/sendState.ts";
+  import { inbox, outbox, sendActions, sendQueue } from "../radio/index.ts";
   import {
     addCorrection,
     closePoint,
@@ -29,7 +30,6 @@
     listIncidents,
     listRegister,
     openPoint,
-    recordManualStatus,
     reopenPoint,
   } from "../store/index.ts";
   import { isDrill } from "../store/incidents.ts";
@@ -86,9 +86,17 @@
   const heardRows = $derived(sortedByLastHeard(register, heard));
   const active = $derived(outbox.active());
   const queued = $derived(outbox.queued());
-  // Messages the send-to-all queue holds (P0-08) are in flight too: no Send / Retry on them.
+  // Messages the send-to-all queue holds (P0-08) are on their way too: no Send / Retry on
+  // them; they can be marked by hand (P3-08) while nothing is on the air.
   const waitingInQueue = $derived(sendQueue.waiting());
   const handedToOutbox = $derived(sendQueue.sending());
+  // The "Unconfirmed messages" card's help line (P3-08): how many of its items wait in the
+  // queue while it is paused for lack of a radio.
+  const pausedCount = $derived(
+    sendQueue.phase() === "paused"
+      ? [...open.values()].flat().filter((item) => waitingInQueue.includes(item.message.id)).length
+      : 0,
+  );
 
   function describe(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
@@ -129,17 +137,19 @@
 
   // --- outgoing messages (P0-05's path) --------------------------------------------------
 
+  // Through the outbox while a radio is connected; into the paused send queue without one
+  // (P3-08, radio/sendActions.ts).
   async function transmit(message: JournalEntry) {
     try {
-      await outbox.send(message.id);
+      await sendActions.send(message);
     } catch (failure) {
       actionError = t("send.failed", { error: describe(failure) });
     }
     await changed();
   }
 
-  // MeshCore's Send: the stored message is handed to the outbox (its transport is mesh,
-  // always; the check is the outbox's own guard).
+  // MeshCore's Send: the stored message is sent (its transport is mesh, always; the check is
+  // the outbox's own guard).
   async function onsent(message: JournalEntry) {
     actionError = null;
     await changed();
@@ -148,6 +158,8 @@
     }
   }
 
+  // The status column's words while the outbox or the queue holds the message: the outbox's
+  // phase, or "waiting for its turn" (also while the queue is paused).
   function inflight(messageId: string): string | null {
     if (active?.messageId === messageId) {
       return t(`send.inflight.${active.phase}`, {
@@ -165,8 +177,20 @@
     return null;
   }
 
+  // Transmitting, waiting or held by nobody (lib/sendState.ts): what decides Mark and Retry.
+  function sendState(messageId: string): SendState {
+    return sendStateOf(messageId, {
+      active,
+      outboxQueued: queued,
+      queueWaiting: waitingInQueue,
+      queueSending: handedToOutbox,
+    });
+  }
+
+  // The status rule for Retry / Send: given up or never sent; the row rule adds "nobody
+  // holds it".
   function canRetry(message: JournalEntry): boolean {
-    if (message.transport !== "mesh" || inflight(message.id) !== null) {
+    if (message.transport !== "mesh") {
       return false;
     }
     const status = statusOf(entries, message);
@@ -175,8 +199,10 @@
 
   // --- row actions -------------------------------------------------------------------------
 
+  // Mark by hand (P3-08): the message leaves the send queue first, then the status is written;
+  // refused while the radio is transmitting it (the row hides Mark then).
   async function manual(message: JournalEntry, status: Status, reason: string) {
-    await recordManualStatus(message, status, reason);
+    await sendActions.markByHand(message, status, reason);
     await changed();
   }
 
@@ -318,6 +344,7 @@
           {byId}
           points={pointsByOrigin}
           {inflight}
+          {sendState}
           {canRetry}
           onretry={transmit}
           onmanual={manual}
@@ -332,7 +359,7 @@
 
     <aside class="side">
       <PointsPanel {points} {labels} onselect={showEntry} onclose={closePointWith} />
-      <OpenItemsPanel groups={open} {labels} onselect={showEntry} />
+      <OpenItemsPanel groups={open} {labels} {pausedCount} onselect={showEntry} />
       <LastHeardPanel rows={heardRows} />
     </aside>
   </div>

@@ -2,6 +2,10 @@
 // exactly these, in this order, on the action line of the open row (components/Timeline.svelte):
 //
 //   message_out over the radio   Retry (given up) or Send (never sent, nobody sending it), Mark, Correct
+//                                — while it is transmitting, Correct alone; while it waits in
+//                                a queue, Mark and Correct (P3-08: a live transmission is the
+//                                one thing that hides Mark; a waiting message has nothing to
+//                                retry yet)
 //   message_out by hand          Correct (P3-07: a phone, courier or verbal message has no
 //                                status to mark and nothing to retry; its follow-up is a point)
 //   message_in                   Reply, Correct
@@ -16,6 +20,7 @@
 
 import type { PointState } from "../store/journalView.ts";
 import type { EntryType, Status, Transport } from "../store/types.ts";
+import type { SendState } from "./sendState.ts";
 
 export type RowAction = "retry" | "send" | "mark" | "correct" | "reply" | "retryAll";
 
@@ -35,26 +40,31 @@ export interface MessageActionInput {
   // The chain's status of a radio message; null for a message by phone, courier or verbal,
   // which has none (store/status.ts).
   status: Status | null;
-  // The page's rule for Retry / Send: a mesh message nobody is sending, given up or never
-  // sent (JournalPage.svelte canRetry).
+  // The page's status rule for Retry / Send: a mesh message given up or never sent
+  // (JournalPage.svelte canRetry).
   canRetry: boolean;
-  // The outbox or the queue holds the message right now.
-  inflight: boolean;
+  // Where the message is on its way out (lib/sendState.ts): on the air, waiting in a queue,
+  // or held by nobody.
+  sendState: SendState;
 }
 
 export function messageActions(input: MessageActionInput): RowAction[] {
   const actions: RowAction[] = [];
-  if (input.canRetry) {
+  // Retry / Send only while nobody holds the message: a waiting one goes out by itself (or
+  // is marked), a transmitting one is on the air.
+  if (input.canRetry && input.sendState === null) {
     actions.push(input.status === "given_up" ? "retry" : "send");
   }
   // Mark: a manual roger or given-up with a reason on a radio message (store/outgoing.ts
-  // MANUAL_STATUSES), until the message is confirmed and while nothing is sending it. A
-  // message without a chain (status null) has nothing to mark.
+  // MANUAL_STATUSES), until the message is confirmed, and hidden only while the radio is in
+  // the middle of transmitting it (P3-08) — a message waiting in a queue, paused or not, can
+  // be marked and leaves the queue. A message without a chain (status null) has nothing to
+  // mark.
   if (
     input.transport === "mesh" &&
     input.status !== null &&
     input.status !== "roger" &&
-    !input.inflight
+    input.sendState !== "transmitting"
   ) {
     actions.push("mark");
   }
