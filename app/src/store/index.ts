@@ -18,24 +18,22 @@ import {
 } from "./registerImport.ts";
 import {
   composeBatch as composeBatchWithStore,
+  composeMeshMessage as composeMeshWithStore,
   composeMessage as composeWithStore,
   recordManualStatus as recordWithStore,
   type BatchComposeInput,
   type ComposeInput,
   type Composed,
+  type MeshComposeInput,
 } from "./outgoing.ts";
+import { recordByHand as recordWithStoreByHand, type RecordInput } from "./record.ts";
 import { closeIncident as closeWithStore, reopenIncident as reopenWithStore } from "./incidents.ts";
-import {
-  appendCorrection,
-  appendMessageIn,
-  appendNote,
-  type ManualMessageInInput,
-} from "./manual.ts";
+import { appendCorrection, appendNote } from "./manual.ts";
 import { lastHeardFrom } from "./journalView.ts";
 import {
   composeStatusRequest,
   recordHandover,
-  sendByCourier,
+  resendByHand as resendWithStore,
   type CourierHandoff,
 } from "./handover.ts";
 import { language, t } from "../i18n/index.svelte.ts";
@@ -46,6 +44,7 @@ import type {
   PendingRegisterRow,
   RegisterEntry,
   Status,
+  Transport,
 } from "./types.ts";
 
 export const DATABASE_NAME = "bcentral";
@@ -221,9 +220,11 @@ export async function addCorrection(target: JournalEntry, text: string): Promise
   return await appendCorrection(store, target, { operator: settings.operatorName.trim(), text });
 }
 
-export async function addMessageIn(input: Omit<ManualMessageInInput, "operator">): Promise<JournalEntry> {
+// The New record tab (P3-01): a note, an incoming or an outgoing message by hand, on a
+// non-radio transport. An outgoing record reserves #n like any message_out; nothing is sent.
+export async function recordByHand(input: Omit<RecordInput, "operator">): Promise<JournalEntry> {
   const store = await journalStore();
-  return await appendMessageIn(store, { ...input, operator: settings.operatorName.trim() });
+  return await recordWithStoreByHand(store, { ...input, operator: settings.operatorName.trim() });
 }
 
 // When every register entry was last heard from, over the whole journal: a radio's silence
@@ -240,6 +241,13 @@ export async function lastHeardByCounterparty(): Promise<Map<string, string>> {
 export async function composeMessage(input: Omit<ComposeInput, "operator">): Promise<Composed> {
   const store = await journalStore();
   return await composeWithStore(store, { ...input, operator: settings.operatorName.trim() });
+}
+
+// The MeshCore tab (P3-01): a message over the radio, transport mesh always, the recipient a
+// register entry with a key. Sending is the outbox's job (src/radio/index.ts).
+export async function composeMeshMessage(input: Omit<MeshComposeInput, "operator">): Promise<Composed> {
+  const store = await journalStore();
+  return await composeMeshWithStore(store, { ...input, operator: settings.operatorName.trim() });
 }
 
 // The operator's own status change on a message, with the reason (required).
@@ -283,13 +291,23 @@ export async function sendStatusRequest(incidentId: string, counterpartyId: stri
   });
 }
 
-// The decision "send by courier" on a given-up message: the courier copy, and the original
-// closed with the reason "sent by courier as #n".
-export async function handOffToCourier(message: JournalEntry): Promise<CourierHandoff> {
+// The decision "send by courier" on a given-up message, recorded from the New record tab
+// (P3-01): the copy on the chosen non-radio transport with the text as recorded, and the
+// original closed with the reason "sent via ‹transport› as #n".
+export async function resendByHand(
+  message: JournalEntry,
+  input: { transport: Transport; body: string },
+): Promise<CourierHandoff> {
   const store = await journalStore();
-  return await sendByCourier(store, message, {
+  return await resendWithStore(store, message, {
     operator: settings.operatorName.trim(),
-    reason: (copy) => t("handover.givenUp.courierReason", { n: copy.seqNo ?? 0 }),
+    transport: input.transport,
+    body: input.body,
+    reason: (copy) =>
+      t("handover.givenUp.resentReason", {
+        via: t(`send.transport.${input.transport}`),
+        n: copy.seqNo ?? 0,
+      }),
   });
 }
 

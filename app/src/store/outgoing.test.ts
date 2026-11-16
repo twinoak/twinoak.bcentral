@@ -9,11 +9,13 @@ import {
   ManualStatusError,
   MessageTooLongError,
   REPLY_SNIPPET_LENGTH,
+  RecipientError,
   ReplyTargetError,
   appendStatusChange,
   batchPreview,
   byteLength,
   composeBatch,
+  composeMeshMessage,
   composeMessage,
   composeText,
   manualStatusesFor,
@@ -397,6 +399,55 @@ describe("composeMessage", () => {
     ).rejects.toBeInstanceOf(ValidationError);
     expect(await store.lastSeqNo(HANS)).toBe(0);
     expect(await store.allEntries()).toEqual([]);
+    store.close();
+  });
+});
+
+describe("composeMeshMessage (the MeshCore tab, P3-01)", () => {
+  async function storeWithHans(): Promise<JournalStore> {
+    const store = await openTestStore();
+    await store.createRegisterEntry({ publicKey: "7a".repeat(32), label: "Hans", origin: "adhoc" });
+    return store;
+  }
+  const hansId = async (store: JournalStore) => (await store.allRegisterEntries())[0]!.id;
+
+  it("always stores transport mesh, with the recipient's next #n", async () => {
+    const store = await storeWithHans();
+    const id = await hansId(store);
+    const { message } = await composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: id, body: "Meld status" });
+    expect(message).toMatchObject({ type: "message_out", transport: "mesh", counterpartyId: id, seqNo: 1, text: "#1 Meld status" });
+    expect(message.refersTo).toBeUndefined();
+    expect(await store.statusOf(message.id)).toBe("pending");
+    store.close();
+  });
+
+  it("refuses a pending register row (imported without a key) and an unknown id, and reserves nothing", async () => {
+    const store = await storeWithHans();
+    const { pending } = await store.importRegister([], [{ label: "Peter", origin: "issued" }]);
+    const row = pending[0]!;
+    await expect(
+      composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: row.id, body: "x" }),
+    ).rejects.toBeInstanceOf(RecipientError);
+    await expect(
+      composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: PETER, body: "x" }),
+    ).rejects.toBeInstanceOf(RecipientError);
+    expect(await store.lastSeqNo(row.id)).toBe(0);
+    expect(await store.allEntries()).toEqual([]);
+    // Bound to a radio, the same row is a recipient like any other.
+    const bound = await store.bindPendingRegisterRow(row.id, { publicKey: "7b".repeat(32), label: "Peter", origin: "issued" });
+    const { message } = await composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: bound.id, body: "x" });
+    expect(message.counterpartyId).toBe(row.id);
+    expect(message.text).toBe("#1 x");
+    store.close();
+  });
+
+  it("carries refersTo when it answers an incoming message", async () => {
+    const store = await storeWithHans();
+    const id = await hansId(store);
+    const incoming = await store.appendEntry({ incidentId: INCIDENT, operator: "Thomas", type: "message_in", transport: "mesh", counterpartyId: id, text: "Er ved nr 4", dedupeKey: "0".repeat(64) });
+    const { message } = await composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: id, body: "Bliv der", refersTo: incoming.id });
+    expect(message.refersTo).toBe(incoming.id);
+    expect(message.transport).toBe("mesh");
     store.close();
   });
 });
