@@ -141,8 +141,7 @@
       "type": "message_out",
       "transport": "courier",
       "counterpartyId": "01JB8ZK3QX9V2M4N6P8R0T2W50",
-      "seqNo": 2,
-      "text": "#2 Pumpe på vej til nr 4 med Peter på cykel"
+      "text": "Pumpe på vej til nr 4 med Peter på cykel"
     },
     {
       "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
@@ -152,10 +151,9 @@
       "incidentId": "01JB8ZK3QX9V2M4N6P8R0T2W4Z",
       "id": "01JB8ZK3QX9V2M4N6P8R0T2W60",
       "deviceSeq": 10,
-      "type": "status_change",
-      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W59",
-      "newStatus": "sent",
-      "text": "Peter cyklede 19:10"
+      "type": "point",
+      "text": "Peter med pumpe til nr 4 — tilbage?",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W59"
     },
     {
       "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
@@ -166,9 +164,9 @@
       "id": "01JB8ZK3QX9V2M4N6P8R0T2W61",
       "deviceSeq": 11,
       "type": "status_change",
-      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W59",
-      "newStatus": "delivered",
-      "text": "Peter tilbage 19:40, afleveret"
+      "text": "Peter tilbage 19:40, pumpen afleveret",
+      "refersTo": "01JB8ZK3QX9V2M4N6P8R0T2W60",
+      "newStatus": "closed"
     },
     {
       "deviceId": "01JB8ZK3QX9V2M4N6P8R0T2W4Y",

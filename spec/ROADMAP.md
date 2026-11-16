@@ -87,6 +87,10 @@ hands do more than they should. Tasks are added as the findings come in.
 | P3-03 | Status as a fixed column of three symbol slots (sent · delivered · confirmed), no times in the list; counts in the slots for batch rows | P3-02 |
 | P3-04 | Click a row to open it: history and actions in one place, one row open at a time, nothing on hover, no history toggle | P3-03 |
 | P3-05 | Points: open / close (with reason) / reopen a follow-up from any line; a Points card in the journal and a first list on the handover page; new `point` entry type in the contract | P3-04 |
+| P3-06 | The register is a contact list: `publicKey` optional (origin only with it), `phone` added; MeshCore tab lists only entries with a radio; P1-06's pending rows removed | P3-05 |
+| P3-07 | `#n` and the status chain are MeshCore-only: a phone/courier/verbal outgoing message is a plain record; follow-up is a point; contract and example updated | P3-06 |
+| P3-08 | A queued or paused radio message can be marked confirmed / given up by hand (and leaves the queue); only a live transmission hides Mark | P3-07 |
+| P3-09 | Close an unconfirmed radio message with one click (optional note): terminal status `closed`, shown as a dash, honest about not being a confirmation; a late `R` is a plain incoming message | P3-08 |
 
 ## Phase 4 — the hub
 

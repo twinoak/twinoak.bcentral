@@ -27,8 +27,8 @@ Every message from a staff device to a field radio has the form
   message to that recipient. It is never reused and never reset — not per incident, not per
   day — for the lifetime of the register entry on that device.
 - Exactly one space follows the number, then the text.
-- Every outgoing message is numbered, including informational ones. There is no unnumbered
-  form.
+- Every outgoing **mesh** message is numbered, including informational ones. There is no
+  unnumbered mesh message. Messages on other transports are never numbered.
 - Length: a MeshCore text message is at most 160 bytes of UTF-8 (BaseChatMesh.h). Danish
   letters cost two bytes each and `#12 ` costs four. The app counts bytes, not characters, and
   refuses to send over the limit. Orders are short.
@@ -67,12 +67,17 @@ refer to the message, and the latest one wins. The chain:
 | `delivered` | the companion reported the delivery receipt (ACK) for it |
 | `roger` | an incoming message matched rule 1 or 2 above |
 | `given_up` | the app stopped retrying (default 3 attempts, configurable) |
+| `closed` | the staff stopped waiting for a confirmation (one click, optional note); the message leaves the unconfirmed list. Added 2026-11-16. |
 
-A message can go back from `given_up` to `sent` by a manual retry. `roger` is final.
+A message can go back from `given_up` to `sent` by a manual retry. `roger` and `closed` are
+final. A `closed` message is not `sent`/`delivered`, so a later `R`/`Rn` for it is an ordinary
+incoming message (rules 1 and 2 above) — the journal shows that the confirmation came after
+the staff had closed it, which is itself worth knowing.
 
-For non-mesh transports (`phone`, `courier`, `verbal`) the operator sets `sent`, `delivered`
-and `roger` by hand, from what the courier or the phone call told them. Same entries, same
-chain.
+**Non-mesh transports have no status chain** (changed 2026-11-16). A message that went out
+by `phone`, `courier` or `verbal` is a record of something that happened; it carries no
+`#n` and no `status_change` entries. If it needs following up — the courier is not back —
+the operator opens a *point* on it (`journal.schema.json`, `point`).
 
 ## Send to all
 

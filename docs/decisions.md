@@ -4,6 +4,9 @@ Newest first. One line per decision, with the reason. Reversals get a new row, n
 
 | Date | Decision | Why |
 | --- | --- | --- |
+| 2026-11-16 | The staff can close an unconfirmed radio message with one click; it is recorded as `closed` (staff stopped waiting), never as `roger` | People forget to send `R`; the list must be clearable without faking a confirmation. |
+| 2026-11-16 | `#n` numbering and the sent/delivered/confirmed chain exist only on MeshCore messages; a phone, courier or verbal message is a plain record, followed up with a point if needed | Marking a phone call sent/delivered/confirmed by hand describes nothing; the chain is the radio's receipt chain. Supersedes the 2026-10-28 "same chain, set by hand" rule. |
+| 2026-11-16 | A register entry is a contact — a person the staff talk to — with an optional radio (`publicKey` + `origin`) and an optional `phone` | A caller without a radio must be recordable; a free-text name on the message would split one person into spellings and lose history. |
 | 2026-11-16 | New entry type `point` (da *punkt*): a follow-up opened from any line, closed with a reason, reopenable; one per origin entry | The staff need a to-do list that comes out of the journal itself; the light answer to several things going on in one journal. |
 | 2026-11-16 | No backward compatibility with earlier journals or schema versions until the first real deployment | Nobody uses the system yet; no migrations, no tolerance code for old shapes. |
 | 2026-11-16 | Compose card: tab 1 "New record" (*Opret registrering*: note / incoming / outgoing by hand, non-radio transports only), tab 2 "MeshCore" (radio send only, no *Via* choice) | One job per tab; the same thing was possible from two places and neither name said what the tab was for. |
