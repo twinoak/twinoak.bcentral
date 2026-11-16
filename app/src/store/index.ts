@@ -46,7 +46,6 @@ import type {
   Incident,
   JournalEntry,
   NewRegisterEntry,
-  PendingRegisterRow,
   RegisterEntry,
   Status,
   Transport,
@@ -149,11 +148,6 @@ export async function saveRegisterEntry(entry: RegisterEntry): Promise<SaveResul
 
 // --- register import and export (P1-06) ------------------------------------------------
 
-export async function listPendingRegister(): Promise<PendingRegisterRow[]> {
-  const store = await journalStore();
-  return await store.pendingRegisterRows();
-}
-
 // A previewed file with no errors: stored, and noted in the current incident when one is open.
 export async function importRegisterPreview(
   preview: RegisterImportPreview,
@@ -167,19 +161,12 @@ export async function importRegisterPreview(
   });
 }
 
-export async function bindPendingRegisterRow(id: string, fields: NewRegisterEntry): Promise<RegisterEntry> {
-  const store = await journalStore();
-  return await store.bindPendingRegisterRow(id, fields);
-}
-
-// The register as a CSV file, downloaded: entries by label, then the pending rows by label
-// with an empty key. Returns the file name.
+// The register as a CSV file, downloaded: every contact by label. Returns the file name.
 export async function exportRegisterCsv(): Promise<string> {
   const store = await journalStore();
   const entries = sortedByLabel(await store.allRegisterEntries(), language());
-  const pending = sortedByLabel(await store.pendingRegisterRows(), language());
   const filename = registerCsvFilename(store.deviceId, now().timestamp);
-  downloadText(filename, registerCsv(entries, pending), "text/csv;charset=utf-8");
+  downloadText(filename, registerCsv(entries), "text/csv;charset=utf-8");
   return filename;
 }
 
@@ -268,7 +255,7 @@ export async function composeMessage(input: Omit<ComposeInput, "operator">): Pro
 }
 
 // The MeshCore tab (P3-01): a message over the radio, transport mesh always, the recipient a
-// register entry with a key. Sending is the outbox's job (src/radio/index.ts).
+// contact with a radio (P3-06). Sending is the outbox's job (src/radio/index.ts).
 export async function composeMeshMessage(input: Omit<MeshComposeInput, "operator">): Promise<Composed> {
   const store = await journalStore();
   return await composeMeshWithStore(store, { ...input, operator: settings.operatorName.trim() });

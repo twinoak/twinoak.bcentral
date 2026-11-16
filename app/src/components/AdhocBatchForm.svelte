@@ -5,7 +5,12 @@
   // a card under the toolbar.
   import { t } from "../i18n/index.svelte.ts";
   import type { NewRegisterEntry, RegisterEntry } from "../store/types.ts";
-  import { adhocLabels, isValidPublicKey, normalizePublicKey } from "../store/register.ts";
+  import {
+    adhocLabels,
+    isValidPublicKey,
+    normalizePublicKey,
+    radioContacts,
+  } from "../store/register.ts";
   import { DuplicatePublicKeyError } from "../store/journalStore.ts";
   import { addRegisterEntries } from "../store/index.ts";
   import type { Contact } from "../radio/contactSource.ts";
@@ -46,7 +51,8 @@
   );
 
   const existingLabels = $derived(new Set(existing.map((entry) => entry.label)));
-  const existingKeys = $derived(new Set(existing.map((entry) => entry.publicKey)));
+  // The keys in the register: the contacts with a radio (P3-06).
+  const existingKeys = $derived(new Set(radioContacts(existing).map((entry) => entry.publicKey)));
 
   interface Row {
     index: number;

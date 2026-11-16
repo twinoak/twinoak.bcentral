@@ -6,7 +6,12 @@
 
 import type { JournalStore } from "./journalStore.ts";
 import { NON_MESH_TRANSPORTS } from "./manual.ts";
-import { composeMessage, recordManualStatus, type Composed } from "./outgoing.ts";
+import {
+  assertRadioRecipient,
+  composeMessage,
+  recordManualStatus,
+  type Composed,
+} from "./outgoing.ts";
 import type { JournalEntry, Transport } from "./types.ts";
 
 export class HandoverError extends Error {
@@ -70,11 +75,13 @@ export interface StatusRequestInput {
 }
 
 // A mesh message_out "#n Meld status" to one radio, with that radio's next #n reserved as for
-// any message (and the ØVELSE prefix in a drill). Sending it is the outbox's job.
+// any message (and the ØVELSE prefix in a drill). The recipient has to be a contact with a
+// radio (P3-06: RecipientError otherwise, nothing reserved). Sending it is the outbox's job.
 export async function composeStatusRequest(
   store: JournalStore,
   input: StatusRequestInput,
 ): Promise<Composed> {
+  await assertRadioRecipient(store, input.counterpartyId);
   return await composeMessage(store, {
     incidentId: input.incidentId,
     operator: input.operator,

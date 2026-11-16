@@ -5,8 +5,8 @@
   // predicted "#n " prefix and the byte count against the 160-byte limit; Send is disabled
   // over it. On send the message is stored with its reserved #n and handed to the parent,
   // which sends it through the outbox and shows the progress. The recipient list is the
-  // register — entries with a public key; a row imported without one (P1-06) is not in it,
-  // and the store refuses it too.
+  // register's contacts with a radio (P3-06) and nothing else; a contact reached by phone,
+  // courier or in person is not in it, and the store refuses it too.
   //
   // Reply from the row (P1-02): the parent calls prefill() with the sender of an incoming
   // mesh message (lib/composePrefill.ts routes a reply by its transport); the form takes the
@@ -28,6 +28,7 @@
   import type { JournalEntry, RegisterEntry } from "../store/types.ts";
   import { composeMeshMessage, lastSeqNo } from "../store/index.ts";
   import { MAX_MESSAGE_BYTES, previewText, replySnippet } from "../store/outgoing.ts";
+  import { radioContacts } from "../store/register.ts";
   import { radio } from "../radio/index.ts";
   import Icon from "./Icon.svelte";
 
@@ -36,7 +37,8 @@
     // True in a drill incident (P1-05): the shown prefix and the byte counter carry the
     // ØVELSE prefix the store will put in front of the text.
     drill?: boolean;
-    // The register, sorted as the parent wants it shown.
+    // The register, sorted as the parent wants it shown; the form lists the contacts with a
+    // radio.
     register: readonly RegisterEntry[];
     // Called with the stored message_out; the parent sends it and reloads its list.
     onsent: (message: JournalEntry) => void;
@@ -45,6 +47,8 @@
     onreveal?: () => void;
   }
   let { incidentId, drill = false, register, onsent, onreveal }: Props = $props();
+
+  const recipients = $derived(radioContacts(register));
 
   let counterpartyId = $state("");
   let body = $state("");
@@ -191,9 +195,9 @@
   <div class="line">
     <div class="field recipient">
       <label for="send-recipient">{t("send.recipient")}</label>
-      <select id="send-recipient" bind:value={counterpartyId} disabled={register.length === 0}>
+      <select id="send-recipient" bind:value={counterpartyId} disabled={recipients.length === 0}>
         <option value="">{t("send.recipient.choose")}</option>
-        {#each register as entry (entry.id)}
+        {#each recipients as entry (entry.id)}
           <option value={entry.id}>{entry.label}</option>
         {/each}
       </select>
@@ -230,8 +234,8 @@
       <Icon name="warning" />{t("send.tooLong", { bytes: preview.bytes, max: MAX_MESSAGE_BYTES })}
     </p>
   {/if}
-  {#if register.length === 0}
-    <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.none")}</p>
+  {#if recipients.length === 0}
+    <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.noRadio")}</p>
   {/if}
   {#if !radioReady}
     <p class="msg msg-danger" role="alert"><Icon name="warning" />{t("send.noRadio")}</p>

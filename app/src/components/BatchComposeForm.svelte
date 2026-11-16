@@ -1,7 +1,8 @@
 <script lang="ts">
   // Compose one text for many recipients (P0-08; on the components in P2-04): pick them in
   // a checklist table grouped by street (a street's own checkbox takes the whole street, All
-  // and None take the register), type the text with the byte counter computed for the
+  // and None take every contact with a radio — a contact without one is not a recipient and
+  // not in any street group, P3-06), type the text with the byte counter computed for the
   // longest "#n " prefix among the chosen, and send. On send one message_out per recipient
   // is stored, all before any is transmitted, and the batch is handed to the send queue.
   // Ctrl+Enter sends from anywhere in the form, as in the journal's compose form. The look
@@ -12,7 +13,8 @@
   import { hasOperatorName } from "../lib/settings.svelte.ts";
   import { composeBatch, lastSeqNos } from "../store/index.ts";
   import { BatchComposeError, MAX_MESSAGE_BYTES, batchPreview } from "../store/outgoing.ts";
-  import type { JournalEntry, RegisterEntry } from "../store/types.ts";
+  import { radioContacts } from "../store/register.ts";
+  import type { JournalEntry, RadioContact, RegisterEntry } from "../store/types.ts";
   import { radio } from "../radio/index.ts";
   import Icon from "./Icon.svelte";
 
@@ -21,7 +23,8 @@
     // True in a drill incident (P1-05): the shown prefix and the byte counter carry the
     // ØVELSE prefix the store will put in front of every recipient's text.
     drill?: boolean;
-    // The register, sorted as the parent wants it shown.
+    // The register, sorted as the parent wants it shown; the form takes the contacts with a
+    // radio.
     register: readonly RegisterEntry[];
     // Called with the stored messages, in recipient order; the parent queues them. Called
     // with what was stored even when composing stopped part-way (the error is shown here).
@@ -29,30 +32,33 @@
   }
   let { incidentId, drill = false, register, onstored }: Props = $props();
 
-  // Which register entries are chosen, by id. A plain object so Svelte tracks the keys.
+  // The recipients: every contact with a radio, in the register's order.
+  const recipients = $derived(radioContacts(register));
+
+  // Which recipients are chosen, by id. A plain object so Svelte tracks the keys.
   let chosen: Record<string, boolean> = $state({});
   let body = $state("");
   let busy = $state(false);
   let error: string | null = $state(null);
 
   const chosenIds = $derived(
-    register.filter((entry) => chosen[entry.id] === true).map((entry) => entry.id),
+    recipients.filter((entry) => chosen[entry.id] === true).map((entry) => entry.id),
   );
-  const groups = $derived(groupByStreet(register, language()));
+  const groups = $derived(groupByStreet(recipients, language()));
 
   // Every recipient's last #n, re-read whenever the register changes or a batch was stored,
   // so the shown prefix is the one that will be reserved.
   let last: Map<string, number> = $state.raw(new Map());
-  let lastLoadedFor: readonly RegisterEntry[] | null = $state.raw(null);
-  async function loadLast(entries: readonly RegisterEntry[]) {
+  let lastLoadedFor: readonly RadioContact[] | null = $state.raw(null);
+  async function loadLast(entries: readonly RadioContact[]) {
     const loaded = await lastSeqNos(entries.map((entry) => entry.id));
-    if (register === entries) {
+    if (recipients === entries) {
       last = loaded;
       lastLoadedFor = entries;
     }
   }
   $effect(() => {
-    void loadLast(register);
+    void loadLast(recipients);
   });
 
   const preview = $derived(
@@ -66,7 +72,7 @@
   const canSend = $derived(
     hasOperatorName() &&
       chosenIds.length > 0 &&
-      lastLoadedFor === register &&
+      lastLoadedFor === recipients &&
       !preview.empty &&
       !preview.tooLong &&
       radioReady &&
@@ -79,7 +85,7 @@
 
   function chooseAll() {
     const next: Record<string, boolean> = {};
-    for (const entry of register) {
+    for (const entry of recipients) {
       next[entry.id] = true;
     }
     chosen = next;
@@ -94,7 +100,7 @@
   }
 
   // A street's checkbox: every entry of the street on or off, the rest untouched.
-  function toggleGroup(entries: readonly RegisterEntry[], on: boolean) {
+  function toggleGroup(entries: readonly RadioContact[], on: boolean) {
     for (const entry of entries) {
       chosen[entry.id] = on;
     }
@@ -130,7 +136,7 @@
       }
     } finally {
       busy = false;
-      await loadLast(register);
+      await loadLast(recipients);
     }
   }
 
@@ -159,10 +165,13 @@
     <!-- The recipients: a checklist table grouped by street. -->
     <div class="field recipients">
       <span class="field-label" id="batch-recipients-label"
-        >{t("queue.compose.recipients", { chosen: chosenIds.length, total: register.length })}</span
+        >{t("queue.compose.recipients", {
+          chosen: chosenIds.length,
+          total: recipients.length,
+        })}</span
       >
-      {#if register.length === 0}
-        <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.none")}</p>
+      {#if recipients.length === 0}
+        <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.noRadio")}</p>
       {:else}
         <div class="toolbar">
           <button type="button" class="btn btn-compact" onclick={chooseAll}>

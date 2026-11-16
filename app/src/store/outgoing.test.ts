@@ -421,22 +421,21 @@ describe("composeMeshMessage (the MeshCore tab, P3-01)", () => {
     store.close();
   });
 
-  it("refuses a pending register row (imported without a key) and an unknown id, and reserves nothing", async () => {
+  it("refuses a contact without a radio (P3-06) and an unknown id, and reserves nothing", async () => {
     const store = await storeWithHans();
-    const { pending } = await store.importRegister([], [{ label: "Peter", origin: "issued" }]);
-    const row = pending[0]!;
+    const grethe = await store.createRegisterEntry({ label: "Grethe", phone: "12 34 56 78" });
     await expect(
-      composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: row.id, body: "x" }),
+      composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: grethe.id, body: "x" }),
     ).rejects.toBeInstanceOf(RecipientError);
     await expect(
       composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: PETER, body: "x" }),
     ).rejects.toBeInstanceOf(RecipientError);
-    expect(await store.lastSeqNo(row.id)).toBe(0);
+    expect(await store.lastSeqNo(grethe.id)).toBe(0);
     expect(await store.allEntries()).toEqual([]);
-    // Bound to a radio, the same row is a recipient like any other.
-    const bound = await store.bindPendingRegisterRow(row.id, { publicKey: "7b".repeat(32), label: "Peter", origin: "issued" });
-    const { message } = await composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: bound.id, body: "x" });
-    expect(message.counterpartyId).toBe(row.id);
+    // Given a radio later (edit: key and origin), the same contact is a recipient like any other.
+    const withRadio = await store.putRegisterEntry({ ...grethe, publicKey: "7b".repeat(32), origin: "issued" });
+    const { message } = await composeMeshMessage(store, { incidentId: INCIDENT, operator: "Thomas", counterpartyId: withRadio.id, body: "x" });
+    expect(message.counterpartyId).toBe(grethe.id);
     expect(message.text).toBe("#1 x");
     store.close();
   });

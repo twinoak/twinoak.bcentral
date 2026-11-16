@@ -182,8 +182,11 @@ the top of the journal: name, clock confirm, radio connect — three fields, one
   title, the operator change and clock confirm in a slim card above them.
 - **Send to all**: compose card on top, the queue as a table below with a progress line
   (counts + time to drain) in the card title.
-- **Register**: a table with a toolbar (search box, Import, Export, Print, Add); add/edit in a
-  popover-sized card to the right or inline, not a separate page.
+- **Register**: a contact list (P3-06: a radio is optional) — a table with a toolbar (search
+  box, the radio filter All / Has radio / No radio, Import, Export, Print, Add contact); the
+  radio column is the glyph and the key's prefix, or a dash; add/edit in a popover-sized card
+  to the right or inline, not a separate page, with the radio's key and origin as one section
+  at the end of the form.
 - **Radio**: state card (transport buttons, self info, drift), contacts table, log as a
   monospaced 13 px row list newest first.
 - **Settings**: single column of cards, one per topic (Operator, Clock, Journal folder,
@@ -270,9 +273,10 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
   queued and reopens from the queue's title; the handover's row actions were always shown
-  until P3-04 put them in the open row; the register's Print is icon-only and its Notes
-  column is in the form, not the table; Settings has eight cards (Hub, for the phase-3 URL)
-  with a Save per card of typed values.
+  until P3-04 put them in the open row; the register's Print is icon-only and its Notes and
+  Origin columns are in the form, not the table (P3-06: the table shows phone and the radio
+  instead, the origin in the radio cell's tooltip); Settings has eight cards (Hub, for the
+  phase-3 URL) with a Save per card of typed values.
 - Print: the document is a `.doc` block in `components.css` (a sheet on screen under a
   toolbar, 12 pt black on white on paper), and the paper rules at the end of the same file
   turn every chip into its word and drop every edge and tint; the drill line keeps a black

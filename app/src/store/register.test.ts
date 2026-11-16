@@ -7,13 +7,17 @@ import { DuplicatePublicKeyError, type JournalStore } from "./journalStore.ts";
 import { ValidationError } from "./schema.ts";
 import {
   adhocLabels,
+  hasRadio,
   isValidPublicKey,
   normalizePublicKey,
   PUBLIC_KEY_PATTERN,
+  radioContacts,
+  REGISTER_FIELDS,
   registerChanges,
   registerChangeText,
   saveRegisterEntry,
   sortedByLabel,
+  withoutRadio,
 } from "./register.ts";
 import type { RegisterEntry } from "./types.ts";
 
@@ -448,6 +452,114 @@ describe("isIncidentOpen", () => {
     const incident = await store.createIncident({ name: "Strømsvigt", createdBy: "Thomas" });
     expect(await store.isIncidentOpen(incident.id)).toBe(true);
     store.close();
+  });
+});
+
+describe("contacts without a radio (P3-06)", () => {
+  it("an entry without a key validates and is stored with no key and no origin; phone as typed", async () => {
+    const store = await openTestStore();
+    const grethe = await store.createRegisterEntry({
+      label: "Grethe",
+      person: "Grethe Nielsen",
+      street: "Nørregade 12",
+      phone: "12 34 56 78",
+    });
+    expect(grethe).toStrictEqual({
+      id: grethe.id,
+      createdAt: grethe.createdAt,
+      createdOnDevice: "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+      label: "Grethe",
+      person: "Grethe Nielsen",
+      street: "Nørregade 12",
+      phone: "12 34 56 78",
+    });
+    expect("publicKey" in grethe).toBe(false);
+    expect("origin" in grethe).toBe(false);
+    expect(hasRadio(grethe)).toBe(false);
+    expect(await store.getRegisterEntry(grethe.id)).toStrictEqual(grethe);
+    // The envelope validates with her in it.
+    const envelope = await store.exportEnvelope();
+    expect(envelope.register).toStrictEqual([grethe]);
+    store.close();
+  });
+
+  it("two contacts without a key do not clash on the key, and one with a key sits beside them", async () => {
+    const store = await openTestStore();
+    const grethe = await store.createRegisterEntry({ label: "Grethe" });
+    const kurt = await store.createRegisterEntry({ label: "Kurt", phone: "87 65 43 21" });
+    const hans = await createRadio7(store);
+    expect((await store.allRegisterEntries()).map((entry) => entry.label).sort()).toStrictEqual([
+      "Grethe",
+      "Kurt",
+      "radio #7",
+    ]);
+    expect(radioContacts([grethe, kurt, hans])).toStrictEqual([hans]);
+    expect(await store.registerEntryByPublicKey(KEY_A)).toStrictEqual(hans);
+    // The batch path too: a keyless row beside a keyed one, all or nothing as before.
+    const batch = await store.createRegisterEntries([
+      { label: "Lise" },
+      { label: "radio #8", origin: "adhoc", publicKey: KEY_B },
+    ]);
+    expect(batch.map((entry) => entry.publicKey)).toStrictEqual([undefined, KEY_B]);
+    store.close();
+  });
+
+  it("refuses a key without an origin and an origin without a key, at the store", async () => {
+    const store = await openTestStore();
+    await expect(
+      store.createRegisterEntry({ label: "Hans", publicKey: KEY_A }),
+    ).rejects.toThrow(ValidationError);
+    await expect(
+      store.createRegisterEntry({ label: "Grethe", origin: "issued" }),
+    ).rejects.toThrow(ValidationError);
+    await expect(
+      store.createRegisterEntries([{ label: "Grethe" }, { label: "Hans", publicKey: KEY_A }]),
+    ).rejects.toThrow(ValidationError);
+    expect(await store.allRegisterEntries()).toStrictEqual([]);
+    // An edit cannot drop one of the two either.
+    const hans = await createRadio7(store);
+    const withoutOrigin: RegisterEntry = { ...withoutRadio(hans), publicKey: KEY_A };
+    await expect(store.putRegisterEntry(withoutOrigin)).rejects.toThrow(ValidationError);
+    expect(await store.getRegisterEntry(hans.id)).toStrictEqual(hans);
+    store.close();
+  });
+
+  it("a contact given a radio later is a radio contact; the key is checked as for any entry", async () => {
+    const store = await openTestStore();
+    const grethe = await store.createRegisterEntry({ label: "Grethe", phone: "12 34 56 78" });
+    await createRadio7(store);
+    await expect(
+      store.putRegisterEntry({ ...grethe, publicKey: KEY_A, origin: "private" }),
+    ).rejects.toThrow(DuplicatePublicKeyError);
+    const withRadio = await store.putRegisterEntry({ ...grethe, publicKey: KEY_B, origin: "private" });
+    expect(hasRadio(withRadio)).toBe(true);
+    expect(await store.registerEntryByPublicKey(KEY_B)).toStrictEqual(withRadio);
+    // And the other way: the radio taken back, the key is free again.
+    const back = await store.putRegisterEntry(withoutRadio(withRadio));
+    expect(hasRadio(back)).toBe(false);
+    expect(back).toStrictEqual({ ...grethe });
+    expect(await store.registerEntryByPublicKey(KEY_B)).toBeUndefined();
+    store.close();
+  });
+
+  it("the edit note says what the radio change was, and a phone change", () => {
+    const grethe: RegisterEntry = {
+      id: "01JB8ZK3QX9V2M4N6P8R0T2W60",
+      label: "Grethe",
+      createdAt: "2026-10-28T18:00:00Z",
+      createdOnDevice: "01JB8ZK3QX9V2M4N6P8R0T2W4Y",
+    };
+    expect(registerChanges(grethe, { ...grethe, publicKey: KEY_B, origin: "private" })).toStrictEqual([
+      { field: "publicKey", from: undefined, to: KEY_B },
+      { field: "origin", from: undefined, to: "private" },
+    ]);
+    expect(registerChangeText(grethe, { ...grethe, publicKey: KEY_B, origin: "private" })).toBe(
+      `register: Grethe, Public key (none) → ${KEY_B}, Origin (none) → Privately owned`,
+    );
+    expect(registerChangeText(grethe, { ...grethe, phone: "12 34 56 78" })).toBe(
+      "register: Grethe, Phone (none) → 12 34 56 78",
+    );
+    expect(REGISTER_FIELDS).toContain("phone");
   });
 });
 

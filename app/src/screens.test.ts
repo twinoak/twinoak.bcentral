@@ -10,12 +10,26 @@
 // its numbers right-aligned, and the transition sheet is gone (P2-05 took the print pages,
 // its last users, onto the components).
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const srcDir = fileURLToPath(new URL(".", import.meta.url));
+
+// Every source file under src/: .ts, .svelte, .json (the catalogs), .css.
+function sourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...sourceFiles(path));
+    } else if (/\.(ts|svelte|json|css)$/.test(entry.name)) {
+      files.push(path);
+    }
+  }
+  return files;
+}
 
 const PAGES = [
   "pages/HandoverPage.svelte",
@@ -131,7 +145,7 @@ describe("the other screens (P2-04)", () => {
     expect(page).toContain('t("queue.pausedShort")');
     expect(page).toContain("composeOpen = false");
     const form = read("components/BatchComposeForm.svelte");
-    expect(form).toContain("groupByStreet(register, language())");
+    expect(form).toContain("groupByStreet(recipients, language())");
     expect(form).toContain('<th scope="rowgroup" colspan="3">');
     expect(form).toContain('type="checkbox"');
     expect(form).toContain('class="counter" class:field-error={preview.tooLong}');
@@ -150,13 +164,71 @@ describe("the other screens (P2-04)", () => {
     expect(page).toContain("<RegisterForm");
     expect(page).toContain("<AdhocBatchForm");
     expect(page).toContain("<RegisterImport");
-    expect(page).toContain("t(`register.origin.short.${entry.origin}`)");
     expect(page).toContain("heardText(entry)");
-    expect(page).toContain('class="pending"');
     expect(page).toContain("showToast(message)");
     const importForm = read("components/RegisterImport.svelte");
     expect(importForm).toContain('class="table-box preview"');
     expect(importForm).toContain("chipClass(ROW_TINT[status])");
+  });
+
+  it("the register is a contact list (P3-06): the radio filter, the phone and radio columns, the form's radio section", () => {
+    const page = read("pages/RegisterPage.svelte");
+    expect(page).toContain("filterByRadio(filterRegister(sorted, query), radioFilter)");
+    expect(page).toContain("{#each RADIO_FILTERS as option (option)}");
+    expect(page).toContain('t("register.field.phone")');
+    expect(page).toContain('t("register.field.radio")');
+    expect(page).toContain('aria-label={t("register.radio.none")}>—</span>');
+    expect(page).toContain("entry.publicKey.slice(0, 12)");
+    expect(page).not.toContain('t("register.field.origin")');
+    const form = read("components/RegisterForm.svelte");
+    expect(form).toContain("registerFieldsFrom(drafts, existing, entry?.id)");
+    expect(form).toContain(
+      '<div class="radio" role="group" aria-labelledby="register-radio-heading" data-register-radio>',
+    );
+    expect(form).toContain("disabled={!check.hasRadio}");
+    expect(form).toContain('type="tel"');
+    const print = read("pages/PrintRegisterPage.svelte");
+    expect(print).toContain('t("register.field.phone")');
+    expect(print).toContain('t("register.field.radio")');
+    // The MeshCore tab and send to all list the contacts with a radio, nothing else; the New
+    // record tab lists every contact.
+    expect(read("components/ComposeForm.svelte")).toContain("radioContacts(register)");
+    expect(read("components/ComposeForm.svelte")).toContain(
+      "{#each recipients as entry (entry.id)}",
+    );
+    expect(read("components/BatchComposeForm.svelte")).toContain(
+      "groupByStreet(recipients, language())",
+    );
+    expect(read("components/ManualEntryForm.svelte")).toContain(
+      "{#each register as entry (entry.id)}",
+    );
+  });
+
+  it("the pending-row flow of P1-06 has no remaining reference in the sources (P3-06)", () => {
+    const gone = [
+      "pendingRegister",
+      "PendingRegisterRow",
+      "pendingRegisterRows",
+      "bindPendingRegisterRow",
+      "NoPendingRowError",
+      "listPendingRegister",
+      "register.pending",
+      "register.bind",
+      "register.bound",
+      "register.pendingGone",
+      "register.formTitle.bind",
+      "importedWithPending",
+      "notePending",
+    ];
+    for (const file of sourceFiles(srcDir)) {
+      if (file.endsWith("screens.test.ts")) {
+        continue;
+      }
+      const text = readFileSync(file, "utf8");
+      for (const word of gone) {
+        expect(text, `${file} still says ${word}`).not.toContain(word);
+      }
+    }
   });
 
   it("the radio is a state card, a contacts table and a monospaced log list with Clear", () => {

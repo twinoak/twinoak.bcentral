@@ -10,10 +10,8 @@ import {
   META_DEVICE_SEQ,
   META_JOURNAL_FOLDER,
   META_LAST_PRINT_AT,
-  metaPendingRegisterKey,
   metaSeqNoKey,
   openDatabase,
-  pendingRegisterKeyRange,
   type JournalDatabase,
   type JournalDb,
 } from "./db.ts";
@@ -35,9 +33,7 @@ import {
   type NewIncident,
   type NewJournalEntry,
   type NewMessageOut,
-  type NewPendingRegisterRow,
   type NewRegisterEntry,
-  type PendingRegisterRow,
   type RegisterEntry,
   type Status,
 } from "./types.ts";
@@ -91,7 +87,8 @@ export class DrillChangeError extends Error {
 
 // Thrown by the register write paths when another entry already holds the public key. One
 // radio is one register entry; a key is never shared (P0-03). The unique by-publicKey index
-// is the second line of defence behind this check.
+// is the second line of defence behind this check. A contact without a radio has no key and
+// nothing to clash on (P3-06).
 export class DuplicatePublicKeyError extends Error {
   readonly publicKey: string;
   readonly existingId: string;
@@ -114,31 +111,20 @@ export type Written =
 
 export type WriteListener = (written: Written) => void;
 
-// Thrown by bindPendingRegisterRow when the id is not a pending row (already bound, or never
-// imported).
-export class NoPendingRowError extends Error {
-  constructor(id: string) {
-    super(`no pending register row ${id}`);
-    this.name = "NoPendingRowError";
-  }
-}
-
 type RegisterWriteStore = IDBPObjectStore<JournalDb, ("register" | "meta")[], "register", "readwrite">;
 type EntriesWriteStore = IDBPObjectStore<JournalDb, ("entries" | "meta")[], "entries", "readwrite">;
 type MetaWriteStore = IDBPObjectStore<JournalDb, ("entries" | "meta")[], "meta", "readwrite">;
 
 // Inside the write transaction, so a concurrent write cannot slip in between check and put.
+// Only among the entries that have a key: a contact without a radio is not in the index.
 async function assertPublicKeyFree(register: RegisterWriteStore, entry: RegisterEntry): Promise<void> {
+  if (entry.publicKey === undefined) {
+    return;
+  }
   const holder = await register.index("by-publicKey").get(entry.publicKey);
   if (holder !== undefined && holder.id !== entry.id) {
     throw new DuplicatePublicKeyError(entry.publicKey, holder.id);
   }
-}
-
-// A pending row is the one kind of object under a pendingRegister: key; anything else there
-// is treated as absent rather than handed out as a row.
-function isPendingRegisterRow(value: unknown): value is PendingRegisterRow {
-  return typeof value === "object" && value !== null && "label" in value && !("publicKey" in value);
 }
 
 export class JournalStore {
@@ -356,11 +342,10 @@ export class JournalStore {
 
   // The journal folder's directory handle, kept across restarts; undefined when no folder
   // is set. The browser keeps the handle, not the permission (store/mirror.svelte.ts).
-  // Under this key only a handle is ever stored; the check tells it from the other object
-  // kind in meta (a pending register row, P1-06) by what that one always has.
+  // Under this key only a handle is ever stored.
   async journalFolder(): Promise<FileSystemDirectoryHandle | undefined> {
     const value = await this.db.get("meta", META_JOURNAL_FOLDER);
-    return typeof value === "object" && !isPendingRegisterRow(value) ? value : undefined;
+    return typeof value === "object" ? value : undefined;
   }
 
   async setJournalFolder(handle: FileSystemDirectoryHandle): Promise<void> {
@@ -430,8 +415,9 @@ export class JournalStore {
 
   // --- register ------------------------------------------------------------------------
 
-  // The single write path for register entries: validate, check that no other entry holds
-  // the public key, then put (insert or replace by id). Register entries are mutable; the
+  // The single write path for register entries: validate (the schema refuses a key without
+  // an origin and an origin without a key, P3-06), check that no other entry holds the
+  // public key, then put (insert or replace by id). Register entries are mutable; the
   // journal note about an edit is the caller's business (register.ts).
   async putRegisterEntry(entry: RegisterEntry): Promise<RegisterEntry> {
     const value = withoutUndefined(entry);
@@ -461,8 +447,10 @@ export class JournalStore {
   }
 
   // Several new entries in one transaction, all or nothing: the ad hoc batch ("radio #1" …
-  // "radio #N"). A key that is invalid, already in the register or repeated within the batch
-  // leaves the store untouched. Returns the entries in input order.
+  // "radio #N") and the CSV import (P1-06; since P3-06 a row without a key is a contact
+  // without a radio, stored like any other). A key that is invalid, already in the register
+  // or repeated within the batch leaves the store untouched. Returns the entries in input
+  // order.
   async createRegisterEntries(inputs: readonly NewRegisterEntry[]): Promise<RegisterEntry[]> {
     const values: RegisterEntry[] = [];
     for (const input of inputs) {
@@ -491,106 +479,6 @@ export class JournalStore {
         this.notify({ kind: "registerEntry", value });
       }
       return values;
-    } catch (error) {
-      await abortQuietly(tx);
-      throw error;
-    }
-  }
-
-  // The CSV import (P1-06), all or nothing in one transaction: the rows with a key become
-  // register entries (validated first, each key checked against the store and against the
-  // rows before it), the rows without one are kept in meta as pending rows. Returns both in
-  // input order, with their ids and stamps.
-  async importRegister(
-    entries: readonly NewRegisterEntry[],
-    pending: readonly NewPendingRegisterRow[],
-  ): Promise<{ entries: RegisterEntry[]; pending: PendingRegisterRow[] }> {
-    const entryValues: RegisterEntry[] = [];
-    for (const input of entries) {
-      const reading = this.clock();
-      const value = withoutUndefined({
-        ...input,
-        id: ulid(),
-        createdAt: reading.timestamp,
-        createdOnDevice: this.deviceId,
-      });
-      assertValid(validateRegisterEntry, value, "registerEntry");
-      entryValues.push(value);
-    }
-    const pendingValues: PendingRegisterRow[] = [];
-    for (const input of pending) {
-      const reading = this.clock();
-      // Validated as a register entry would be, with a placeholder key, so a pending row
-      // never holds anything the schema would refuse once a key is bound.
-      const value = withoutUndefined({
-        ...input,
-        id: ulid(),
-        createdAt: reading.timestamp,
-        createdOnDevice: this.deviceId,
-      });
-      assertValid(validateRegisterEntry, { ...value, publicKey: "0".repeat(64) }, "registerEntry");
-      pendingValues.push(value);
-    }
-
-    const tx = this.db.transaction(["register", "meta"], "readwrite");
-    try {
-      const register = tx.objectStore("register");
-      const meta = tx.objectStore("meta");
-      for (const value of entryValues) {
-        await assertPublicKeyFree(register, value);
-        await register.add(value);
-      }
-      for (const value of pendingValues) {
-        await meta.add(value, metaPendingRegisterKey(value.id));
-      }
-      await tx.done;
-      for (const value of entryValues) {
-        this.notify({ kind: "registerEntry", value });
-      }
-      return { entries: entryValues, pending: pendingValues };
-    } catch (error) {
-      await abortQuietly(tx);
-      throw error;
-    }
-  }
-
-  // The rows imported without a key, in id order (so in import order).
-  async pendingRegisterRows(): Promise<PendingRegisterRow[]> {
-    const values = await this.db.getAll("meta", pendingRegisterKeyRange());
-    return values.filter(isPendingRegisterRow);
-  }
-
-  async getPendingRegisterRow(id: string): Promise<PendingRegisterRow | undefined> {
-    const value = await this.db.get("meta", metaPendingRegisterKey(id));
-    return isPendingRegisterRow(value) ? value : undefined;
-  }
-
-  // Binds a key to a pending row: the row becomes a register entry with the same id and
-  // stamps, with the fields as given (the staff may correct them while binding), and leaves
-  // the pending list, in one transaction. The key is checked like any other register write.
-  async bindPendingRegisterRow(id: string, fields: NewRegisterEntry): Promise<RegisterEntry> {
-    const tx = this.db.transaction(["register", "meta"], "readwrite");
-    try {
-      const meta = tx.objectStore("meta");
-      const key = metaPendingRegisterKey(id);
-      const row = await meta.get(key);
-      if (!isPendingRegisterRow(row)) {
-        throw new NoPendingRowError(id);
-      }
-      const value = withoutUndefined({
-        ...fields,
-        id: row.id,
-        createdAt: row.createdAt,
-        createdOnDevice: row.createdOnDevice,
-      });
-      assertValid(validateRegisterEntry, value, "registerEntry");
-      const register = tx.objectStore("register");
-      await assertPublicKeyFree(register, value);
-      await register.add(value);
-      await meta.delete(key);
-      await tx.done;
-      this.notify({ kind: "registerEntry", value });
-      return value;
     } catch (error) {
       await abortQuietly(tx);
       throw error;

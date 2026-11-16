@@ -8,7 +8,8 @@
 
 import { mintId, type JournalStore } from "./journalStore.ts";
 import { isDrill } from "./incidents.ts";
-import type { JournalEntry, Status, Transport } from "./types.ts";
+import { hasRadio } from "./register.ts";
+import type { JournalEntry, RadioContact, Status, Transport } from "./types.ts";
 
 // A MeshCore text message is at most 160 bytes of UTF-8 (text-protocol.md; MAX_TEXT_LEN in
 // src/radio/serial.ts is the same number, and outgoing.test.ts checks that they agree).
@@ -187,13 +188,27 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
   return { message };
 }
 
-// The recipient of a radio message has to be a register entry: a public key to send to. A
-// pending row (P1-06, imported without a key) is not one, and nothing else is either.
+// The recipient of a radio message has to be a contact with a radio: a public key to send
+// to (P3-06). A contact reached by phone, courier or in person is not one, and an id that is
+// not in the register is not one either.
 export class RecipientError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RecipientError";
   }
+}
+
+// The register entry a radio message may go to, or RecipientError: the one check behind the
+// MeshCore tab and the handover's status request.
+export async function assertRadioRecipient(store: JournalStore, counterpartyId: string): Promise<RadioContact> {
+  const entry = await store.getRegisterEntry(counterpartyId);
+  if (entry === undefined) {
+    throw new RecipientError(`register entry ${counterpartyId} does not exist`);
+  }
+  if (!hasRadio(entry)) {
+    throw new RecipientError(`contact "${entry.label}" (${counterpartyId}) has no radio`);
+  }
+  return entry;
 }
 
 export interface MeshComposeInput {
@@ -205,13 +220,11 @@ export interface MeshComposeInput {
 }
 
 // The MeshCore tab's path (P3-01): a message over the radio and nothing else. The transport
-// is mesh, always; the recipient is checked against the register first, so a pending row —
-// never listed by the form, but any id can reach the store — is refused before anything is
-// reserved. Sending the stored message is the outbox's job.
+// is mesh, always; the recipient is checked against the register first, so a contact
+// without a radio — never listed by the form, but any id can reach the store — is refused
+// before anything is reserved. Sending the stored message is the outbox's job.
 export async function composeMeshMessage(store: JournalStore, input: MeshComposeInput): Promise<Composed> {
-  if ((await store.getRegisterEntry(input.counterpartyId)) === undefined) {
-    throw new RecipientError(`register entry ${input.counterpartyId} does not exist`);
-  }
+  await assertRadioRecipient(store, input.counterpartyId);
   return await composeMessage(store, {
     incidentId: input.incidentId,
     operator: input.operator,

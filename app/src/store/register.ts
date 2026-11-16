@@ -1,11 +1,12 @@
 // Register logic above the store (P0-03): public key validation as the contract spells it,
-// the ad hoc batch labels, what an edit changed as journal text, and the edit itself with
-// its note. The store validates and keeps keys unique; this module decides what to write.
+// which contacts have a radio (P3-06), the ad hoc batch labels, what an edit changed as
+// journal text, and the edit itself with its note. The store validates and keeps keys
+// unique; this module decides what to write.
 
 import schema from "../../../contract/journal.schema.json";
 import { t } from "../i18n/index.svelte.ts";
 import type { JournalStore } from "./journalStore.ts";
-import type { JournalEntry, RegisterEntry, RegisterOrigin } from "./types.ts";
+import type { JournalEntry, RadioContact, RegisterEntry, RegisterOrigin } from "./types.ts";
 
 // The contract's publicKey pattern, read from the schema so there is one definition.
 export const PUBLIC_KEY_PATTERN = new RegExp(schema.$defs.publicKey.pattern);
@@ -14,6 +15,28 @@ export const REGISTER_ORIGINS: readonly RegisterOrigin[] = ["issued", "adhoc", "
 
 export function isValidPublicKey(value: string): boolean {
   return PUBLIC_KEY_PATTERN.test(value);
+}
+
+// A contact with a radio: a public key, and with it the origin the schema requires (P3-06).
+// Only these can be reached over MeshCore; everything that sends on the radio — the MeshCore
+// tab, send to all, the status request, the outbox — takes this and nothing else.
+export function hasRadio(entry: RegisterEntry): entry is RadioContact {
+  return entry.publicKey !== undefined && entry.origin !== undefined;
+}
+
+// The register's radio contacts, in the order given.
+export function radioContacts(entries: readonly RegisterEntry[]): RadioContact[] {
+  return entries.filter(hasRadio);
+}
+
+// The entry with its radio taken away: no key, no origin. An edit replaces the radio's two
+// fields together (a spread over the old entry would keep the old ones), and a contact that
+// hands the radio back loses both.
+export function withoutRadio(entry: RegisterEntry): RegisterEntry {
+  const rest = { ...entry };
+  delete rest.publicKey;
+  delete rest.origin;
+  return rest;
 }
 
 // What the form does with typed or pasted input before validating it: surrounding whitespace
@@ -36,16 +59,17 @@ export function adhocLabels(first: number, count: number): string[] {
   return labels;
 }
 
-// The fields the staff edit, in the order they are reported. The stamps (id, createdAt,
-// createdOnDevice) never change.
+// The fields the staff edit, in the order they are reported (the form's order, the radio's
+// two last). The stamps (id, createdAt, createdOnDevice) never change.
 export const REGISTER_FIELDS = [
   "label",
   "person",
   "street",
   "role",
-  "origin",
+  "phone",
   "notes",
   "publicKey",
+  "origin",
 ] as const;
 
 export type RegisterField = (typeof REGISTER_FIELDS)[number];
@@ -85,8 +109,9 @@ function shown(field: RegisterField, value: string | undefined): string {
 }
 
 // The journal text for an edit: "register: radio #7 → Hans, Street (none) → Nørregade". The
-// label comes first (old → new when it changed), then every other changed field by name.
-// null when nothing changed.
+// label comes first (old → new when it changed), then every other changed field by name; a
+// radio given to a contact reads "Public key (none) → 7a…, Origin (none) → Issued by the
+// association". null when nothing changed.
 export function registerChangeText(before: RegisterEntry, after: RegisterEntry): string | null {
   const changes = registerChanges(before, after);
   if (changes.length === 0) {
@@ -150,8 +175,7 @@ export async function saveRegisterEntry(
 }
 
 // The register screen's order: by label in the UI language, numbers compared as numbers so
-// "radio #2" comes before "radio #10"; ties broken by id so the order is stable. Also for
-// the pending rows (P1-06), which have a label and an id too.
+// "radio #2" comes before "radio #10"; ties broken by id so the order is stable.
 export function sortedByLabel<T extends { id: string; label: string }>(
   entries: readonly T[],
   locale: string,

@@ -2,14 +2,17 @@
   // The CSV import (P1-06; on the components in P2-04): pick a file, see every row and every
   // error before anything is written, then import all of it in one go. The rules are
   // store/registerCsv.ts's; this component only shows the preview — a table in the card the
-  // register page gives it, one chip per row for add / not yet bound / error — and asks for
-  // the commit. There is no editing here: a file with an error is fixed where it came from
-  // and picked again.
+  // register page gives it, one chip per row for with radio / without radio / error (P3-06:
+  // a row without a key is a contact without a radio, nothing waits for a key) — and asks
+  // for the commit. There is no editing here: a file with an error is fixed where it came
+  // from and picked again.
   import { t } from "../i18n/index.svelte.ts";
   import { chipClass, type ChipTint } from "../lib/journalRows.ts";
   import type { RegisterEntry } from "../store/types.ts";
+  import { hasRadio } from "../store/register.ts";
   import {
     csvErrorText,
+    previewCounts,
     previewRegisterImport,
     type CsvRow,
     type RegisterImportPreview,
@@ -32,18 +35,13 @@
   let busy = $state(false);
   let error: string | null = $state(null);
 
-  // What the summary line says: the rows that would be added or kept pending, and the errors.
+  // What the summary line says: the rows with a radio, the rows without, and the errors.
   const counts = $derived.by(() => {
     const current = preview;
     if (current === null) {
       return null;
     }
-    const clean = current.rows.filter((row) => row.errors.length === 0);
-    return {
-      add: clean.filter((row) => row.publicKey !== "").length,
-      pending: clean.filter((row) => row.publicKey === "").length,
-      errors: current.errors.length,
-    };
+    return { ...previewCounts(current), errors: current.errors.length };
   });
   const canImport = $derived.by(() => {
     const current = preview;
@@ -54,20 +52,20 @@
     return failure instanceof Error ? failure.message : String(failure);
   }
 
-  type RowStatus = "error" | "add" | "pending";
+  type RowStatus = "error" | "radio" | "noRadio";
 
   function rowStatus(row: CsvRow): RowStatus {
     if (row.errors.length > 0) {
       return "error";
     }
-    return row.publicKey === "" ? "pending" : "add";
+    return row.publicKey === "" ? "noRadio" : "radio";
   }
 
-  // The row's chip: ok for a row that is added, grey for one that waits for its key, danger
-  // for one with an error (the words tell them apart as well).
+  // The row's chip: ok for a contact with a radio, grey for one without, danger for a row
+  // with an error (the words tell them apart as well).
   const ROW_TINT: Readonly<Record<RowStatus, ChipTint>> = {
-    add: "ok",
-    pending: "neutral",
+    radio: "ok",
+    noRadio: "neutral",
     error: "danger",
   };
 
@@ -101,8 +99,8 @@
       const result = await importRegisterPreview(preview, fileName);
       onimported(
         t(result.note === null ? "register.import.imported" : "register.import.importedWithNote", {
-          entries: result.entries.length,
-          pending: result.pending.length,
+          count: result.entries.length,
+          radios: result.entries.filter(hasRadio).length,
           file: fileName,
         }),
       );
@@ -134,8 +132,8 @@
     <p class="msg" role="status">
       <Icon name="import" />{t("register.import.summary", {
         file: fileName,
-        add: counts.add,
-        pending: counts.pending,
+        radios: counts.withRadio,
+        noRadios: counts.withoutRadio,
         errors: counts.errors,
       })}
     </p>
@@ -168,6 +166,7 @@
               <th scope="col">{t("register.field.person")}</th>
               <th scope="col">{t("register.field.street")}</th>
               <th scope="col">{t("register.field.role")}</th>
+              <th scope="col">{t("register.field.phone")}</th>
               <th scope="col">{t("register.field.origin")}</th>
               <th scope="col">{t("register.field.publicKey")}</th>
               <th scope="col">{t("register.field.notes")}</th>
@@ -183,7 +182,12 @@
                 <td>{row.person ?? ""}</td>
                 <td>{row.street ?? ""}</td>
                 <td>{row.role ?? ""}</td>
-                <td>{t(`register.origin.short.${row.origin}`)}</td>
+                <td>{row.phone ?? ""}</td>
+                <td>
+                  {#if row.origin !== undefined}
+                    {t(`register.origin.short.${row.origin}`)}
+                  {/if}
+                </td>
                 <td>
                   {#if row.publicKey !== ""}
                     <code title={row.publicKey}>{row.publicKey.slice(0, 12)}…</code>
@@ -192,7 +196,7 @@
                 <td class="notes">{row.notes ?? ""}</td>
                 <td class="status">
                   <span class="chip {chipClass(ROW_TINT[status])}">
-                    <span class="chip-dot" class:chip-dot-outline={status === "pending"}></span>{t(
+                    <span class="chip-dot" class:chip-dot-outline={status === "noRadio"}></span>{t(
                       `register.import.row.${status}`,
                     )}
                   </span>

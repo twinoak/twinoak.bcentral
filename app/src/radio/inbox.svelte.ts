@@ -16,6 +16,7 @@ import { t } from "../i18n/index.svelte.ts";
 import { dedupeKey } from "../store/dedupeKey.ts";
 import { applyIncoming } from "../store/incoming.ts";
 import { DuplicatePublicKeyError, type JournalStore } from "../store/journalStore.ts";
+import { radioContacts } from "../store/register.ts";
 import type { JournalEntry, RegisterEntry } from "../store/types.ts";
 import type { PushListener } from "./radioStore.svelte.ts";
 import {
@@ -99,9 +100,9 @@ export function createInbox(deps: InboxDeps): Inbox {
   });
 
   // The sender's full public key for a 6-byte prefix: the contact list first, then the list
-  // read again (the message may be from a contact added since connect), then the register
-  // (an entry typed by hand whose radio the companion has since forgotten). Null when none
-  // of them has exactly one key with that prefix.
+  // read again (the message may be from a contact added since connect), then the register's
+  // contacts with a radio (an entry typed by hand whose radio the companion has since
+  // forgotten). Null when none of them has exactly one key with that prefix.
   async function resolveSender(store: JournalStore, prefix: string): Promise<string | null> {
     const known = findByKeyPrefix(deps.contacts(), prefix);
     if (known !== null) {
@@ -115,13 +116,14 @@ export function createInbox(deps: InboxDeps): Inbox {
     } catch (error) {
       log(`contact list refresh failed: ${describeError(error)}`);
     }
-    const registered = findByKeyPrefix(await store.allRegisterEntries(), prefix);
+    const registered = findByKeyPrefix(radioContacts(await store.allRegisterEntries()), prefix);
     return registered?.publicKey ?? null;
   }
 
-  // The register entry for a public key, created when there is none: origin private, label
-  // "unknown <prefix>", for the staff to rename. A lost race with another writer (the same
-  // key stored between the lookup and the create) ends in the entry that won.
+  // The register entry for a public key, created when there is none: a contact with the key
+  // and origin private, label "unknown <prefix>", for the staff to rename (unchanged by
+  // P3-06). A lost race with another writer (the same key stored between the lookup and the
+  // create) ends in the entry that won.
   async function registerEntryFor(
     store: JournalStore,
     publicKey: string,

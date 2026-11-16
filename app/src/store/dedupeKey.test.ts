@@ -20,8 +20,8 @@ describe("dedupeKey", () => {
     expect(incoming.length).toBe(2);
     for (const entry of incoming) {
       const sender = walkthrough.register.find((r) => r.id === entry.counterpartyId);
-      if (sender === undefined || entry.text === undefined) {
-        throw new Error("walkthrough message_in is missing its sender or text");
+      if (sender?.publicKey === undefined || entry.text === undefined) {
+        throw new Error("walkthrough message_in is missing its sender's key or its text");
       }
       const key = await dedupeKey(sender.publicKey, epochSeconds(entry.timestamp), entry.text);
       expect(key).toBe(entry.dedupeKey);
