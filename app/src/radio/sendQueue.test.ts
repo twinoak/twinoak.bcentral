@@ -9,7 +9,7 @@ import {
   sentOnlyReply,
   type SentText,
 } from "../test-support/companionFrames.ts";
-import { composeBatch, composeMessage } from "../store/outgoing.ts";
+import { composeBatch, composeMessage, recordManualStatus } from "../store/outgoing.ts";
 import type { JournalStore } from "../store/journalStore.ts";
 import type { JournalEntry, RegisterEntry } from "../store/types.ts";
 import { createOutbox, type Outbox } from "./outbox.svelte.ts";
@@ -526,6 +526,89 @@ describe("send queue (send to all, P0-08)", () => {
     expect(await statuses(store, messages)).toEqual(["delivered", "roger", "delivered"]);
     expect(queue.errors().get(messages[1]?.id ?? "")).toMatch(/^The message is roger/);
     expect(queue.errors().size).toBe(1);
+    await radio.disconnect();
+  });
+
+  // P3-08: a waiting message leaves the queue when the operator marks it by hand.
+  it("cancel while paused: the recipient marked by hand never goes out, the batch keeps draining the others", async () => {
+    const { store, radio, companion, queue, batch } = await setUp({ recipients: 3, gapMs: 10 });
+    const messages = await batch();
+    const [created] = queue.enqueue(messages) as [Batch];
+    expect(queue.phase()).toBe("paused");
+    const marked = messages[1] as JournalEntry;
+
+    expect(queue.cancel(marked.id)).toBe(true);
+    expect(queue.waiting()).toEqual([messages[0]?.id, messages[2]?.id]);
+    expect(queue.isWaiting(marked.id)).toBe(false);
+    expect(queue.phase()).toBe("paused");
+    // The batch keeps its row: the queue screen shows the mark.
+    expect(queue.batches()).toEqual([created]);
+    // Not held, so not queued twice either.
+    expect(queue.cancel(marked.id)).toBe(false);
+    await recordManualStatus(store, marked, "given_up", {
+      operator: "Thomas",
+      text: "radio i stykker",
+    });
+    expect(await store.statusOf(marked.id)).toBe("given_up");
+
+    await connectedRadio(radio);
+    await untilIdle(queue);
+    expect(companion.sends).toHaveLength(2);
+    expect(companion.sends.map((s) => s.keyPrefix)).toEqual([
+      (messages[0] &&
+        (await store.getRegisterEntry(messages[0].counterpartyId ?? ""))?.publicKey?.slice(
+          0,
+          12,
+        )) ??
+        "",
+      (messages[2] &&
+        (await store.getRegisterEntry(messages[2].counterpartyId ?? ""))?.publicKey?.slice(
+          0,
+          12,
+        )) ??
+        "",
+    ]);
+    expect(await statuses(store, messages)).toEqual(["delivered", "given_up", "delivered"]);
+    expect(queue.errors().size).toBe(0);
+    await radio.disconnect();
+  });
+
+  it("cancel of the last waiting message ends the pause: the queue is idle and a connect sends nothing", async () => {
+    const { store, radio, companion, queue, batch } = await setUp({ recipients: 1, gapMs: 10 });
+    const [message] = (await batch()) as [JournalEntry];
+    queue.enqueue([message]);
+    expect(queue.phase()).toBe("paused");
+
+    expect(queue.cancel(message.id)).toBe(true);
+    await untilIdle(queue);
+    expect(queue.waiting()).toEqual([]);
+    await recordManualStatus(store, message, "roger", { operator: "Thomas", text: "ringede" });
+
+    await connectedRadio(radio);
+    await realWait(60);
+    expect(companion.sends).toHaveLength(0);
+    expect(queue.phase()).toBe("idle");
+    expect(await store.statusOf(message.id)).toBe("roger");
+    // Nothing pending to restore either.
+    expect(await queue.requeuePending(INCIDENT)).toEqual([]);
+    await radio.disconnect();
+  });
+
+  it("cancel during the gap: the head is read again, the cancelled one is skipped", async () => {
+    const { store, radio, companion, queue, batch } = await setUp({ recipients: 3, gapMs: 300 });
+    await connectedRadio(radio);
+    const messages = await batch();
+    queue.enqueue(messages);
+    await vi.waitFor(() => expect(queue.phase()).toBe("gap"), DRAIN_TIMEOUT);
+    expect(queue.waiting()).toEqual([messages[1]?.id, messages[2]?.id]);
+
+    expect(queue.cancel(messages[1]?.id ?? "")).toBe(true);
+    expect(queue.waiting()).toEqual([messages[2]?.id]);
+    await untilIdle(queue);
+    expect(companion.sends).toHaveLength(2);
+    expect(await statuses(store, messages)).toEqual(["delivered", "pending", "delivered"]);
+    // What the queue never held is not its to cancel.
+    expect(queue.cancel(messages[0]?.id ?? "")).toBe(false);
     await radio.disconnect();
   });
 });

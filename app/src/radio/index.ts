@@ -1,7 +1,8 @@
 // The app's radio-side services: the one radio store, wired to the real transports, the
 // settings' blind time and the console; the ContactSource the register's picker reads; the
 // outbox that sends stored messages through the radio (P0-05); the inbox that files what
-// the radio receives (P0-06); and the send-to-all queue over the outbox (P0-08).
+// the radio receives (P0-06); the send-to-all queue over the outbox (P0-08); and the
+// screens' send / mark / close actions over all three (P3-08).
 
 import { currentIncidentId, onCurrentIncidentChange } from "../lib/currentIncident.svelte.ts";
 import { settings } from "../lib/settings.svelte.ts";
@@ -12,6 +13,7 @@ import { CompanionContactSource, type ContactSource } from "./contactSource.ts";
 import { createInbox } from "./inbox.svelte.ts";
 import { createOutbox } from "./outbox.svelte.ts";
 import { createRadioStore } from "./radioStore.svelte.ts";
+import { createSendActions } from "./sendActions.ts";
 import { createSendQueue } from "./sendQueue.svelte.ts";
 import { MeshCoreSerial, type TransportKind } from "./serial.ts";
 
@@ -79,6 +81,16 @@ export const sendQueue = createSendQueue({
   radioState: () => radio.state(),
   onConnected: radio.onConnected,
   log: (line) => console.log(`queue: ${line}`),
+});
+
+// The screens' send, mark and close over the three above (P3-08): a send without a radio
+// waits in the queue, a mark by hand takes the message out of the queue first.
+export const sendActions = createSendActions({
+  store: journalStore,
+  outbox,
+  sendQueue,
+  radioReady: () => radio.state() === "connected" || radio.state() === "blind",
+  operator: () => settings.operatorName.trim(),
 });
 
 // The queue survives a reload through the store alone: on start, and when an incident is

@@ -11,6 +11,8 @@
 // the Points card, the handover's first list and the print block show them), with the
 // walkthrough's courier record open (P3-07: a message by hand has no status column, no
 // history and no Mark, only its point and Correct; the seed also holds a reply by phone),
+// with a pending recipient of the send-to-all open while it waits in the paused queue
+// (P3-08: Mark and Correct, no Send, and the side card's "n waiting — no radio" line),
 // the handover with a given-up row open, the register as its list, with the Add contact
 // form open and filtered to the contacts without a radio (P3-06), the journal at the largest
 // size and in high contrast, the two long pages whole, the three print pages as A4 PDFs too. The files
@@ -643,6 +645,19 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor();
   await givenUp.locator(".row-area").waitFor({ state: "hidden" });
   await shot("journal-batch");
+  // A recipient still pending (P3-08): the screenshot run has no radio, so the batch's
+  // pending messages wait in the paused queue — the open row offers Mark and Correct, no
+  // Send, and the side card says how many wait. Opening it keeps the batch open.
+  const queuedRecipient = page
+    .locator('.rows-box .rows > li[data-nested="true"]:has(.slot:first-child[data-shape="hollow"])')
+    .first();
+  await queuedRecipient.scrollIntoViewIfNeeded();
+  await line(queuedRecipient).click();
+  await queuedRecipient.getByRole("button", { name: da["journal.action.status"] }).waitFor();
+  await page.locator("[data-open-items] [data-paused]").waitFor();
+  await shot("journal-queued");
+  await page.keyboard.press("Escape");
+  await queuedRecipient.locator(".row-area").waitFor({ state: "hidden" });
   await page.keyboard.press("Escape");
   await page.locator('.rows-box .rows > li[data-nested="true"]').first().waitFor({
     state: "hidden",

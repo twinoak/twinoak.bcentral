@@ -19,7 +19,9 @@
   // "answers" / "answered" links of a reply (P1-02), the point line when the entry has a
   // point (P3-05), and the action row — quiet buttons for exactly the actions that apply
   // (lib/rowActions.ts): the point action first (Open point, Close point or Reopen point by
-  // the point's state), then Retry or Send, Mark, Correct on a radio message, Correct alone
+  // the point's state), then Retry or Send, Mark, Correct on a radio message — Mark and
+  // Correct while it waits in a queue, Correct alone while the radio is transmitting it
+  // (P3-08) — Correct alone
   // on an outgoing message by hand (no history, no Mark: it has no chain), Reply and
   // Correct on an incoming one, Correct on a note; a send-to-all row opens into one row per
   // recipient, each with its own actions, and "Retry all given up" when any can be; its
@@ -52,6 +54,7 @@
   import { batchText, formatShortTime, formatTime, recordedBy } from "../lib/journalText.ts";
   import { suggestedTitle } from "../lib/pointTitle.ts";
   import { batchActions, entryActions, messageActions, pointAction } from "../lib/rowActions.ts";
+  import type { SendState } from "../lib/sendState.ts";
   import {
     CLOSED,
     closeOne,
@@ -89,9 +92,13 @@
     byId: ReadonlyMap<string, JournalEntry>;
     // The point opened from each entry, by the origin entry's id (P3-05).
     points: ReadonlyMap<string, PointView>;
-    // What the outbox or the queue is doing with a message right now, or null when neither
-    // holds it.
+    // What the outbox or the queue is doing with a message right now (the column's words),
+    // or null when neither holds it.
     inflight: (messageId: string) => string | null;
+    // Whether the message is on the air, waiting in a queue, or held by nobody (P3-08,
+    // lib/sendState.ts): Mark is hidden only while it is on the air.
+    sendState: (messageId: string) => SendState;
+    // The page's status rule for Retry / Send: given up or never sent.
     canRetry: (message: JournalEntry) => boolean;
     onretry: (message: JournalEntry) => void;
     onmanual: (message: JournalEntry, status: Status, reason: string) => Promise<void>;
@@ -112,6 +119,7 @@
     byId,
     points,
     inflight,
+    sendState,
     canRetry,
     onretry,
     onmanual,
@@ -570,9 +578,13 @@
     return t(`journal.point.glyph.${point.state}`, { title: point.title });
   }
 
-  // The given-up recipients of a batch the page's rule lets the operator retry.
+  // The given-up recipients of a batch the page's rule lets the operator retry, and that
+  // nobody holds.
   function retryable(views: readonly MessageView[]): MessageView[] {
-    return views.filter((view) => view.status === "given_up" && canRetry(view.entry));
+    return views.filter(
+      (view) =>
+        view.status === "given_up" && canRetry(view.entry) && sendState(view.entry.id) === null,
+    );
   }
 
   // Retry all given up: each one handed to the outbox, which sends them in turn.
@@ -794,7 +806,7 @@
     transport: entry.transport,
     status: view.status,
     canRetry: canRetry(entry),
-    inflight: inflightText !== null,
+    sendState: sendState(entry.id),
   })}
   <Row
     id={entry.id}

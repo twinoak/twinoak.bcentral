@@ -280,6 +280,17 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   chain used to carry is on the to-do list; the New record tab's one button says "Add to
   journal" for all three kinds. The print page writes the strip sentence and the status word
   for radio messages only.
+- A queued message can still be marked (P3-08): the open row hides Mark and Retry only while
+  the radio is in the middle of transmitting the message (the payload handed over, the ack
+  awaited); a message waiting in the send queue — also while the queue is paused because no
+  radio is connected — offers Mark and Correct, and marking it confirmed or given up takes it
+  out of the queue first, so a reconnect never sends it. The status column keeps its waiting
+  words meanwhile. The "Unconfirmed messages" card carries one warn-tinted help line under
+  its title while the queue is paused ("n waiting — no radio connected. Open a message to
+  confirm or give it up by hand."); the MeshCore tab sends without a radio — the message
+  waits in the paused queue, and the form's "no radio" line is a warning saying so, not an
+  error — because the operator is never to be left with a radio message they can neither
+  send, confirm nor give up.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
   queued and reopens from the queue's title; the handover's row actions were always shown

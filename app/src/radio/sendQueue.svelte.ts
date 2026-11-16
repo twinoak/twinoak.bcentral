@@ -12,6 +12,12 @@
 //
 // The loop is one plain async function: take the head of the queue, wait out the gap, wait
 // for a radio, hand the message to the outbox, await its terminal status, repeat.
+//
+// A waiting message can be taken out again (P3-08, cancel): the operator marks it by hand —
+// roger or given up with a reason — and it must not go out afterwards, also when the radio
+// comes back. Its batch keeps the row (the queue screen shows the mark); the loop goes on
+// with the rest. A message already handed to the outbox is cancelled there, which refuses
+// it while it is transmitting.
 
 import { t } from "../i18n/index.svelte.ts";
 import type { JournalStore } from "../store/journalStore.ts";
@@ -70,6 +76,11 @@ export interface SendQueue {
   enqueue(messages: readonly JournalEntry[], options?: { restored?: boolean }): readonly Batch[];
   // Queues messages of earlier batches again (the given-up ones, from the queue screen).
   retry(messageIds: readonly string[]): void;
+  // Takes a message out of the queue before it is sent (P3-08): one waiting here leaves the
+  // waiting list, one handed to the outbox is cancelled there. True when the queue held it;
+  // false when it did not (a single send is the outbox's own, see outbox.cancel). Throws
+  // OutboxError while it is transmitting.
+  cancel(messageId: string): boolean;
   // Finds the incident's mesh message_out entries whose derived status is pending and that
   // nobody holds, and queues them as restored batches by their batchId; empty when there
   // are none.
@@ -159,9 +170,10 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
   }
 
   // The only way out of paused is a connect that succeeds, which fires onConnected; a
-  // connect that fails leaves the radio disconnected and the queue waiting.
+  // connect that fails leaves the radio disconnected and the queue waiting. A cancel wakes
+  // the wait too: with nothing left waiting the loop ends instead of staying paused.
   async function waitForRadio(): Promise<void> {
-    while (!radioReady() && !stopped) {
+    while (!radioReady() && !stopped && waiting.length > 0) {
       if (phase !== "paused") {
         phase = "paused";
         touch();
@@ -203,6 +215,11 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
         if (stopped) {
           return;
         }
+        // The head may have been cancelled during a wait: start over on the current head
+        // (and end when nothing is left).
+        if (waiting[0] !== messageId) {
+          continue;
+        }
 
         waiting = waiting.filter((id) => id !== messageId);
         sending = messageId;
@@ -210,7 +227,7 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
         touch();
         try {
           const result = await deps.outbox.send(messageId);
-          log(`${messageId} -> ${result}`);
+          log(`${messageId} -> ${result ?? "cancelled"}`);
         } catch (error) {
           const reason = describeError(error);
           errors = new Map(errors).set(messageId, reason);
@@ -350,6 +367,23 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
     start();
   }
 
+  // What the queue holds, it lets go of; what it handed to the outbox, the outbox lets go of
+  // (or refuses). A message the queue never held is not its business: false.
+  function cancel(messageId: string): boolean {
+    if (sending === messageId) {
+      return deps.outbox.cancel(messageId);
+    }
+    if (!waiting.includes(messageId)) {
+      return false;
+    }
+    waiting = waiting.filter((id) => id !== messageId);
+    touch();
+    log(`${messageId} cancelled while waiting`);
+    // Wake the loop's gap or pause so it reads the new head.
+    wake?.resolve();
+    return true;
+  }
+
   // Only the given incident's own messages, read by incident: a drill's pending messages are
   // never queued again while a real incident is current, nor a real incident's while a drill
   // is (P1-05), because nothing outside `incidentId` is looked at.
@@ -404,6 +438,7 @@ export function createSendQueue(deps: SendQueueDeps): SendQueue {
   return {
     enqueue,
     retry,
+    cancel,
     requeuePending,
     batches: () => batches,
     waiting: () => waiting,

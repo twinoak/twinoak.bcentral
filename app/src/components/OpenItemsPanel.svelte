@@ -7,7 +7,10 @@
   // a button that scrolls the timeline to the message. The text is the message's current
   // one (its latest correction's when corrected, P3-02), as openItems() hands it over, and
   // the status is the journal's three slots (P3-03, StatusSlots.svelte), packed: the card is
-  // 320 px wide and the slots' tooltips say what the journal's header labels say.
+  // 320 px wide and the slots' tooltips say what the journal's header labels say. While the
+  // send queue is paused for lack of a radio, one help line under the title says how many
+  // of these items wait in it and that a message can be confirmed or given up by hand from
+  // its row (P3-08).
   import { t, language } from "../i18n/index.svelte.ts";
   import type { OpenItem } from "../store/journalView.ts";
   import StatusSlots from "./StatusSlots.svelte";
@@ -15,9 +18,11 @@
   interface Props {
     groups: ReadonlyMap<string, OpenItem[]>;
     labels: ReadonlyMap<string, string>;
+    // How many of the items wait in the paused send queue; 0 while the queue is not paused.
+    pausedCount?: number;
     onselect: (entryId: string) => void;
   }
-  let { groups, labels, onselect }: Props = $props();
+  let { groups, labels, pausedCount = 0, onselect }: Props = $props();
 
   const sortedGroups = $derived(
     [...groups.entries()].map(([counterpartyId, items]) => ({
@@ -38,6 +43,11 @@
     {t("journal.open.title")}
     <span class="count">{count}</span>
   </h2>
+  {#if pausedCount > 0}
+    <p class="msg msg-warn help" role="status" data-paused={pausedCount}>
+      {t("journal.open.paused", { n: pausedCount })}
+    </p>
+  {/if}
   {#if sortedGroups.length === 0}
     <p class="msg">{t("journal.open.empty")}</p>
   {:else}
@@ -72,5 +82,9 @@
 
   .msg {
     margin: 0;
+  }
+
+  .help {
+    margin-bottom: var(--s-2);
   }
 </style>

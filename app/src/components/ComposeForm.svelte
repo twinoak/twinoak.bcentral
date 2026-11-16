@@ -4,7 +4,9 @@
   // the operator writes in by hand is the New record tab (ManualEntryForm). Shows the
   // predicted "#n " prefix and the byte count against the 160-byte limit; Send is disabled
   // over it. On send the message is stored with its reserved #n and handed to the parent,
-  // which sends it through the outbox and shows the progress. The recipient list is the
+  // which sends it through the outbox and shows the progress — or, with no radio connected
+  // (P3-08), puts it in the send queue, where it waits for a radio and can be confirmed or
+  // given up by hand from its row; the form says so under the fields. The recipient list is the
   // register's contacts with a radio (P3-06) and nothing else; a contact reached by phone,
   // courier or in person is not in it, and the store refuses it too.
   //
@@ -88,7 +90,6 @@
       lastLoadedFor === counterpartyId &&
       !preview.empty &&
       !preview.tooLong &&
-      radioReady &&
       !busy,
   );
 
@@ -238,7 +239,7 @@
     <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.noRadio")}</p>
   {/if}
   {#if !radioReady}
-    <p class="msg msg-danger" role="alert"><Icon name="warning" />{t("send.noRadio")}</p>
+    <p class="msg msg-warn" role="status"><Icon name="warning" />{t("send.noRadioQueue")}</p>
   {/if}
   {#if error}
     <p class="msg msg-danger" role="alert"><Icon name="warning" />{error}</p>

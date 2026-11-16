@@ -8,6 +8,11 @@
 // One send at a time per device: send() queues, and a second call waits until the first has
 // reached delivered or given_up. Simple FIFO; the send-to-all queue (P0-08) builds on it.
 //
+// A send that is waiting its turn, or preparing (the companion's clock not yet read), can be
+// cancelled (P3-08: the operator marks the message by hand and it leaves the queue); a send
+// that is transmitting — the companion has the payload, the ack is awaited — cannot, and
+// cancel() refuses it. A cancelled send writes nothing and resolves null.
+//
 // Pattern after meshguide.dk/lib/remote-cli.js command() / nextTimestamp(), minus the reply
 // handling: the sender timestamp is the PC clock plus the companion's clock offset (read
 // once per link with CMD_GET_DEVICE_TIME) and never goes backwards within this session.
@@ -61,6 +66,14 @@ export interface OutboxDeps {
 
 export type SendPhase = "preparing" | "sending" | "awaiting_ack";
 
+// The phases in which the radio has been handed the payload: the attempt is on the air and
+// cannot be taken back (P3-08). Preparing is the clock query before the first command.
+export const TRANSMITTING_PHASES: readonly SendPhase[] = ["sending", "awaiting_ack"];
+
+export function isTransmitting(active: ActiveSend | null, messageId: string): boolean {
+  return active !== null && active.messageId === messageId && TRANSMITTING_PHASES.includes(active.phase);
+}
+
 export interface ActiveSend {
   messageId: string;
   seqNo: number;
@@ -76,11 +89,18 @@ export interface ActiveSend {
 
 export interface Outbox {
   // Transmits a stored mesh message_out (status pending or given_up) and resolves with its
-  // final status for this attempt sequence: delivered or given_up. Waits its turn.
-  send(messageId: string): Promise<Status>;
+  // final status for this attempt sequence: delivered or given_up. Waits its turn. Resolves
+  // null when the send was cancelled before it transmitted (nothing was written).
+  send(messageId: string): Promise<Status | null>;
+  // Takes a message out of the outbox while it is waiting its turn or preparing: its send()
+  // resolves null and nothing is written. True when it was held; false when the outbox does
+  // not hold it. Throws OutboxError while the message is transmitting (P3-08).
+  cancel(messageId: string): boolean;
   // Message ids waiting for their turn, in order.
   queued(): readonly string[];
   active(): ActiveSend | null;
+  // Whether the message is on the air right now: active in a transmitting phase.
+  transmitting(messageId: string): boolean;
   // Bumped after every journal entry the outbox writes; screens reload on it.
   revision(): number;
   // The last sender timestamp used, for tests and the log; 0 before the first send.
@@ -104,6 +124,8 @@ export function createOutbox(deps: OutboxDeps): Outbox {
 
   let locked = false;
   let unlocked: Deferred<void> = deferred<void>();
+  // Ids cancelled while waiting their turn or preparing; read by the send that holds them.
+  const cancelled = new Set<string>();
 
   // The companion's clock offset, measured once per link; the last timestamp handed out.
   let offsetLink: CompanionLink | null = null;
@@ -114,12 +136,28 @@ export function createOutbox(deps: OutboxDeps): Outbox {
     deps.log?.(line);
   }
 
-  async function acquire(): Promise<void> {
+  // Waits for the lock; false when the message was cancelled meanwhile (the lock is not
+  // taken). Every waiter wakes on release and on a cancel, and goes back to waiting unless
+  // the lock is free or it is the one cancelled.
+  async function acquire(messageId: string): Promise<boolean> {
     while (locked) {
+      if (cancelled.has(messageId)) {
+        return false;
+      }
       await unlocked.promise;
+    }
+    if (cancelled.has(messageId)) {
+      return false;
     }
     locked = true;
     unlocked = deferred<void>();
+    return true;
+  }
+
+  function wakeWaiters(): void {
+    const waiting = unlocked;
+    unlocked = deferred<void>();
+    waiting.resolve();
   }
 
   function release(): void {
@@ -186,7 +224,7 @@ export function createOutbox(deps: OutboxDeps): Outbox {
     }
   }
 
-  async function transmit(store: JournalStore, message: JournalEntry, recipientKey: string): Promise<Status> {
+  async function transmit(store: JournalStore, message: JournalEntry, recipientKey: string): Promise<Status | null> {
     const seqNo = message.seqNo ?? 0;
     const maxAttempts = Math.max(1, deps.maxAttempts());
     const link = deps.link();
@@ -218,8 +256,16 @@ export function createOutbox(deps: OutboxDeps): Outbox {
       try {
         timestamp = await nextTimestamp(link);
       } catch (error) {
+        if (cancelled.has(message.id)) {
+          return null;
+        }
         await record(store, message, "given_up", t("send.text.sendFailed", { error: describeError(error) }));
         return "given_up";
+      }
+      // Cancelled while preparing: nothing has gone to the radio, nothing is written.
+      if (cancelled.has(message.id)) {
+        log(`#${seqNo} cancelled while preparing`);
+        return null;
       }
       const text = message.text ?? "";
 
@@ -292,11 +338,12 @@ export function createOutbox(deps: OutboxDeps): Outbox {
     }
   }
 
-  async function send(messageId: string): Promise<Status> {
+  async function send(messageId: string): Promise<Status | null> {
     if (requested.has(messageId)) {
       throw new OutboxError(t("send.error.alreadyQueued"));
     }
     requested.add(messageId);
+    cancelled.delete(messageId);
     try {
       const store = await deps.store();
       const message = await store.getEntry(messageId);
@@ -318,8 +365,12 @@ export function createOutbox(deps: OutboxDeps): Outbox {
       }
 
       queued = [...queued, messageId];
-      await acquire();
+      const acquired = await acquire(messageId);
       queued = queued.filter((id) => id !== messageId);
+      if (!acquired) {
+        log(`${messageId} cancelled while waiting its turn`);
+        return null;
+      }
       try {
         // The status may have moved while this send waited its turn.
         await assertSendable(store, message);
@@ -329,13 +380,37 @@ export function createOutbox(deps: OutboxDeps): Outbox {
       }
     } finally {
       requested.delete(messageId);
+      cancelled.delete(messageId);
     }
+  }
+
+  function transmitting(messageId: string): boolean {
+    return isTransmitting(active, messageId);
+  }
+
+  // The cancel is a flag the holding send() reads: a send waiting its turn wakes and leaves
+  // without the lock, a send preparing returns before the first command. The queued list
+  // is cleared here too, so the screens see the message gone at once.
+  function cancel(messageId: string): boolean {
+    if (transmitting(messageId)) {
+      throw new OutboxError(t("send.error.transmitting"));
+    }
+    if (!requested.has(messageId)) {
+      return false;
+    }
+    cancelled.add(messageId);
+    queued = queued.filter((id) => id !== messageId);
+    wakeWaiters();
+    log(`${messageId} cancel requested`);
+    return true;
   }
 
   return {
     send,
+    cancel,
     queued: () => queued,
     active: () => active,
+    transmitting,
     revision: () => revision,
     lastTimestamp: () => lastTimestamp,
   };

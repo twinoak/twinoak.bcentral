@@ -27,7 +27,8 @@
   import type { RecordPrefill } from "../lib/composePrefill.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
   import { onShortcut } from "../lib/shortcutDispatch.ts";
-  import { recordByHand, resendByHand } from "../store/index.ts";
+  import { sendActions } from "../radio/index.ts";
+  import { recordByHand } from "../store/index.ts";
   import { NON_MESH_TRANSPORTS } from "../store/manual.ts";
   import { RECORD_TYPES, type RecordType } from "../store/record.ts";
   import { replySnippet } from "../store/outgoing.ts";
@@ -120,7 +121,7 @@
     try {
       let recorded: Recorded;
       if (kind === "message_out" && closes !== null) {
-        const { copy, closed } = await resendByHand(closes, { transport, body: text });
+        const { copy, closed } = await sendActions.resendByHand(closes, { transport, body: text });
         recorded = { entry: copy, closed };
       } else {
         const entry = await recordByHand({

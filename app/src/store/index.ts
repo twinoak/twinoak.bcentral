@@ -20,7 +20,6 @@ import {
   composeBatch as composeBatchWithStore,
   composeMeshMessage as composeMeshWithStore,
   composeMessage as composeWithStore,
-  recordManualStatus as recordWithStore,
   type BatchComposeInput,
   type ComposeInput,
   type Composed,
@@ -35,21 +34,9 @@ import {
   openPoint as openPointWithStore,
   reopenPoint as reopenPointWithStore,
 } from "./points.ts";
-import {
-  composeStatusRequest,
-  recordHandover,
-  resendByHand as resendWithStore,
-  type CourierHandoff,
-} from "./handover.ts";
-import { language, t } from "../i18n/index.svelte.ts";
-import type {
-  Incident,
-  JournalEntry,
-  NewRegisterEntry,
-  RegisterEntry,
-  Status,
-  Transport,
-} from "./types.ts";
+import { composeStatusRequest, recordHandover } from "./handover.ts";
+import { language } from "../i18n/index.svelte.ts";
+import type { Incident, JournalEntry, NewRegisterEntry, RegisterEntry } from "./types.ts";
 
 export const DATABASE_NAME = "bcentral";
 
@@ -263,11 +250,9 @@ export async function composeMeshMessage(input: Omit<MeshComposeInput, "operator
   return await composeMeshWithStore(store, { ...input, operator: settings.operatorName.trim() });
 }
 
-// The operator's own roger or given-up on a radio message, with the reason (required).
-export async function recordManualStatus(message: JournalEntry, newStatus: Status, text: string): Promise<JournalEntry> {
-  const store = await journalStore();
-  return await recordWithStore(store, message, newStatus, { operator: settings.operatorName.trim(), text });
-}
+// The operator's own roger or given-up on a radio message, and "send by courier" on a
+// given-up one, are src/radio/sendActions.ts's (P3-08): they take the message out of the
+// send queue first, which the store cannot see.
 
 export async function entriesForIncident(incidentId: string): Promise<JournalEntry[]> {
   const store = await journalStore();
@@ -301,22 +286,6 @@ export async function sendStatusRequest(incidentId: string, counterpartyId: stri
     incidentId,
     operator: settings.operatorName.trim(),
     counterpartyId,
-  });
-}
-
-// The decision "send by courier" on a given-up radio message, recorded from the New record
-// tab (P3-01): the copy on the chosen non-radio transport with the text as recorded, a
-// point on it (P3-07), and the original closed with the reason "sent via ‹transport›".
-export async function resendByHand(
-  message: JournalEntry,
-  input: { transport: Transport; body: string },
-): Promise<CourierHandoff> {
-  const store = await journalStore();
-  return await resendWithStore(store, message, {
-    operator: settings.operatorName.trim(),
-    transport: input.transport,
-    body: input.body,
-    reason: t("handover.givenUp.resentReason", { via: t(`send.transport.${input.transport}`) }),
   });
 }
 
