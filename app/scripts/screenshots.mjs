@@ -2,10 +2,11 @@
 // fresh browser profile with contract/examples/walkthrough.json plus a register of 25 radios,
 // open orders, given-up messages, unanswered incoming messages, a 25-recipient send-to-all
 // half drained and a drill incident — through the `?seed` hook of src/main.ts — and captures
-// every route at 1280 × 720 and 1440 × 900 at the normal text size, the journal also at the
-// largest size and in high contrast, the two long pages whole, the three print pages as A4
-// PDFs too. The files go to tasks/phase-2/reports/screens/ and are committed, so the reviewer
-// can look at every screen without running the app.
+// every route at 1280 × 720 and 1440 × 900 at the normal text size, the journal also with
+// its compose card on each tab (P3-01), at the largest size and in high contrast, the two
+// long pages whole, the three print pages as A4 PDFs too. The files go to
+// tasks/phase-2/reports/screens/ and are committed, so the reviewer can look at every
+// screen without running the app.
 //
 // `npm run screenshots`. Not part of `npm run test`: it needs a browser and a build.
 // playwright-core drives the first Chromium it finds: Playwright's own download when one is
@@ -471,7 +472,15 @@ async function captureSize(browser, base, data, width, height) {
   await page.locator(".rows-box .rows > li").first().waitFor();
   await confirmClock();
 
+  // The compose card's two tabs (P3-01): New record as it opens, then as an outgoing message
+  // (the To and Via controls), then MeshCore.
   await shot("journal");
+  await page.locator("#manual-kind").selectOption("message_out");
+  await shot("journal-record-out");
+  await page.locator("#manual-kind").selectOption("note");
+  await page.getByRole("tab", { name: da["journal.compose.title"] }).click();
+  await page.locator("#panel-meshcore").waitFor();
+  await shot("journal-meshcore");
 
   await go("#/handover", "[data-handover-head]");
   await shot("handover");

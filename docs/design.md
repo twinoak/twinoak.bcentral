@@ -100,8 +100,8 @@ component defines its own colours or sizes; a component `<style>` block may only
   danger.
 - **Card** `.card`: surface, rule border, radius `--r-2`, padding `--s-5`; `.card-title`
   20 px 600 with `--s-4` below. A card has one purpose; two purposes are two cards or tabs.
-- **Tabs** `.tabs` for switching between forms of the same kind in one card (New message /
-  Add by hand): text tabs, 2 px accent underline on the active one, no pills.
+- **Tabs** `.tabs` for switching between forms of the same kind in one card (New record /
+  MeshCore): text tabs, 2 px accent underline on the active one, no pills.
 - **Table** `.table`: header row `--surface-2`, 13 px 500 `--ink-2`; body rows separated by
   `--rule`; numbers right-aligned tabular; sticky header when the table scrolls; row hover
   `--surface-2`; selected `--accent-weak`. No zebra stripes.
@@ -148,8 +148,9 @@ the top of the journal: name, clock confirm, radio connect — three fields, one
 
 ## Screens
 
-- **Journal**: the main column starts with one card with two tabs (New message / Add by
-  hand) — compose lives above the newest-first list, where new rows appear. Below it the
+- **Journal**: the main column starts with one card with two tabs, one job each (New record,
+  shown on load: what is written by hand; MeshCore: a message over the radio, P3-01) —
+  compose lives above the newest-first list, where new rows appear. Below it the
   row list. Side column: open items, last heard from, each a card with a count in its title.
   The incident bar is gone (it is in the shell).
 - **Handover**: four cards in a 2×2 grid at ≥ 60 rem, each a row list with its count in the

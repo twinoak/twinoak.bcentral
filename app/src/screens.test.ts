@@ -105,6 +105,16 @@ describe("the other screens (P2-04)", () => {
     expect(page).toContain("showToast(");
   });
 
+  it("the handover's compose card holds the tab the action belongs to (P3-01)", () => {
+    const page = read("pages/HandoverPage.svelte");
+    expect(page).toContain("<ManualEntryForm");
+    expect(page).toContain('{#if composeOpen === "meshcore"}');
+    expect(page).toContain("open(replyPrefill(entry))");
+    expect(page).toContain("open(courierPrefill(view.entry))");
+    expect(page).not.toContain("handOffToCourier");
+    expect(page).toContain('t("handover.givenUp.resentDone"');
+  });
+
   it("the queue is a compose card over the table, the progress in the card title", () => {
     const page = read("pages/QueuePage.svelte");
     expect(page).toContain("<BatchComposeForm");

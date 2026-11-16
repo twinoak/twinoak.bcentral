@@ -187,6 +187,41 @@ export async function composeMessage(store: JournalStore, input: ComposeInput): 
   return { message };
 }
 
+// The recipient of a radio message has to be a register entry: a public key to send to. A
+// pending row (P1-06, imported without a key) is not one, and nothing else is either.
+export class RecipientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RecipientError";
+  }
+}
+
+export interface MeshComposeInput {
+  incidentId: string;
+  operator: string;
+  counterpartyId: string;
+  body: string;
+  refersTo?: string;
+}
+
+// The MeshCore tab's path (P3-01): a message over the radio and nothing else. The transport
+// is mesh, always; the recipient is checked against the register first, so a pending row —
+// never listed by the form, but any id can reach the store — is refused before anything is
+// reserved. Sending the stored message is the outbox's job.
+export async function composeMeshMessage(store: JournalStore, input: MeshComposeInput): Promise<Composed> {
+  if ((await store.getRegisterEntry(input.counterpartyId)) === undefined) {
+    throw new RecipientError(`register entry ${input.counterpartyId} does not exist`);
+  }
+  return await composeMessage(store, {
+    incidentId: input.incidentId,
+    operator: input.operator,
+    counterpartyId: input.counterpartyId,
+    transport: "mesh",
+    body: input.body,
+    refersTo: input.refersTo,
+  });
+}
+
 export interface BatchComposeInput {
   incidentId: string;
   operator: string;

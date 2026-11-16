@@ -1,6 +1,7 @@
 // The handover screen's writes (P1-08) on a store with the walkthrough loaded: the one
 // handover note, the status request with the radio's next #n, and "send by courier" on a
-// given-up message.
+// given-up message — recorded from the New record tab since P3-01, so the copy's transport
+// and text are the form's.
 
 import { describe, expect, it } from "vitest";
 import { openTestStore } from "../test-support/testStore.ts";
@@ -11,8 +12,9 @@ import {
   composeStatusRequest,
   handoverNoteText,
   recordHandover,
-  sendByCourier,
+  resendByHand,
 } from "./handover.ts";
+import { bodyOf } from "./journalView.ts";
 import type { JournalStore } from "./journalStore.ts";
 import { composeMessage, appendStatusChange } from "./outgoing.ts";
 import type { JournalEntry } from "./types.ts";
@@ -152,10 +154,13 @@ describe("send by courier", () => {
     const store = await storeWithWalkthrough();
     const original = await givenUpToHans(store);
     expect(original.text).toBe("#3 Kør til nr 4");
+    expect(bodyOf(original)).toBe("Kør til nr 4");
     const before = await store.lastDeviceSeq();
 
-    const { copy, closed } = await sendByCourier(store, original, {
+    const { copy, closed } = await resendByHand(store, original, {
       operator: "Anne",
+      transport: "courier",
+      body: bodyOf(original),
       reason: (message) => `sent by courier as #${message.seqNo}`,
     });
     expect(copy).toMatchObject({
@@ -194,17 +199,49 @@ describe("send by courier", () => {
     });
     await appendStatusChange(store, message, "sent");
     const before = await store.lastDeviceSeq();
-    await expect(
-      sendByCourier(store, message, { operator: "Anne", reason: () => "r" }),
-    ).rejects.toThrow(HandoverError);
+    const courier = {
+      operator: "Anne",
+      transport: "courier" as const,
+      body: "x",
+      reason: () => "r",
+    };
+    await expect(resendByHand(store, message, courier)).rejects.toThrow(HandoverError);
     const incoming = (await store.allEntries()).find(
       (entry) => entry.type === "message_in",
     ) as JournalEntry;
-    await expect(
-      sendByCourier(store, incoming, { operator: "Anne", reason: () => "r" }),
-    ).rejects.toThrow(HandoverError);
+    await expect(resendByHand(store, incoming, courier)).rejects.toThrow(HandoverError);
     expect(await store.lastDeviceSeq()).toBe(before);
     expect(await store.lastSeqNo(HANS)).toBe(3);
+  });
+
+  it("the copy carries the text as recorded and the transport the form chose; the radio is refused", async () => {
+    const store = await storeWithWalkthrough();
+    const original = await givenUpToHans(store);
+    const before = await store.lastDeviceSeq();
+    await expect(
+      resendByHand(store, original, {
+        operator: "Anne",
+        transport: "mesh",
+        body: "Kør til nr 4",
+        reason: () => "r",
+      }),
+    ).rejects.toThrow(HandoverError);
+    expect(await store.lastDeviceSeq()).toBe(before);
+    expect(await store.statusOf(original.id)).toBe("given_up");
+
+    const { copy, closed } = await resendByHand(store, original, {
+      operator: "Anne",
+      transport: "phone",
+      body: "Kør til nr 4, Peter har nøglen",
+      reason: (message) => `sent via Phone as #${message.seqNo}`,
+    });
+    expect(copy).toMatchObject({
+      transport: "phone",
+      seqNo: 4,
+      text: "#4 Kør til nr 4, Peter har nøglen",
+    });
+    expect(closed.text).toBe("sent via Phone as #4");
+    expect(await store.statusOf(original.id)).toBe("roger");
   });
 
   it("a given-up courier message can be sent by courier again; the copy is a fresh courier message", async () => {
@@ -217,8 +254,10 @@ describe("send by courier", () => {
       body: "Pumpe",
     });
     await appendStatusChange(store, message, "given_up", "Peter kom tilbage med sedlen");
-    const { copy } = await sendByCourier(store, message, {
+    const { copy } = await resendByHand(store, message, {
       operator: "Thomas",
+      transport: "courier",
+      body: bodyOf(message),
       reason: (c) => `again as #${c.seqNo}`,
     });
     expect(copy.text).toBe("#4 Pumpe");
@@ -238,7 +277,12 @@ describe("send by courier", () => {
     });
     expect(message.text).toBe("ØVELSE #3 Meld status");
     await appendStatusChange(store, message, "given_up", "no radio");
-    const { copy } = await sendByCourier(store, message, { operator: "Thomas", reason: () => "r" });
+    const { copy } = await resendByHand(store, message, {
+      operator: "Thomas",
+      transport: "courier",
+      body: bodyOf(message),
+      reason: () => "r",
+    });
     expect(copy.text).toBe("ØVELSE #4 Meld status");
   });
 });

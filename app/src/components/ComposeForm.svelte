@@ -1,27 +1,32 @@
 <script lang="ts">
-  // Compose one outgoing message (P0-05): recipient, transport, text. Shows the predicted
-  // "#n " prefix and the byte count against the 160-byte limit; Send is disabled over it.
-  // On send the message is stored with its reserved #n; a mesh message is then handed to
-  // the outbox, whose progress the parent shows.
+  // The MeshCore tab (P3-01; P0-05's compose form): one message over the radio, and nothing
+  // else — recipient, text, Send. No transport choice: the transport is mesh, always; what
+  // the operator writes in by hand is the New record tab (ManualEntryForm). Shows the
+  // predicted "#n " prefix and the byte count against the 160-byte limit; Send is disabled
+  // over it. On send the message is stored with its reserved #n and handed to the parent,
+  // which sends it through the outbox and shows the progress. The recipient list is the
+  // register — entries with a public key; a row imported without one (P1-06) is not in it,
+  // and the store refuses it too.
   //
-  // Reply from the row (P1-02): the parent calls replyTo(entry) with an incoming message; the
-  // form takes the recipient and transport from it, focuses the text, scrolls itself into
-  // view and shows "Replying to: …" as an inline message with a ✕ that drops the link. The
-  // message is then stored with refersTo = the incoming entry's id. Keys inside the form:
-  // Esc drops the link, Ctrl+Enter sends. The N shortcut (P1-09) puts the cursor in the
-  // text from anywhere; `onreveal` lets the parent show the form first (it sits under a tab
-  // in the journal's compose card, P2-03).
+  // Reply from the row (P1-02): the parent calls prefill() with the sender of an incoming
+  // mesh message (lib/composePrefill.ts routes a reply by its transport); the form takes the
+  // recipient, focuses the text, scrolls itself into view and shows "Replying to: …" as an
+  // inline message with a ✕ that drops the link. The message is then stored with refersTo =
+  // the incoming entry's id. Keys inside the form: Esc drops the link, Ctrl+Enter sends.
+  // The N shortcut (P1-09) puts the cursor in the text from anywhere; `onreveal` lets the
+  // parent show the form first (it sits under a tab in the journal's compose card, P2-03).
   //
-  // One line of fields (via, recipient, the text that grows as it is typed, Send) and a
-  // 14 px meta line under it: the compose card sits above the journal's rows, and the rows
-  // are what the screen is for. The look is components.css's `.field` / `.btn` / `.msg`;
-  // this file lays nothing out of its own but the line.
+  // One line of fields (recipient, the text that grows as it is typed, Send) and a 14 px
+  // meta line under it: the compose card sits above the journal's rows, and the rows are
+  // what the screen is for. The look is components.css's `.field` / `.btn` / `.msg`; this
+  // file lays nothing out of its own but the line.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
+  import type { MeshCorePrefill } from "../lib/composePrefill.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
   import { onShortcut } from "../lib/shortcutDispatch.ts";
-  import type { JournalEntry, RegisterEntry, Transport } from "../store/types.ts";
-  import { composeMessage, lastSeqNo } from "../store/index.ts";
+  import type { JournalEntry, RegisterEntry } from "../store/types.ts";
+  import { composeMeshMessage, lastSeqNo } from "../store/index.ts";
   import { MAX_MESSAGE_BYTES, previewText, replySnippet } from "../store/outgoing.ts";
   import { radio } from "../radio/index.ts";
   import Icon from "./Icon.svelte";
@@ -33,7 +38,7 @@
     drill?: boolean;
     // The register, sorted as the parent wants it shown.
     register: readonly RegisterEntry[];
-    // Called with the stored message_out; the parent sends mesh messages and reloads its list.
+    // Called with the stored message_out; the parent sends it and reloads its list.
     onsent: (message: JournalEntry) => void;
     // Called before the form takes the focus (N, a reply): the parent brings it into view —
     // the journal switches to its tab.
@@ -41,10 +46,7 @@
   }
   let { incidentId, drill = false, register, onsent, onreveal }: Props = $props();
 
-  const TRANSPORTS: readonly Transport[] = ["mesh", "phone", "courier", "verbal"];
-
   let counterpartyId = $state("");
-  let transport: Transport = $state("mesh");
   let body = $state("");
   let busy = $state(false);
   let error: string | null = $state(null);
@@ -76,14 +78,13 @@
 
   const preview = $derived(previewText(last, body, drill));
   const radioReady = $derived(radio.state() === "connected" || radio.state() === "blind");
-  const radioBlocks = $derived(transport === "mesh" && !radioReady);
   const canSend = $derived(
     hasOperatorName() &&
       counterpartyId !== "" &&
       lastLoadedFor === counterpartyId &&
       !preview.empty &&
       !preview.tooLong &&
-      !radioBlocks &&
+      radioReady &&
       !busy,
   );
 
@@ -102,20 +103,12 @@
     }),
   );
 
-  // Answer an incoming message: its sender becomes the recipient, its transport the transport
-  // (a courier note is answered by courier unless the operator changes it), the text field
-  // gets the cursor and the form comes into view. The incoming entry's register entry has to
-  // be in the register the form shows; it always is, since the inbox creates one for every
-  // sender (P0-06) and the manual form picks from the register.
-  export async function replyTo(entry: JournalEntry): Promise<void> {
-    if (entry.type !== "message_in" || entry.counterpartyId === undefined) {
-      return;
-    }
-    counterpartyId = entry.counterpartyId;
-    if (entry.transport !== undefined) {
-      transport = entry.transport;
-    }
-    replying = entry;
+  // Answer an incoming mesh message: its sender becomes the recipient, the text field gets
+  // the cursor and the form comes into view. The sender's register entry is in the register
+  // the form shows: the inbox creates one for every sender (P0-06).
+  export async function prefill(intent: MeshCorePrefill): Promise<void> {
+    counterpartyId = intent.counterpartyId;
+    replying = intent.replyTo;
     error = null;
     await focusText();
   }
@@ -131,10 +124,9 @@
     busy = true;
     error = null;
     try {
-      const { message } = await composeMessage({
+      const { message } = await composeMeshMessage({
         incidentId,
         counterpartyId,
-        transport,
         body,
         refersTo: replying?.id,
       });
@@ -197,15 +189,6 @@
   {/if}
 
   <div class="line">
-    <div class="field via">
-      <label for="send-transport">{t("send.transport")}</label>
-      <select id="send-transport" bind:value={transport}>
-        {#each TRANSPORTS as option (option)}
-          <option value={option}>{t(`send.transport.${option}`)}</option>
-        {/each}
-      </select>
-    </div>
-
     <div class="field recipient">
       <label for="send-recipient">{t("send.recipient")}</label>
       <select id="send-recipient" bind:value={counterpartyId} disabled={register.length === 0}>
@@ -229,7 +212,7 @@
     </div>
 
     <button type="submit" class="btn btn-primary" disabled={!canSend}>
-      <Icon name="send" />{transport === "mesh" ? t("send.send") : t("send.record")}
+      <Icon name="send" />{t("send.send")}
     </button>
   </div>
 
@@ -250,7 +233,7 @@
   {#if register.length === 0}
     <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.none")}</p>
   {/if}
-  {#if radioBlocks}
+  {#if !radioReady}
     <p class="msg msg-danger" role="alert"><Icon name="warning" />{t("send.noRadio")}</p>
   {/if}
   {#if error}
@@ -271,10 +254,6 @@
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--s-3);
-  }
-
-  .via {
-    flex: 0 1 10rem;
   }
 
   .recipient {

@@ -7,15 +7,20 @@
   // in the title, oldest first, derived from the entries on every reload
   // (store/handoverView.ts): open orders, given-up messages with the three decisions on the
   // row (retry, send by courier, close with a reason), unanswered incoming messages with
-  // Reply, and quiet radios with "Send status request" ("#n Meld status"). Reply opens a
-  // compose card between the head and the lists (P1-02's form); it closes on send or with
-  // its ✕. The page reloads on every entry the inbox, the outbox or the queue writes, and
-  // after every write from here. The handover done, a courier copy and a status request are
-  // toasts; errors stay inline. Print handover prints this page: the lists as they are under
-  // a header with the handover time and both names (the bar and the controls are no-print).
+  // Reply, and quiet radios with "Send status request" ("#n Meld status"). Reply and "send
+  // by courier" open a compose card between the head and the lists holding the journal's
+  // tab the action belongs to (P3-01, lib/composePrefill.ts): MeshCore (ComposeForm) for a
+  // reply to an incoming mesh message, New record (ManualEntryForm) for a reply to one by
+  // phone, courier or verbal and for the courier copy of a given-up message, prefilled; it
+  // closes on send or record, or with its ✕. The page reloads on every entry the inbox, the
+  // outbox or the queue writes, and after every write from here. The handover done, a
+  // courier copy and a status request are toasts; errors stay inline. Print handover prints
+  // this page: the lists as they are under a header with the handover time and both names
+  // (the bar and the controls are no-print).
   import { tick } from "svelte";
   import { t, language } from "../i18n/index.svelte.ts";
   import { clockTrust, now, setClockConfirmed } from "../lib/clock.svelte.ts";
+  import { courierPrefill, replyPrefill, type ComposePrefill } from "../lib/composePrefill.ts";
   import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
   import { formatElapsed } from "../lib/elapsed.ts";
   import { chipClass, DIRECTION_GLYPH, stripChip } from "../lib/journalRows.ts";
@@ -30,7 +35,6 @@
   import { incidentStateOf, isDrill } from "../store/incidents.ts";
   import {
     entriesForIncident,
-    handOffToCourier,
     handOver,
     lastHeardByCounterparty,
     listIncidents,
@@ -43,6 +47,7 @@
   import type { Incident, JournalEntry, RegisterEntry } from "../store/types.ts";
   import ComposeForm from "../components/ComposeForm.svelte";
   import Icon from "../components/Icon.svelte";
+  import ManualEntryForm, { type Recorded } from "../components/ManualEntryForm.svelte";
 
   let incidents: Incident[] = $state([]);
   let register: RegisterEntry[] = $state([]);
@@ -56,8 +61,10 @@
   // Ticks once a second: the ages and the incident's open time move without a reload.
   let nowMs = $state(Date.now());
   let compose: ComposeForm | undefined = $state(undefined);
-  // The compose card, shown while a reply is being written.
-  let composeOpen = $state(false);
+  let record: ManualEntryForm | undefined = $state(undefined);
+  // The compose card: which of the journal's two tabs it holds while a reply or a courier
+  // copy is being written, or null when it is closed.
+  let composeOpen: "meshcore" | "record" | null = $state(null);
 
   // The name typed for the operator taking over; the handover happens on Take over.
   let newOperator = $state(settings.operatorName);
@@ -220,21 +227,11 @@
     await transmit(view.entry);
   }
 
+  // "Send by courier" (P3-01): the New record tab opens as an outgoing courier message to
+  // the same recipient with the original's text; recording it writes the copy and closes
+  // the original (store/handover.ts).
   async function courier(view: MessageView) {
-    if (busy) {
-      return;
-    }
-    busy = true;
-    actionError = null;
-    try {
-      const { copy } = await handOffToCourier(view.entry);
-      showToast(t("handover.givenUp.courierDone", { n: copy.seqNo ?? 0 }));
-      await changed();
-    } catch (failure) {
-      actionError = t("send.manual.failed", { error: describe(failure) });
-    } finally {
-      busy = false;
-    }
+    await open(courierPrefill(view.entry));
   }
 
   function startClose(view: MessageView) {
@@ -267,26 +264,52 @@
     }
   }
 
-  // Reply from the row (P1-02): the compose card opens between the head and the lists and
-  // takes the sender and the transport from the row.
-  async function reply(entry: JournalEntry) {
+  // The compose card opens between the head and the lists with the tab the action decided,
+  // prefilled.
+  async function open(intent: ComposePrefill) {
     actionError = null;
-    composeOpen = true;
+    composeOpen = intent.tab;
     await tick();
-    void compose?.replyTo(entry);
+    if (intent.tab === "meshcore") {
+      void compose?.prefill(intent);
+    } else {
+      void record?.prefill(intent);
+    }
+  }
+
+  // Reply from the row (P1-02, rerouted in P3-01): MeshCore for an incoming mesh message,
+  // New record on the same transport for one by phone, courier or verbal.
+  async function reply(entry: JournalEntry) {
+    await open(replyPrefill(entry));
   }
 
   function closeCompose() {
-    composeOpen = false;
+    composeOpen = null;
   }
 
   async function onsent(message: JournalEntry) {
     actionError = null;
-    composeOpen = false;
+    composeOpen = null;
     await changed();
     if (message.transport === "mesh") {
       void transmit(message);
     }
+  }
+
+  // A record from the card: a reply by hand, or the courier copy that closed a given-up
+  // message, which is a toast.
+  async function onadded(recorded: Recorded) {
+    actionError = null;
+    composeOpen = null;
+    if (recorded.closed !== null) {
+      showToast(
+        t("handover.givenUp.resentDone", {
+          via: t(`send.transport.${recorded.entry.transport ?? "courier"}`),
+          n: recorded.entry.seqNo ?? 0,
+        }),
+      );
+    }
+    await changed();
   }
 
   async function statusRequest(entry: RegisterEntry) {
@@ -406,7 +429,7 @@
     </dl>
   </header>
 
-  <div class="layout" class:replying={composeOpen}>
+  <div class="layout" class:replying={composeOpen !== null}>
     <!-- The slim card: the incident, the operator change, the clock, the radio, Print. -->
     <section class="card head no-print" aria-label={t("handover.title")} data-handover-head>
       <div class="field">
@@ -498,11 +521,20 @@
       </div>
     </section>
 
-    <!-- Reply lands here (P1-02): the form takes the sender and the transport from the row. -->
-    {#if composeOpen}
-      <section class="card compose-card no-print" aria-labelledby="handover-compose-heading">
+    <!-- Reply and "send by courier" land here: the journal's tab the action belongs to,
+         prefilled from the row. -->
+    {#if composeOpen !== null}
+      <section
+        class="card compose-card no-print"
+        aria-labelledby="handover-compose-heading"
+        data-compose={composeOpen}
+      >
         <h2 id="handover-compose-heading" class="card-title">
-          <span>{t("journal.compose.title")}</span>
+          <span
+            >{composeOpen === "meshcore"
+              ? t("journal.compose.title")
+              : t("journal.add.title")}</span
+          >
           <button
             type="button"
             class="btn btn-quiet btn-icon"
@@ -512,13 +544,22 @@
           >
         </h2>
         {#key current.id}
-          <ComposeForm
-            bind:this={compose}
-            incidentId={current.id}
-            {drill}
-            register={sortedRegister}
-            {onsent}
-          />
+          {#if composeOpen === "meshcore"}
+            <ComposeForm
+              bind:this={compose}
+              incidentId={current.id}
+              {drill}
+              register={sortedRegister}
+              {onsent}
+            />
+          {:else}
+            <ManualEntryForm
+              bind:this={record}
+              incidentId={current.id}
+              register={sortedRegister}
+              {onadded}
+            />
+          {/if}
         {/key}
       </section>
     {/if}

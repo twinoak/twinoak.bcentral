@@ -1,8 +1,11 @@
 <script lang="ts">
   // The journal screen (P0-07; on the design language in P2-03): the screen the staff live
-  // on. The main column starts with one card with two tabs — New message (ComposeForm) and
-  // Add by hand (ManualEntryForm) — above the newest-first row list (Timeline), where new
-  // rows appear; the list takes the rest of the viewport and scrolls inside. The side
+  // on. The main column starts with one card with two tabs, one job each (P3-01) — New
+  // record (ManualEntryForm: a note, an incoming or an outgoing message by hand, never the
+  // radio) first, MeshCore (ComposeForm: a message over the radio, nothing else) second —
+  // above the newest-first row list (Timeline), where new rows appear; the list takes the
+  // rest of the viewport and scrolls inside. Reply on a row opens the tab the incoming
+  // message's transport decides (lib/composePrefill.ts). The side
   // column holds two cards, open items and "last heard from", each with its count in the
   // title; under 60 rem it stacks under the main column. On first run (no operator name) a
   // setup card sits at the top of the main column and goes when the name is saved. The
@@ -12,6 +15,7 @@
   // reopens the incident, on every entry the inbox or the outbox writes, and after every
   // write from this screen.
   import { t, language } from "../i18n/index.svelte.ts";
+  import { replyPrefill } from "../lib/composePrefill.ts";
   import { currentIncidentId, incidentRevision } from "../lib/currentIncident.svelte.ts";
   import { openPopover } from "../lib/popover.svelte.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
@@ -52,9 +56,11 @@
   let ownRevision = $state(0);
   let timeline: Timeline | undefined = $state(undefined);
   let compose: ComposeForm | undefined = $state(undefined);
-  // Which form the compose card shows. Both stay mounted, so a half-typed message survives
-  // a look at the other tab; N and A (and a reply) switch to their form first.
-  let tab: "compose" | "manual" = $state("compose");
+  let record: ManualEntryForm | undefined = $state(undefined);
+  // Which form the compose card shows; New record on load. Both stay mounted, so a
+  // half-typed message survives a look at the other tab; A and N (and a reply) switch to
+  // their form first.
+  let tab: "record" | "meshcore" = $state("record");
 
   const incidentId = $derived(currentIncidentId());
   const current = $derived(incidents.find((incident) => incident.id === incidentId) ?? null);
@@ -120,6 +126,8 @@
     await changed();
   }
 
+  // MeshCore's Send: the stored message is handed to the outbox (its transport is mesh,
+  // always; the check is the outbox's own guard).
   async function onsent(message: JournalEntry) {
     actionError = null;
     await changed();
@@ -169,12 +177,18 @@
     void timeline?.scrollToEntry(id);
   }
 
-  // Reply from the row (P1-02): the compose form takes the incoming message's sender and
-  // transport and links the answer to it.
+  // Reply from the row (P1-02, rerouted in P3-01): an incoming mesh message is answered on
+  // MeshCore, one by phone, courier or verbal on New record as an outgoing message on the
+  // same transport; both link the answer to it.
   function reply(entry: JournalEntry) {
     actionError = null;
-    tab = "compose";
-    void compose?.replyTo(entry);
+    const intent = replyPrefill(entry);
+    tab = intent.tab;
+    if (intent.tab === "meshcore") {
+      void compose?.prefill(intent);
+    } else {
+      void record?.prefill(intent);
+    }
   }
 </script>
 
@@ -205,34 +219,50 @@
     <div class="main">
       {@render setup()}
 
-      <!-- One card, two tabs: the forms of the same kind, above the list where their rows
-           appear. -->
+      <!-- One card, two tabs with one job each: what is written by hand, and what goes over
+           the radio; above the list where their rows appear. -->
       <section class="card compose-card">
         <div class="tabs" role="tablist">
           <button
             type="button"
             class="tab"
             role="tab"
-            id="tab-compose"
-            aria-selected={tab === "compose"}
-            aria-controls="panel-compose"
-            onclick={() => (tab = "compose")}>{t("journal.compose.title")}</button
+            id="tab-record"
+            aria-selected={tab === "record"}
+            aria-controls="panel-record"
+            onclick={() => (tab = "record")}>{t("journal.add.title")}</button
           >
           <button
             type="button"
             class="tab"
             role="tab"
-            id="tab-manual"
-            aria-selected={tab === "manual"}
-            aria-controls="panel-manual"
-            onclick={() => (tab = "manual")}>{t("journal.add.title")}</button
+            id="tab-meshcore"
+            aria-selected={tab === "meshcore"}
+            aria-controls="panel-meshcore"
+            onclick={() => (tab = "meshcore")}>{t("journal.compose.title")}</button
           >
         </div>
         <div
-          id="panel-compose"
+          id="panel-record"
           role="tabpanel"
-          aria-labelledby="tab-compose"
-          hidden={tab !== "compose"}
+          aria-labelledby="tab-record"
+          hidden={tab !== "record"}
+        >
+          {#key current.id}
+            <ManualEntryForm
+              bind:this={record}
+              incidentId={current.id}
+              register={sortedRegister}
+              onadded={changed}
+              onreveal={() => (tab = "record")}
+            />
+          {/key}
+        </div>
+        <div
+          id="panel-meshcore"
+          role="tabpanel"
+          aria-labelledby="tab-meshcore"
+          hidden={tab !== "meshcore"}
         >
           {#key current.id}
             <ComposeForm
@@ -241,22 +271,7 @@
               {drill}
               register={sortedRegister}
               {onsent}
-              onreveal={() => (tab = "compose")}
-            />
-          {/key}
-        </div>
-        <div
-          id="panel-manual"
-          role="tabpanel"
-          aria-labelledby="tab-manual"
-          hidden={tab !== "manual"}
-        >
-          {#key current.id}
-            <ManualEntryForm
-              incidentId={current.id}
-              register={sortedRegister}
-              onadded={changed}
-              onreveal={() => (tab = "manual")}
+              onreveal={() => (tab = "meshcore")}
             />
           {/key}
         </div>

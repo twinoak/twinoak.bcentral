@@ -332,17 +332,17 @@
       class="tab"
       role="tab"
       aria-selected={activeTab === 0}
-      onclick={() => (activeTab = 0)}>{t("journal.compose.title")}</button
+      onclick={() => (activeTab = 0)}>{t("journal.add.title")}</button
     >
     <button
       type="button"
       class="tab"
       role="tab"
       aria-selected={activeTab === 1}
-      onclick={() => (activeTab = 1)}>{t("journal.add.title")}</button
+      onclick={() => (activeTab = 1)}>{t("journal.compose.title")}</button
     >
   </div>
-  <p>{activeTab === 0 ? t("send.textHelp", { prefix: "#12 " }) : t("journal.add.kind.note")}</p>
+  <p>{activeTab === 0 ? t("journal.add.kind.note") : t("send.textHelp", { prefix: "#12 " })}</p>
 </section>
 
 <!-- Table: header, numbers right, a selected row. -->

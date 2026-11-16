@@ -1,49 +1,73 @@
 <script lang="ts">
-  // Entries the operator types in by hand (P0-07): a note, or a message that came in from the
-  // field on a non-mesh transport (phone, courier, verbal). Outgoing messages on any transport
-  // go through the compose form; status changes and corrections are row actions in the
-  // timeline. Keys (P1-09): A from anywhere puts the cursor in the text with "Note" chosen
-  // (`onreveal` lets the parent show the form first — it sits under a tab in the journal's
-  // compose card, P2-03); Ctrl+Enter inside the form adds the entry. One line of fields and
-  // a 14 px meta line, like the compose form; the look is components.css's.
+  // The New record tab (P3-01; P0-07's manual-entry form): everything the operator writes
+  // into the journal by hand. A Type select with three kinds — a note; an incoming message
+  // (a phone call, a courier's note, something said across the room); an outgoing message
+  // on a non-radio transport — and for the two message kinds the other end (From / To) and
+  // Via with phone, courier and verbal only: the radio is the MeshCore tab (ComposeForm).
+  // An outgoing record is stored as the compose form stored a non-mesh message before, with
+  // the recipient's next #n in the text (the counter is shared across transports); its
+  // status is set by the operator from the row afterwards. No byte counter: no radio limit
+  // applies here.
+  //
+  // Prefilled by the parent (lib/composePrefill.ts): Reply on an incoming message by phone,
+  // courier or verbal opens this tab as an outgoing message on the same transport to the
+  // sender, with "Replying to: …" as an inline message and a ✕ that drops the link (the
+  // record is stored with refersTo = the incoming entry's id); "Send by courier" on a
+  // given-up message (P1-08) opens it as an outgoing courier message with the original's
+  // text, and recording it closes the original (store/handover.ts). Keys (P1-09): A from
+  // anywhere puts the cursor in the text (`onreveal` lets the parent show the form first —
+  // it sits under a tab in the journal's compose card, P2-03); Esc drops the reply link;
+  // Ctrl+Enter inside the form records the entry. One line of fields and a 14 px meta line,
+  // like the MeshCore form; the look is components.css's.
   import { tick } from "svelte";
   import { t } from "../i18n/index.svelte.ts";
+  import type { RecordPrefill } from "../lib/composePrefill.ts";
   import { hasOperatorName } from "../lib/settings.svelte.ts";
   import { onShortcut } from "../lib/shortcutDispatch.ts";
-  import { addMessageIn, addNote } from "../store/index.ts";
+  import { recordByHand, resendByHand } from "../store/index.ts";
   import { NON_MESH_TRANSPORTS } from "../store/manual.ts";
-  import type { RegisterEntry, Transport } from "../store/types.ts";
+  import { RECORD_TYPES, type RecordType } from "../store/record.ts";
+  import { replySnippet } from "../store/outgoing.ts";
+  import type { JournalEntry, RegisterEntry, Transport } from "../store/types.ts";
   import Icon from "./Icon.svelte";
+
+  // What one Record stored: the entry, and the status_change that closed a given-up
+  // message when the record replaced it ("send by courier"), else null.
+  export interface Recorded {
+    entry: JournalEntry;
+    closed: JournalEntry | null;
+  }
 
   interface Props {
     incidentId: string;
     register: readonly RegisterEntry[];
     // Called after the entry is stored; the parent reloads.
-    onadded: () => Promise<void>;
-    // Called before the form takes the focus (A): the parent brings it into view.
+    onadded: (recorded: Recorded) => Promise<void>;
+    // Called before the form takes the focus (A, a prefill): the parent brings it into view.
     onreveal?: () => void;
   }
   let { incidentId, register, onadded, onreveal }: Props = $props();
 
-  type Kind = "note" | "message_in";
-
-  let kind: Kind = $state("note");
+  let kind: RecordType = $state("note");
   let counterpartyId = $state("");
   let transport: Transport = $state("phone");
   let text = $state("");
   let busy = $state(false);
   let error: string | null = $state(null);
+  // The incoming message an outgoing record answers, or null when it answers nothing.
+  let replying: JournalEntry | null = $state(null);
+  // The given-up message an outgoing record replaces, closed once it is recorded; or null.
+  let closes: JournalEntry | null = $state(null);
 
   let form: HTMLFormElement | undefined = $state(undefined);
   let textField: HTMLTextAreaElement | undefined = $state(undefined);
 
+  const isMessage = $derived(kind !== "note");
   const canAdd = $derived(
-    hasOperatorName() && !busy && text.trim() !== "" && (kind === "note" || counterpartyId !== ""),
+    hasOperatorName() && !busy && text.trim() !== "" && (!isMessage || counterpartyId !== ""),
   );
 
-  // A: a note, the cursor in its text, from anywhere on the screen.
-  export async function focusNote(): Promise<void> {
-    kind = "note";
+  async function focusText() {
     error = null;
     onreveal?.();
     await tick();
@@ -51,12 +75,37 @@
     textField?.focus();
   }
 
+  // A: the cursor in the text, from anywhere on the screen; the type stays as chosen.
   $effect(() =>
     onShortcut("addNote", () => {
-      void focusNote();
+      void focusText();
       return true;
     }),
   );
+
+  // A reply or a courier resend: the fields as the action decided them, the text field
+  // with the cursor, the form in view.
+  export async function prefill(intent: RecordPrefill): Promise<void> {
+    kind = intent.type;
+    counterpartyId = intent.counterpartyId;
+    transport = intent.transport;
+    text = intent.text;
+    replying = intent.replyTo;
+    closes = intent.closes;
+    await focusText();
+  }
+
+  function dropReply() {
+    replying = null;
+  }
+
+  // Changing the type away from an outgoing message drops what only it carries.
+  $effect(() => {
+    if (kind !== "message_out") {
+      replying = null;
+      closes = null;
+    }
+  });
 
   async function add() {
     if (!canAdd) {
@@ -65,13 +114,25 @@
     busy = true;
     error = null;
     try {
-      if (kind === "note") {
-        await addNote(incidentId, text);
+      let recorded: Recorded;
+      if (kind === "message_out" && closes !== null) {
+        const { copy, closed } = await resendByHand(closes, { transport, body: text });
+        recorded = { entry: copy, closed };
       } else {
-        await addMessageIn({ incidentId, counterpartyId, transport, text });
+        const entry = await recordByHand({
+          incidentId,
+          type: kind,
+          counterpartyId,
+          transport,
+          text,
+          refersTo: kind === "message_out" ? replying?.id : undefined,
+        });
+        recorded = { entry, closed: null };
       }
       text = "";
-      await onadded();
+      replying = null;
+      closes = null;
+      await onadded(recorded);
     } catch (failure) {
       error = t("journal.add.failed", {
         error: failure instanceof Error ? failure.message : String(failure),
@@ -86,9 +147,14 @@
     await add();
   }
 
-  // Ctrl+Enter adds, wherever in the form the focus is; preventDefault tells the window
-  // listener the key was taken.
+  // Esc drops the reply link (and nothing else); Ctrl+Enter records, wherever in the form
+  // the focus is. preventDefault tells the window listener the key was taken.
   function onkeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && replying !== null) {
+      event.preventDefault();
+      dropReply();
+      return;
+    }
     if (event.key === "Enter" && event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       void add();
@@ -98,19 +164,52 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <form class="manual" bind:this={form} onsubmit={submit} {onkeydown}>
+  {#if !hasOperatorName()}
+    <p class="msg msg-warn" role="alert"><Icon name="warning" />{t("send.noOperator")}</p>
+  {/if}
+
+  {#if replying !== null}
+    <p class="msg replying" role="status" data-replying-to={replying.id}>
+      <Icon name="reply" />
+      <span class="replying-text"
+        >{t("send.replyingTo", { text: replySnippet(replying.text ?? "") })}</span
+      >
+      <button
+        type="button"
+        class="btn btn-quiet btn-icon drop"
+        aria-label={t("send.dropReply")}
+        title={t("send.dropReply")}
+        onclick={dropReply}><Icon name="close" /></button
+      >
+    </p>
+  {/if}
+
+  {#if closes !== null}
+    <p class="msg" role="status" data-closes={closes.id}>
+      <Icon name="send" />{t("journal.add.resend", { n: closes.seqNo ?? 0 })}
+    </p>
+  {/if}
+
   <div class="line">
     <div class="field kind">
       <label for="manual-kind">{t("journal.add.kind")}</label>
       <select id="manual-kind" bind:value={kind}>
-        <option value="note">{t("journal.add.kind.note")}</option>
-        <option value="message_in">{t("journal.add.kind.message_in")}</option>
+        {#each RECORD_TYPES as option (option)}
+          <option value={option}>{t(`journal.add.kind.${option}`)}</option>
+        {/each}
       </select>
     </div>
 
-    {#if kind === "message_in"}
+    {#if isMessage}
       <div class="field from">
-        <label for="manual-from">{t("journal.add.counterparty")}</label>
-        <select id="manual-from" bind:value={counterpartyId} disabled={register.length === 0}>
+        <label for="manual-counterparty">
+          {kind === "message_in" ? t("journal.add.counterparty") : t("journal.add.recipient")}
+        </label>
+        <select
+          id="manual-counterparty"
+          bind:value={counterpartyId}
+          disabled={register.length === 0}
+        >
           <option value="">{t("send.recipient.choose")}</option>
           {#each register as entry (entry.id)}
             <option value={entry.id}>{entry.label}</option>
@@ -133,15 +232,14 @@
       <textarea id="manual-text" rows="1" bind:this={textField} bind:value={text}></textarea>
     </div>
 
-    <button type="submit" class="btn btn-primary" disabled={!canAdd}>{t("journal.add.save")}</button
-    >
+    <button type="submit" class="btn btn-primary" disabled={!canAdd}>{t("send.record")}</button>
   </div>
 
   <div class="meta field-help">
     <span>{t("journal.add.shortcut")}</span>
   </div>
 
-  {#if kind === "message_in" && register.length === 0}
+  {#if isMessage && register.length === 0}
     <p class="msg msg-warn"><Icon name="warning" />{t("send.recipient.none")}</p>
   {/if}
   {#if error}
@@ -164,8 +262,11 @@
     gap: var(--s-3);
   }
 
+  /* Four fields and the button on one line at 1280 px, where the card's inside is 837 px:
+     12 + 12 + 7.5 + 10 rem, three gaps and Record are 820 px; the text takes what is left
+     and grows in rows as it is typed. The selects' widths hold their longest option. */
   .kind {
-    flex: 0 1 14rem;
+    flex: 0 1 12rem;
   }
 
   .from {
@@ -173,11 +274,11 @@
   }
 
   .via {
-    flex: 0 1 8rem;
+    flex: 0 1 7.5rem;
   }
 
   .text {
-    flex: 1 1 18rem;
+    flex: 1 1 10rem;
   }
 
   .meta {
@@ -185,6 +286,23 @@
     flex-wrap: wrap;
     gap: var(--s-1) var(--s-4);
     margin: 0;
+  }
+
+  .replying {
+    align-items: center;
+  }
+
+  .replying-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .drop {
+    width: 1.75rem;
+    min-height: 1.75rem;
   }
 
   p {

@@ -1,12 +1,13 @@
 // The writes the handover screen makes (P1-08), above the store: the handover note when the
 // operator name changes, the status request to a quiet radio, and the "send by courier"
-// decision on a given-up message. Everything is an ordinary entry the journal already has
-// (note, message_out, status_change); the data model is untouched.
+// decision on a given-up message (recorded from the New record tab since P3-01). Everything
+// is an ordinary entry the journal already has (note, message_out, status_change); the data
+// model is untouched.
 
-import { bodyOf } from "./journalView.ts";
 import type { JournalStore } from "./journalStore.ts";
+import { NON_MESH_TRANSPORTS } from "./manual.ts";
 import { composeMessage, recordManualStatus, type Composed } from "./outgoing.ts";
-import type { JournalEntry } from "./types.ts";
+import type { JournalEntry, Transport } from "./types.ts";
 
 export class HandoverError extends Error {
   constructor(message: string) {
@@ -85,32 +86,44 @@ export async function composeStatusRequest(
 
 // --- send by courier -----------------------------------------------------------------------
 
-export interface CourierHandoffOptions {
+export interface ResendOptions {
   operator: string;
+  // The transport the copy goes by: phone, courier or verbal. "Send by courier" opens the
+  // record form with courier chosen (P3-01); the operator may change it before recording.
+  transport: Transport;
+  // The copy's text, prefilled with the original's body and possibly edited.
+  body: string;
   // The reason recorded on the original ("sent by courier as #n"), built from the copy.
   reason: (copy: JournalEntry) => string;
 }
 
 export interface CourierHandoff {
-  // The courier message_out: the same body to the same recipient, its own #n, pending.
+  // The copy: a message_out on the chosen transport to the same recipient, its own #n,
+  // pending.
   copy: JournalEntry;
   // The status_change that closed the original.
   closed: JournalEntry;
 }
 
-// The decision "send by courier" on a given-up message: a courier message_out with the same
-// body to the same recipient (a new #n, pending until the operator marks it sent / delivered
-// / roger by hand), and the original closed with roger and the reason, which is how an item
-// leaves the staff's queue (text-protocol.md: roger is final; P0-07: a roger on a mesh
-// message may be recorded by hand). The copy is written first, so a refused close leaves a
-// copy the operator can see and the original still in the list.
-export async function sendByCourier(
+// The decision "send by courier" on a given-up message, recorded from the New record tab
+// (P3-01): a message_out on a non-radio transport to the same recipient (a new #n, pending
+// until the operator marks it sent / delivered / roger by hand), and the original closed with
+// roger and the reason, which is how an item leaves the staff's queue (text-protocol.md:
+// roger is final; P0-07: a roger on a mesh message may be recorded by hand). The copy is
+// written first, so a refused close leaves a copy the operator can see and the original
+// still in the list. The radio is refused: a copy over the mesh is a Retry, not a resend.
+export async function resendByHand(
   store: JournalStore,
   original: JournalEntry,
-  options: CourierHandoffOptions,
+  options: ResendOptions,
 ): Promise<CourierHandoff> {
   if (original.type !== "message_out" || original.counterpartyId === undefined) {
     throw new HandoverError(`entry ${original.id} is not an outgoing message`);
+  }
+  if (!NON_MESH_TRANSPORTS.includes(options.transport)) {
+    throw new HandoverError(
+      `a resend by hand goes by phone, courier or verbal, not ${options.transport}`,
+    );
   }
   if ((await store.statusOf(original.id)) !== "given_up") {
     throw new HandoverError(`message ${original.id} is not given up`);
@@ -119,8 +132,8 @@ export async function sendByCourier(
     incidentId: original.incidentId,
     operator: options.operator,
     counterpartyId: original.counterpartyId,
-    transport: "courier",
-    body: bodyOf(original),
+    transport: options.transport,
+    body: options.body,
   });
   const closed = await recordManualStatus(store, original, "roger", {
     operator: options.operator,
