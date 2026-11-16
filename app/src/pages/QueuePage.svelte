@@ -5,8 +5,9 @@
   // transmission's countdown, who is being sent to, the paused chip while no radio is
   // connected) and the time to drain — and Retry all; every given-up row has its own Retry.
   // Per recipient the label, #n, the text, the state chip (derived from the journal on every
-  // change; warn with an outline dot while the queue or the outbox holds the message), the
-  // attempt and the earliest time of its transmission. Once a batch is queued the compose
+  // change, with the journal's status symbol — the clock while the queue or the outbox holds
+  // the message, P3-03), the attempt and the earliest time of its transmission. Once a
+  // batch is queued the compose
   // card closes and the queue takes the screen; "New message to many" in the queue's title
   // opens it again. The batches are the queue's memory for this session; after a reload the
   // pending messages come back as a restored batch (src/radio/index.ts).
@@ -15,7 +16,7 @@
   import { formatElapsed } from "../lib/elapsed.ts";
   import { chipClass, counterChips } from "../lib/journalRows.ts";
   import { openPopover } from "../lib/popover.svelte.ts";
-  import { queueCounters, queueRowChip } from "../lib/queueRows.ts";
+  import { queueCounters, queueRowChip, queueRowShape } from "../lib/queueRows.ts";
   import { inbox, outbox, radio, sendQueue } from "../radio/index.ts";
   import type { Batch, QueueItem } from "../radio/sendQueue.svelte.ts";
   import { isDrill } from "../store/incidents.ts";
@@ -25,6 +26,7 @@
   import type { Incident, JournalEntry, RegisterEntry, Status } from "../store/types.ts";
   import BatchComposeForm from "../components/BatchComposeForm.svelte";
   import Icon from "../components/Icon.svelte";
+  import SlotSymbol from "../components/SlotSymbol.svelte";
 
   let incidents: Incident[] = $state([]);
   let register: RegisterEntry[] = $state([]);
@@ -330,9 +332,11 @@
                     <td class="num">#{item.seqNo}</td>
                     <td class="text">{item.text}</td>
                     <td class="state">
-                      <span class="chip {chipClass(look.tint)}">
-                        <span class="chip-dot" class:chip-dot-outline={look.dot === "outline"}
-                        ></span>{row.text}
+                      <span
+                        class="chip {chipClass(look.tint)}"
+                        data-shape={queueRowShape(row.status)}
+                      >
+                        <SlotSymbol shape={queueRowShape(row.status)} />{row.text}
                       </span>
                       {#if refusal !== undefined}
                         <span class="field-error"><Icon name="warning" />{refusal}</span>

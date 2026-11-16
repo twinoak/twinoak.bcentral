@@ -95,9 +95,16 @@ component defines its own colours or sizes; a component `<style>` block may only
 - **Chip** `.chip` 24 px, 14 px text, radius `--r-1`, a 6 px dot or a 14 px glyph on the
   left; variants per status pair; `.chip-neutral` is grey. Chips are for status and
   counters, never for navigation.
-- **Status strip** (journal rows): inline run of chips separated by `·`, 14 px, dot per
-  state — `sent` neutral, `delivered` ok, `roger` ok filled, `waiting` warn, `given up`
-  danger.
+- **Status column** (journal rows, P3-03; replaces the status strip): a fixed-width column
+  at the right of every row — three slots, `sent · delivered · confirmed`, one 20 px symbol
+  each, always in the same place, no times in the list (they are the slots' tooltips and
+  the row's history). Five shapes: hollow circle `--rule-2` (not yet), filled circle `--ok`
+  (done; confirmed with a check), hollow circle with a clock `--warn` (sent, the receipt
+  still out), `✕` `--danger` (given up, in the first slot not reached; the slots before it
+  stay filled). A batch row shows a count per slot (`23/25`, `--ok` once all are there)
+  and `✕ n` under them when n > 0. The header is three 13 px labels over the slots, stuck
+  to the top of the list. Incoming rows, notes and corrections leave the column empty.
+  High contrast keeps the shapes and drops the tints.
 - **Card** `.card`: surface, rule border, radius `--r-2`, padding `--s-5`; `.card-title`
   20 px 600 with `--s-4` below. A card has one purpose; two purposes are two cards or tabs.
 - **Tabs** `.tabs` for switching between forms of the same kind in one card (New record /
@@ -106,8 +113,9 @@ component defines its own colours or sizes; a component `<style>` block may only
   `--rule`; numbers right-aligned tabular; sticky header when the table scrolls; row hover
   `--surface-2`; selected `--accent-weak`. No zebra stripes.
 - **Row list** `.rows` (journal, open items, handover lists): like a table without columns
-  borders — a grid per row of `time | who | body | strip`, time 14 px `--ink-2` tabular,
-  who 500, body 18 px, strip right; expanded row shows its history on `--surface-2`.
+  borders — a grid per row of `time | who | body | status`, time 14 px `--ink-2` tabular,
+  who 500, body 18 px, the status column right; expanded row shows its history on
+  `--surface-2`.
 - **Popover** `.popover`: surface, `--r-2`, the floating shadow, max 360 px, a title line,
   a sentence, one action button. Opened from a status chip; `Esc` closes.
 - **Toast** `.toast`: bottom-left, one at a time, 4 s, neutral surface with the floating
@@ -185,24 +193,33 @@ from the text above, and why; the reports under `tasks/phase-2/reports/` have th
   `--on-accent`, `--shadow`, `--scrim` (the shortcut overlay's backdrop), `--font-mono`.
 - Every size is `rem` with the document's px at the 16 px root, so the text-size setting
   scales the whole screen; the side column alone is the written 320 px.
-- Chips in a status strip have no background: the dot and the word carry the state (hollow
-  dot delivered, filled dot roger), a chip outside a strip keeps its tint. Five tinted boxes
-  per journal row were too loud.
+- The status strip of P2-01 (chips without a background, the dot and the word carrying the
+  state) was replaced in P3-03 by the status column, see below; a chip outside a row list
+  keeps its tint.
 - The bar: Radio is not in the navigation (five screens as listed; the radio chip and
   Settings reach it). The chip details ("· heard 3 min", "· open for 2 h") show from 1440 px
   up; below, the popover carries them. When three chips are tinted at 1280 px the navigation
   half drops to a second right-aligned line; the calm bar is one 56 px row. The incident
   switcher is a popover-sized card with the pick, create, close/reopen, export and print
   controls, not a one-sentence popover.
-- The journal: the row list is a subgrid with the strip column capped at a third, so the
-  columns line up and the body keeps its width; row actions are a line under the row on
+- The journal: the row list is a subgrid with the status column on a fixed width, so the
+  columns line up and the body keeps the rest; row actions are a line under the row on
   hover, focus or expansion, not an overlay; a corrected entry reads its latest correction's
   text with a neutral "corrected" chip (the pencil icon) after the time, the original and
   every correction in its history, and Correct is one prefilled box on the line under the
   row while the row's text is hidden (P3-02) — a correction is never a row or a line of its
   own; the
   compose card is padded `--s-4` vertically so ten one-line rows fit under it at 720 px;
-  `pending` is a warn state.
+  `pending` is a warn state on a chip (the queue), three hollow slots in the column.
+- The status column (P3-03): a slot is 4 rem wide, the column 12 rem, not the 7.5 rem the
+  task named — the header's 13 px labels ("Delivered", "Bekræftet", "Confirmed") need about
+  60 px each, and a label that does not fit over its slot is no header. The symbols are
+  drawn in `components/SlotSymbol.svelte` on the icon grid, outside `lib/icons.ts` (an
+  icon is an action or a state the bar names; these are the one set the column draws), the
+  check cut out of the filled disc in `--surface`. In the open-items card (320 px) the
+  slots pack to 1.5 rem each and there is no header: the tooltips say what the journal's
+  labels say. The handover's age moved from the end of the strip to after the time. The
+  queue's table keeps its state chip with the column's symbol in place of the dot.
 - The other screens: table rows are `--s-1` tall in padding (32 px) so fifteen register and
   twelve queue rows fit a 720 px screen; the send-to-all compose card folds once a batch is
   queued and reopens from the queue's title; the handover's row actions are always shown and

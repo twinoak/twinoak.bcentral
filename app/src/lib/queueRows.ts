@@ -6,6 +6,7 @@
 import type { BatchCounters } from "../store/journalView.ts";
 import type { Status } from "../store/types.ts";
 import { statusChip, type ChipLook } from "./journalRows.ts";
+import type { SlotShape } from "./statusSlots.ts";
 
 // Every queued message counted once, by its derived status, in the batch counters' shape so
 // counterChips() renders them. The incident's own statuses (closed, reopened) cannot occur on
@@ -49,4 +50,24 @@ export function queueCounters(statuses: Iterable<Status>): BatchCounters {
 // strip's waiting segment: something is happening and the next state may follow.
 export function queueRowChip(status: Status | null): ChipLook {
   return status === null ? { tint: "warn", dot: "outline" } : statusChip(status);
+}
+
+// The symbol in a queue row's state chip, from the status column's set (P3-03) so the queue
+// and the journal draw a state the same way: hollow while pending, filled once sent or
+// delivered, the check on roger, the cross on given up, the clock while the queue or the
+// outbox holds the message.
+export function queueRowShape(status: Status | null): SlotShape {
+  switch (status) {
+    case null:
+      return "clock";
+    case "sent":
+    case "delivered":
+      return "filled";
+    case "roger":
+      return "check";
+    case "given_up":
+      return "cross";
+    default:
+      return "hollow";
+  }
 }

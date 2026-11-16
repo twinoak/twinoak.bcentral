@@ -98,7 +98,7 @@ describe("the other screens (P2-04)", () => {
     expect(page).toContain('class="btn btn-quiet"');
     expect(page).toContain('class="row-actions no-print"');
     expect(page).toContain('class="row-form no-print"');
-    expect(page).toContain("stripChip(item.kind)");
+    expect(page).toContain("<StatusSlots");
     expect(page).not.toContain("<table");
     expect(page).toContain("setClockConfirmed(");
     expect(page).toContain("<ComposeForm");

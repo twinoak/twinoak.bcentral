@@ -5,10 +5,12 @@
 // stored).
 //
 // The journal reads like a stack of message slips, newest on top (P1-01). A message is one
-// row that carries its own delivery times as a strip ("sent 14:31 · delivered 14:32 · roger
-// 14:35") derived from the status_change entries that refer to it; those entries, and the
-// old resend notes, are never rows of their own but the row's history, shown when the row is
-// expanded. The messages of one send-to-all (one batchId) fold into one row with counters.
+// row that carries its own delivery chain as a strip (sent, delivered, roger, each with its
+// time) derived from the status_change entries that refer to it — the screen shows it as
+// three symbol slots (lib/statusSlots.ts, P3-03), the print view as the words with times;
+// those entries, and the old resend notes, are never rows of their own but the row's
+// history, shown when the row is expanded. The messages of one send-to-all (one batchId)
+// fold into one row with counters.
 // A corrected entry shows its latest correction's text as its text (currentText, P3-02), with
 // the original and every correction one click away; a status_change that refers to the
 // incident (closed / reopened) is a row, because it is an event of the incident itself.
@@ -111,6 +113,10 @@ export interface StripItem {
   // On a waiting item: the text of the latest `sent` ("attempt 2/3"), null on the first
   // attempt. Null on every other item.
   attempt: string | null;
+  // The transition's own text — the operator's reason on a manual status, the outbox's
+  // detail ("no ack after 3 attempts"), a roger's incoming entry id — for the status
+  // column's tooltips (P3-03); null when the transition has none, and on pending and waiting.
+  text: string | null;
 }
 
 // The statuses of a message's chain that the strip shows; pending is implicit (status.ts
@@ -144,7 +150,7 @@ export function currentRun(changes: readonly JournalEntry[]): JournalEntry[] {
 export function statusStrip(changes: readonly JournalEntry[]): StripItem[] {
   const run = currentRun(changes.filter(inChain));
   if (run.length === 0) {
-    return [{ kind: "pending", at: null, attempt: null }];
+    return [{ kind: "pending", at: null, attempt: null, text: null }];
   }
   const items: StripItem[] = [];
   let attempt: string | null = null;
@@ -154,10 +160,10 @@ export function statusStrip(changes: readonly JournalEntry[]): StripItem[] {
       attempt = change.text ?? attempt;
       continue;
     }
-    items.push({ kind, at: change.timestamp, attempt: null });
+    items.push({ kind, at: change.timestamp, attempt: null, text: change.text ?? null });
   }
   if (run[run.length - 1]?.newStatus === "sent") {
-    items.push({ kind: "waiting", at: null, attempt });
+    items.push({ kind: "waiting", at: null, attempt, text: null });
   }
   return items;
 }
@@ -451,6 +457,24 @@ export interface OpenItem {
   text: string;
   status: Status;
   givenUp: boolean;
+  // The message's current run, as the timeline's view carries it: what the status column's
+  // three slots are read off (P3-03).
+  strip: StripItem[];
+}
+
+// Every status change of the chain by the message it refers to, oldest first (the order
+// statusStrip reads a run in).
+function transitionsByMessage(entries: readonly JournalEntry[]): Map<string, JournalEntry[]> {
+  const map = new Map<string, JournalEntry[]>();
+  for (const entry of sortedOldestFirst(entries)) {
+    if (!inChain(entry) || entry.refersTo === undefined) {
+      continue;
+    }
+    const list = map.get(entry.refersTo) ?? [];
+    list.push(entry);
+    map.set(entry.refersTo, list);
+  }
+  return map;
 }
 
 // Open items per register entry (counterpartyId), newest first within a group, and the groups
@@ -459,6 +483,7 @@ export interface OpenItem {
 export function openItems(entries: readonly JournalEntry[]): Map<string, OpenItem[]> {
   const groups = new Map<string, OpenItem[]>();
   const corrections = correctionsByTarget(entries);
+  const transitions = transitionsByMessage(entries);
   for (const entry of sortedNewestFirst(entries)) {
     if (entry.type !== "message_out" || entry.counterpartyId === undefined) {
       continue;
@@ -474,6 +499,7 @@ export function openItems(entries: readonly JournalEntry[]): Map<string, OpenIte
       text: currentText(entry, corrections.get(entry.id) ?? []),
       status,
       givenUp,
+      strip: statusStrip(transitions.get(entry.id) ?? []),
     });
     groups.set(entry.counterpartyId, items);
   }

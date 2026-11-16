@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { counterChips } from "./journalRows.ts";
-import { queueCounters, queueRowChip } from "./queueRows.ts";
+import { queueCounters, queueRowChip, queueRowShape } from "./queueRows.ts";
 
 describe("queueCounters", () => {
   it("counts every message once by its status, in the batch counters' shape", () => {
@@ -46,5 +46,16 @@ describe("queueRowChip", () => {
 
   it("is warn with an outline dot while the message is held by the queue or the outbox", () => {
     expect(queueRowChip(null)).toEqual({ tint: "warn", dot: "outline" });
+  });
+});
+
+describe("queueRowShape (P3-03)", () => {
+  it("draws a row's state with the status column's symbols", () => {
+    expect(queueRowShape("pending")).toBe("hollow");
+    expect(queueRowShape("sent")).toBe("filled");
+    expect(queueRowShape("delivered")).toBe("filled");
+    expect(queueRowShape("roger")).toBe("check");
+    expect(queueRowShape("given_up")).toBe("cross");
+    expect(queueRowShape(null)).toBe("clock");
   });
 });
